@@ -126,6 +126,19 @@ final class NovelReaderLoadingCoordinator {
         }
     }
 
+    func resetInitialViewportPreparationIfNeeded(hasPresentation: Bool) {
+        runtime.initialViewportSettings = nil
+        guard preparation.phase != .ready else { return }
+        preparation.resetForViewportChange(hasPresentation: hasPresentation)
+        if !hasPresentation {
+            workflow?.close()
+            workflow = nil
+            repository = nil
+            preparedInitialLoad = nil
+        }
+        isLoading = false
+    }
+
     func invalidateInitialForRefresh() async -> Bool {
         guard !isClosed, await preparation.invalidateForRefresh(), !isClosed else { return false }
         loadRevision &+= 1
@@ -157,7 +170,7 @@ final class NovelReaderLoadingCoordinator {
                 async let repository = makeRepository()
                 async let progress = progressStore.load(threadID: context.threadID)
                 let settings = await settingsStore.load()
-                async let resolvedSettings = presentation.resolveFonts(settings.novelReader)
+                async let resolvedSettings = presentation.resolveFonts(runtime.initialViewportSettings ?? settings.novelReader)
                 let (readyRepository, readySettings, readyProgress) = try await (repository, resolvedSettings, progress)
                 try Task.checkCancellation()
                 guard preparation.isCurrent(sequence), !isClosed else { return }

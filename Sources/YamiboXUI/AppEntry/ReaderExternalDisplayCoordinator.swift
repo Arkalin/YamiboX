@@ -16,6 +16,7 @@ final class ReaderExternalDisplayCoordinator {
         var navigator: ForumDestinationNavigator
         let contentID: UUID
         var lastUse: UInt64
+        var deviceAdmissionWait: Task<Void, Never>?
 
         init(session: ReaderSession, model: YamiboAppModel, host: ReaderExternalDisplayRegistrationHost.Host?,
              navigator: ForumDestinationNavigator, lastUse: UInt64) {
@@ -25,6 +26,13 @@ final class ReaderExternalDisplayCoordinator {
             self.navigator = navigator
             self.contentID = session.contentID
             self.lastUse = lastUse
+        }
+
+        deinit { deviceAdmissionWait?.cancel() }
+
+        func cancelDeviceAdmissionWait() {
+            deviceAdmissionWait?.cancel()
+            deviceAdmissionWait = nil
         }
     }
 
@@ -43,7 +51,6 @@ final class ReaderExternalDisplayCoordinator {
     private(set) var phase = Phase.local
     private(set) var sessionID: UUID?
     private var isDeviceMenuPresented = false
-    private var suspendedFrom = Phase.local
     @ObservationIgnored private(set) var deviceFrameDuringPreparation: UIView?
     let pointer = ReaderExternalInput()
     @ObservationIgnored private var candidates: [String: Candidate] = [:]
@@ -64,6 +71,7 @@ final class ReaderExternalDisplayCoordinator {
     @ObservationIgnored private let wakefulness = ReaderTrackpadWakefulness()
     @ObservationIgnored private var settingsObservation: Task<Void, Never>?
     @ObservationIgnored private var isTakeoverEnabled = false
+    @ObservationIgnored private var hasLoadedTakeoverSettings = false
 
     init(settingsStore: SettingsStore) {
         ReaderExternalDisplayScenes.shared.coordinator = self
@@ -84,7 +92,8 @@ final class ReaderExternalDisplayCoordinator {
     deinit { settingsObservation?.cancel() }
 
     private func setTakeoverEnabled(_ enabled: Bool) {
-        guard isTakeoverEnabled != enabled else { return }
+        guard !hasLoadedTakeoverSettings || isTakeoverEnabled != enabled else { return }
+        hasLoadedTakeoverSettings = true
         isTakeoverEnabled = enabled
         if enabled {
             evaluate()
@@ -97,6 +106,7 @@ final class ReaderExternalDisplayCoordinator {
             // locally, and so opting in again does not require a reconnect.
             release(requireActivation: false)
             elect(nil)
+            evaluate()
         }
     }
 
@@ -111,6 +121,7 @@ final class ReaderExternalDisplayCoordinator {
             if let host { existing.host = host }
         } else {
             let previous = candidates[id]
+            previous?.cancelDeviceAdmissionWait()
             let shouldKeepOwner = previous?.session === session && previous === reservedOwner
             if let previous, previous === reservedOwner || previous === lease?.owner {
                 release(requireActivation: false)
@@ -128,6 +139,7 @@ final class ReaderExternalDisplayCoordinator {
     func withdraw(session: ReaderSession, windowID: String, requireActivation: Bool) {
         guard let candidate = candidates[windowID], candidate.session === session else { return }
         candidates[windowID] = nil
+        candidate.cancelDeviceAdmissionWait()
         let previouslyOwned = lease?.owner === candidate
         if reservedOwner === candidate {
             reservedOwner = nil
@@ -190,7 +202,7 @@ final class ReaderExternalDisplayCoordinator {
     }
 
     var isWaitingForExternalFrame: Bool {
-        phase == .preparing || (phase == .suspended && suspendedFrom == .preparing)
+        phase == .preparing
     }
 
     var showsReaderOnExternalDisplay: Bool {
@@ -232,11 +244,18 @@ final class ReaderExternalDisplayCoordinator {
         scenePhases[windowID] = value
         if let lease, lease.owner.model?.windowID == windowID, closingSessionID != lease.owner.session.id {
             if value != .active {
+                if phase == .preparing {
+                    // A not-yet-visible viewport may still await a one-shot
+                    // layout or restoration callback. Restart its attachment
+                    // on foreground instead of suspending it mid-admission.
+                    release(requireActivation: false, permitsDeviceReader: false)
+                    evaluate()
+                    return
+                }
                 if phase != .suspended {
                     lease.connection.conceal(true)
                     lease.owner.session.saveReadingPosition()
                     lease.viewport.setSuspended(true, capturingPosition: false)
-                    suspendedFrom = phase
                     setPhase(.suspended)
                     timeout?.cancel()
                 }
@@ -245,12 +264,8 @@ final class ReaderExternalDisplayCoordinator {
                     focusedWindowID = windowID
                 }
                 lease.viewport.setSuspended(false)
-                if suspendedFrom == .external || suspendedFrom == .deviceInteraction || lease.viewport.hasRendered {
-                    setPhase(lease.owner.session.deviceInteraction == nil ? .external : .deviceInteraction)
-                    lease.connection.conceal(!showsReaderOnExternalDisplay)
-                } else {
-                    beginPreparing(lease)
-                }
+                setPhase(lease.owner.session.deviceInteraction == nil ? .external : .deviceInteraction)
+                lease.connection.conceal(!showsReaderOnExternalDisplay)
             }
         }
         if lease == nil { evaluate() }
@@ -259,6 +274,11 @@ final class ReaderExternalDisplayCoordinator {
     func closeReader(_ session: ReaderSession, contentID: UUID) {
         guard !session.isClosed, session.contentID == contentID, closingSessionID != session.id else { return }
         guard let lease, lease.owner.session === session else { session.close(); return }
+        if phase == .preparing {
+            // The external window is already black; no privacy frame to wait for.
+            session.close()
+            return
+        }
         let sessionID = session.id
         closingSessionID = sessionID
         timeout?.cancel()
@@ -301,7 +321,6 @@ final class ReaderExternalDisplayCoordinator {
         } else {
             lease.connection.conceal(true)
             lease.viewport.setSuspended(true)
-            suspendedFrom = .external
             setPhase(.suspended)
         }
     }
@@ -323,7 +342,7 @@ final class ReaderExternalDisplayCoordinator {
         // scene (including app-switcher transitions). Keep its owner reserved
         // while inactive so another open book isn't shown on the external display.
         reservedOwner = owner
-        release(requireActivation: false)
+        release(requireActivation: false, permitsDeviceReader: false)
         disconnectedPreparation?.cancel()
         if wasPreparing && ownerPhase == .active {
             disconnectedPreparation = Task { [weak self, weak owner] in
@@ -347,9 +366,15 @@ final class ReaderExternalDisplayCoordinator {
     }
 
     private func evaluate() {
-        guard isTakeoverEnabled, lease == nil, closingSessionID == nil else { return }
-        guard !needsExplicitActivation else { elect(nil); return }
-        if let reservedOwner, !canTakeOver(reservedOwner) { return }
+        let awaitingAccessory = evaluateExternalPresentation()
+        updateDeviceAdmission(awaitingAccessory: awaitingAccessory)
+    }
+
+    /// Returns the elected owner whose registration may still yield a scene.
+    private func evaluateExternalPresentation() -> Candidate? {
+        guard hasLoadedTakeoverSettings, isTakeoverEnabled, lease == nil, closingSessionID == nil else { return nil }
+        guard !needsExplicitActivation else { elect(nil); return nil }
+        if let reservedOwner, !canTakeOver(reservedOwner) { return nil }
         let candidate = reservedOwner ?? candidates.values.filter {
             canTakeOver($0)
         }.max { lhs, rhs in
@@ -359,18 +384,26 @@ final class ReaderExternalDisplayCoordinator {
             return (lhs.model?.windowID ?? "") < (rhs.model?.windowID ?? "")
         }
         elect(candidate)
-        guard lease == nil, let candidate, let model = candidate.model else { return }
+        guard lease == nil, let candidate, let model = candidate.model else { return nil }
         let isRestoringDeviceInteraction = candidate === reservedOwner && candidate.session.deviceInteraction != nil
-        guard isRestoringDeviceInteraction || candidate.session.viewport.hasRendered else {
-            // Let the device finish its first layout before passing position
-            // to a viewport on an already-connected display.
-            candidate.session.viewport.didRender = { [weak self] in self?.evaluate() }
-            return
-        }
         guard let connection = ReaderExternalDisplayScenes.shared.available.first(where: {
                   $0.scene != nil && $0.registrationID == registrationID &&
                   ($0.sceneIdentifier != failedPresentation?.sceneID || candidate.contentID != failedPresentation?.contentID)
-              }) else { return }
+              }) else {
+            if #available(iOS 27, *), !candidate.session.permitsDeviceReader,
+               candidate.host?.sampledAvailability != false,
+               failedPresentation?.contentID != candidate.contentID {
+                return candidate
+            }
+            return nil
+        }
+        guard isRestoringDeviceInteraction || !candidate.session.permitsDeviceReader ||
+              candidate.session.viewport.hasRendered else {
+            // A device viewport already admitted to read locally can finish
+            // restoring its position before a hot-plug handoff.
+            candidate.session.viewport.didRender = { [weak self] in self?.evaluate() }
+            return nil
+        }
         guard let bounds = connection.scene?.screen.nativeBounds,
               let width = Int(exactly: bounds.width), let height = Int(exactly: bounds.height),
               let resolution = ReaderSettingsTarget.Resolution(width: width, height: height) else {
@@ -379,9 +412,9 @@ final class ReaderExternalDisplayCoordinator {
             }
             reservedOwner = nil
             model.externalDisplayFailure = true
-            return
+            return nil
         }
-        deviceFrameDuringPreparation = isRestoringDeviceInteraction
+        deviceFrameDuringPreparation = isRestoringDeviceInteraction || !candidate.session.viewport.hasRendered
             ? nil : candidate.host?.viewIfLoaded?.window?.snapshotView(afterScreenUpdates: false)
         let generation = UUID()
         let viewport = candidate.session.beginExternalViewport(
@@ -398,6 +431,7 @@ final class ReaderExternalDisplayCoordinator {
         pointer.reset()
         if !isRestoringDeviceInteraction { candidate.session.hideReaderChrome() }
         let lease = Lease(owner: candidate, connection: connection, viewport: viewport, generation: generation)
+        if case .novel = candidate.session.content { viewport.traceExternalNovelPreparation(id: generation) }
         self.lease = lease
         connection.displayCoordinator = self
         sessionID = candidate.session.id
@@ -406,9 +440,46 @@ final class ReaderExternalDisplayCoordinator {
             display: self, session: candidate.session, navigator: candidate.navigator, appModel: model, viewport: viewport
         )) else {
             fail(lease.generation)
-            return
+            return nil
         }
         pointer.targets.window = connection.window
+        return nil
+    }
+
+    private func updateDeviceAdmission(awaitingAccessory: Candidate?) {
+        for (id, owner) in candidates {
+            guard owner !== lease?.owner, !owner.session.permitsDeviceReader, !owner.session.isClosed,
+                  owner.session.contentID == owner.contentID else {
+                owner.cancelDeviceAdmissionWait()
+                continue
+            }
+            if let phase = scenePhases[id], phase != .active {
+                owner.cancelDeviceAdmissionWait()
+                continue
+            }
+            let awaitingRegistration: Bool
+            if #available(iOS 27, *) {
+                awaitingRegistration = owner.host == nil
+            } else {
+                awaitingRegistration = false
+            }
+            let awaitingWindow = isTakeoverEnabled && lease == nil && !needsExplicitActivation && awaitingAccessory == nil &&
+                (scenePhases[id] == nil || awaitingRegistration)
+            if hasLoadedTakeoverSettings && owner !== awaitingAccessory && !awaitingWindow {
+                owner.cancelDeviceAdmissionWait()
+                owner.session.permitDeviceReader()
+            } else if owner.deviceAdmissionWait == nil {
+                // Bound the entire selection, including a missing host, not
+                // just a registered accessory waiting for its external scene.
+                owner.deviceAdmissionWait = Task { [weak self, weak owner] in
+                    do { try await Task.sleep(for: .seconds(3)) } catch { return }
+                    guard let self, let owner, candidates[id] === owner, owner !== lease?.owner,
+                          owner.session.contentID == owner.contentID else { return }
+                    owner.session.permitDeviceReader()
+                    evaluate()
+                }
+            }
+        }
     }
 
     private func canTakeOver(_ owner: Candidate) -> Bool {
@@ -445,6 +516,7 @@ final class ReaderExternalDisplayCoordinator {
         setPhase(.preparing)
         let generation = lease.generation
         lease.viewport.didRender = { [weak self] in self?.displayReady(generation) }
+        lease.viewport.didFailInitialPresentation = { [weak self] in self?.fail(generation) }
         timeout?.cancel()
         timeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(15)) } catch { return }
@@ -459,13 +531,17 @@ final class ReaderExternalDisplayCoordinator {
         timeout?.cancel()
         timeout = nil
         lease.viewport.didRender = nil
+        lease.viewport.didFailInitialPresentation = nil
+        lease.owner.session.endNovelViewportPreparation(for: lease.viewport)
+        lease.viewport.finishPreparationTrace("first-frame")
         let hasDeviceInteraction = lease.owner.session.deviceInteraction != nil
         setPhase(hasDeviceInteraction ? .deviceInteraction : .external)
         lease.connection.conceal(!showsReaderOnExternalDisplay)
     }
 
     private func fail(_ generation: UUID) {
-        guard let lease, lease.generation == generation else { return }
+        guard let lease, lease.generation == generation, phase == .preparing,
+              !lease.owner.session.isClosed, lease.owner.session.contentID == lease.owner.contentID else { return }
         YamiboLog.reader.info("External reader preparation did not complete; restoring the device viewport")
         lease.owner.model?.externalDisplayFailure = true
         failedPresentation = lease.connection.sceneIdentifier.map {
@@ -475,16 +551,20 @@ final class ReaderExternalDisplayCoordinator {
         release(requireActivation: false)
     }
 
-    private func release(requireActivation: Bool) {
+    private func release(requireActivation: Bool, permitsDeviceReader: Bool = true) {
         needsExplicitActivation = requireActivation
         guard let lease else { return }
+        lease.viewport.finishPreparationTrace("released")
         self.lease = nil
         sessionID = nil
         timeout?.cancel()
         timeout = nil
         setPhase(.local)
         lease.connection.conceal(true)
-        if !lease.owner.session.isClosed { lease.owner.session.returnToDeviceViewport() }
+        if !lease.owner.session.isClosed, lease.owner.session.contentID == lease.owner.contentID {
+            lease.owner.session.returnToDeviceViewport()
+            if permitsDeviceReader { lease.owner.session.permitDeviceReader() }
+        }
         lease.connection.retireWindow()
     }
 

@@ -636,6 +636,55 @@ public final class NovelReaderViewModel {
 
     func invalidateViewportSettingsUpdates() { runtimeUpdates.invalidateViewportUpdates() }
 
+    func resetInitialViewportPreparationIfNeeded() {
+        loading.resetInitialViewportPreparationIfNeeded(hasPresentation: novelReaderPresentation != nil)
+    }
+
+    func prepareNovelViewport(
+        settings target: NovelReaderAppearanceSettings,
+        geometry: ReaderViewportGeometry,
+        viewport: ReaderViewportLifetime
+    ) async throws -> Bool {
+        guard !fontProtectionClosed, viewport.isCurrent, !Task.isCancelled else { return false }
+        if !preparation.hasStarted {
+            await fontLibrary.prepare()
+            guard !fontProtectionClosed, viewport.isCurrent, !Task.isCancelled else { return false }
+        }
+        let resolved = fontLibrary.resolving(target)
+        fontLibrary.protect(target.fontSelection, owner: fontProtectionID)
+        defer {
+            if !fontProtectionClosed, viewport.isCurrent, !Task.isCancelled {
+                fontLibrary.protect(settings.fontSelection, owner: fontProtectionID)
+            }
+        }
+        let layout: NovelReaderLayout
+        let usesPad: Bool
+        switch viewport.settingsTarget {
+        case .device:
+            usesPad = UIDevice.current.userInterfaceIdiom == .pad
+            layout = NovelReaderLayoutPresentation.layout(
+                containerSize: geometry.size,
+                safeAreaInsets: NovelReaderLayoutInsets(
+                    top: usesPad ? NovelReaderVerticalBandsPresentation().padVisibleStatusBarTopInset : geometry.insets.top,
+                    bottom: geometry.insets.bottom
+                ),
+                settings: resolved
+            )
+        case .external:
+            usesPad = geometry.supportsSpreads
+            layout = NovelReaderLayoutPresentation.externalLayout(geometry, settings: resolved)
+        }
+        let update = NovelReadingWorkflowRuntimeUpdate(settings: resolved, layout: layout, usesPadPresentation: usesPad)
+        if !preparation.hasStarted {
+            let prepared = try await runtimeUpdates.commitReaderViewport(update)
+            if prepared { viewport.tracePreparationStage("viewport-configured") }
+            return prepared
+        }
+        viewport.tracePreparationStage("layout-start")
+        defer { viewport.tracePreparationStage("layout-end") }
+        return try await runtimeUpdates.commitReaderViewport(update)
+    }
+
     func applyViewportSettings(_ newSettings: NovelReaderAppearanceSettings, viewport: ReaderViewportLifetime) async -> Bool {
         guard !fontProtectionClosed, viewport.isCurrent, !Task.isCancelled else { return false }
         let resolved = fontLibrary.resolving(newSettings)

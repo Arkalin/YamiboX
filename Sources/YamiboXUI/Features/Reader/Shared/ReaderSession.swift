@@ -21,6 +21,29 @@ private struct ReaderSessionPreparedContent {
     var threadPage: ForumThreadPage? = nil
 }
 
+@MainActor
+private final class NovelViewportPreparation {
+    let viewport: ReaderViewportLifetime
+    let contentID: UUID
+    let onFailure: @MainActor () -> Void
+    var settings: NovelReaderAppearanceSettings?
+    var geometry: ReaderViewportGeometry?
+    var task: Task<Void, Never>?
+    var revision: UInt64 = 0
+
+    init(viewport: ReaderViewportLifetime, contentID: UUID, onFailure: @escaping @MainActor () -> Void) {
+        self.viewport = viewport
+        self.contentID = contentID
+        self.onFailure = onFailure
+    }
+
+    func cancelRequest() {
+        revision &+= 1
+        task?.cancel()
+        task = nil
+    }
+}
+
 struct ReaderSessionDependencies: Sendable {
     let forum: ForumDependencies
     let mangaReaderOpenValidator: MangaReaderOpenValidator
@@ -55,7 +78,9 @@ final class ReaderSession: Identifiable {
     private(set) var contentID = UUID()
     private(set) var viewport = ReaderViewportLifetime()
     private(set) var externalViewport: ReaderViewportLifetime?
-    private var pendingSettingsViewport: ReaderViewportLifetime?
+    private(set) var permitsDeviceReader = false
+    private(set) var deviceViewportPreparationFailed = false
+    private var preparingViewport: ReaderViewportLifetime?
     var deviceInteraction: ReaderDeviceInteraction?
     private(set) var isSwitching = false
     private(set) var switchingTitle = L10n.string("reader.switching")
@@ -73,6 +98,7 @@ final class ReaderSession: Identifiable {
     @ObservationIgnored private var mangaReader: MangaReaderSessionState?
     @ObservationIgnored private var switchTask: Task<Void, Never>?
     @ObservationIgnored private var settingsTask: Task<Void, Never>?
+    @ObservationIgnored private var novelViewportPreparation: NovelViewportPreparation?
     @ObservationIgnored private var onFullScreenHandoff: (@MainActor () -> Void)?
 
     init(
@@ -105,7 +131,7 @@ final class ReaderSession: Identifiable {
         guard !isClosed else { return }
         guard !isActive else { return }
         isActive = true
-        observeSettings(for: viewport)
+        if externalViewport == nil { observeSettings(for: viewport) }
         lifecycle.didActivate(self, resumeRoute)
     }
 
@@ -142,6 +168,7 @@ final class ReaderSession: Identifiable {
         preparedMangaProjection = mangaProjection
         contentID = UUID()
         viewport = ReaderViewportLifetime()
+        permitsDeviceReader = false
         if let route = content.resumeRoute { remember(route) }
         isActive = true
         observeSettings(for: viewport)
@@ -173,9 +200,24 @@ final class ReaderSession: Identifiable {
         onTrackpadSensitivityChange: @escaping @MainActor (Double) -> Void,
         onFailure: @escaping @MainActor () -> Void
     ) -> ReaderViewportLifetime {
+        endNovelViewportPreparation(for: viewport)
         viewport.retire(capturingPosition: true)
+        permitsDeviceReader = false
         let next = ReaderViewportLifetime(settingsTarget: .external(resolution))
         externalViewport = next
+        switch content {
+        case let .novel(context):
+            _ = novelReader(for: context)
+            novelViewportPreparation = NovelViewportPreparation(viewport: next, contentID: contentID, onFailure: onFailure)
+            next.admitsPresentationCallbacks = { [weak self, weak next] in
+                guard let self, let next else { return false }
+                return !self.isPreparingPresentation(for: next)
+            }
+        case let .manga(context):
+            _ = mangaReader(for: context)
+        case .thread:
+            break
+        }
         observeSettings(for: next, preparing: true,
                         onTrackpadSensitivityChange: onTrackpadSensitivityChange, onFailure: onFailure)
         return next
@@ -183,10 +225,39 @@ final class ReaderSession: Identifiable {
 
     func returnToDeviceViewport() {
         guard let externalViewport else { return }
+        endNovelViewportPreparation(for: externalViewport)
         externalViewport.retire(capturingPosition: true)
+        novelReader?.model.resetInitialViewportPreparationIfNeeded()
         self.externalViewport = nil
         viewport = ReaderViewportLifetime()
+        settingsTask?.cancel()
+        preparingViewport = nil
+    }
+
+    func permitDeviceReader() {
+        guard !permitsDeviceReader, externalViewport == nil, !isClosed else { return }
+        permitsDeviceReader = true
+        // A new session hasn't mounted a model yet. A returning reader uses
+        // the same transaction as the external side, but with device geometry.
+        guard novelReader != nil || mangaReader != nil else { return }
+        let viewport = self.viewport
+        if novelReader != nil {
+            novelViewportPreparation = NovelViewportPreparation(viewport: viewport, contentID: contentID) { [weak self, weak viewport] in
+                guard let self, let viewport, self.viewport === viewport else { return }
+                deviceViewportPreparationFailed = true
+            }
+        }
         observeSettings(for: viewport, preparing: true)
+    }
+
+    var needsDeviceNovelGeometry: Bool {
+        permitsDeviceReader && preparingViewport === viewport && novelViewportPreparation?.viewport === viewport
+    }
+
+    func retryDeviceViewportPreparation() {
+        guard let preparation = novelViewportPreparation, preparation.viewport === viewport,
+              deviceViewportPreparationFailed else { return }
+        updateNovelViewportPreparation(preparation)
     }
 
     var leftPageButtonIsPrevious: Bool {
@@ -207,8 +278,61 @@ final class ReaderSession: Identifiable {
         return direction.directionalTapZone(for: .previous, swapped: swapped) == .previous
     }
 
-    func isPreparingSettings(for viewport: ReaderViewportLifetime) -> Bool {
-        pendingSettingsViewport === viewport
+    func isPreparingPresentation(for viewport: ReaderViewportLifetime) -> Bool {
+        preparingViewport === viewport
+    }
+
+    func reportNovelViewportGeometry(_ geometry: ReaderViewportGeometry?, for viewport: ReaderViewportLifetime) {
+        guard let preparation = novelViewportPreparation, preparation.viewport === viewport,
+              preparation.geometry != geometry else { return }
+        preparation.geometry = geometry
+        if geometry != nil { viewport.tracePreparationStage("geometry-ready") }
+        updateNovelViewportPreparation(preparation)
+    }
+
+    func endNovelViewportPreparation(for viewport: ReaderViewportLifetime) {
+        guard let preparation = novelViewportPreparation, preparation.viewport === viewport else { return }
+        preparation.cancelRequest()
+        novelViewportPreparation = nil
+        viewport.admitsPresentationCallbacks = nil
+        deviceViewportPreparationFailed = false
+    }
+
+    private func updateNovelViewportPreparation(_ preparation: NovelViewportPreparation) {
+        let viewport = preparation.viewport
+        preparation.cancelRequest()
+        viewport.invalidateFrameReport()
+        preparingViewport = viewport
+        deviceViewportPreparationFailed = false
+        novelReader?.model.invalidateViewportSettingsUpdates()
+        guard let settings = preparation.settings, let geometry = preparation.geometry else { return }
+        guard let model = novelReader?.model else { preparation.onFailure(); return }
+        model.resetInitialViewportPreparationIfNeeded()
+        let revision = preparation.revision
+        preparation.task = Task { [weak self, weak preparation] in
+            defer {
+                if preparation?.revision == revision { preparation?.task = nil }
+            }
+            guard let preparation, self?.ownsNovelViewportPreparation(preparation, revision: revision) == true else { return }
+            do {
+                let prepared = try await model.prepareNovelViewport(settings: settings, geometry: geometry, viewport: viewport)
+                guard let self, ownsNovelViewportPreparation(preparation, revision: revision) else { return }
+                guard prepared else { preparation.onFailure(); return }
+                preparingViewport = nil
+                if externalViewport !== viewport {
+                    endNovelViewportPreparation(for: viewport)
+                }
+            } catch {
+                guard let self, ownsNovelViewportPreparation(preparation, revision: revision) else { return }
+                preparation.onFailure()
+            }
+        }
+    }
+
+    private func ownsNovelViewportPreparation(_ preparation: NovelViewportPreparation, revision: UInt64) -> Bool {
+        !Task.isCancelled && !isClosed &&
+            novelViewportPreparation === preparation && (externalViewport ?? viewport) === preparation.viewport &&
+            preparation.viewport.isCurrent && contentID == preparation.contentID && preparation.revision == revision
     }
 
     private func observeSettings(
@@ -218,12 +342,12 @@ final class ReaderSession: Identifiable {
         onFailure: (@MainActor () -> Void)? = nil
     ) {
         settingsTask?.cancel()
-        pendingSettingsViewport = nil
+        preparingViewport = nil
         guard content.resumeRoute != nil else { return }
         let store = dependencies.settingsStore
         let changes = store.changes()
         if preparing {
-            pendingSettingsViewport = viewport
+            preparingViewport = viewport
             novelReader?.model.invalidateViewportSettingsUpdates()
         }
         settingsTask = Task { [weak self] in
@@ -247,7 +371,9 @@ final class ReaderSession: Identifiable {
                     onFailure()
                     return
                 }
-                self?.pendingSettingsViewport = nil
+                if self?.novelViewportPreparation?.viewport !== viewport {
+                    self?.preparingViewport = nil
+                }
             }
             for await _ in changes {
                 let snapshot = await store.load()
@@ -263,10 +389,19 @@ final class ReaderSession: Identifiable {
     ) async -> Bool {
         guard !Task.isCancelled, viewport.isCurrent, !isClosed else { return false }
         onTrackpadSensitivityChange?(settings.trackpadSensitivity(for: viewport.settingsTarget))
+        if let preparation = novelViewportPreparation, preparation.viewport === viewport {
+            let target = settings.novelSettings(for: viewport.settingsTarget)
+            if preparation.settings != target {
+                preparation.settings = target
+                viewport.tracePreparationStage("settings-ready")
+                updateNovelViewportPreparation(preparation)
+            }
+            return true
+        }
         if let model = novelReader?.model {
             return await model.applyViewportSettings(settings.novelSettings(for: viewport.settingsTarget), viewport: viewport)
         }
-        mangaReader?.model.applyViewportSettings(settings.mangaSettings(for: viewport.settingsTarget))
+        mangaReader?.model.applyViewportSettings(settings.mangaSettings(for: viewport.settingsTarget), target: viewport.settingsTarget)
         return true
     }
 
@@ -333,7 +468,9 @@ final class ReaderSession: Identifiable {
     private func retireReader(savingProgress: Bool) {
         deviceInteraction = nil
         settingsTask?.cancel()
-        pendingSettingsViewport = nil
+        endNovelViewportPreparation(for: viewport)
+        if let externalViewport { endNovelViewportPreparation(for: externalViewport) }
+        preparingViewport = nil
         viewport.retire(capturingPosition: savingProgress)
         externalViewport?.retire(capturingPosition: savingProgress)
         externalViewport = nil

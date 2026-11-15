@@ -8,6 +8,7 @@ struct NovelReaderView: View {
     @State private var attachmentID = UUID()
     @State private var verticalScrollCoordinator = NovelReaderVerticalScrollCoordinator()
     @State private var verticalRestore = NovelReaderVerticalRestoreCoordinator()
+    @State private var positionedExternalGeneration: UInt64?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.readingHandoffAllowed) private var allowsReadingHandoff
@@ -300,8 +301,14 @@ struct NovelReaderView: View {
             }
             .modifier(ReaderViewportRenderAcknowledgement(
                 ready: model.committedViewportLayout == currentLayout && !loadingOverlayPresentation.isPresented &&
-                    !model.novelReaderSurfaces.isEmpty,
-                viewport: viewport
+                    !model.novelReaderSurfaces.isEmpty &&
+                    (externalGeometry == nil || model.settings.readingMode != .vertical ||
+                        positionedExternalGeneration == model.novelReaderPresentation?.generation),
+                viewport: viewport,
+                revision: externalGeometry == nil ? 0 : model.novelReaderPresentation?.generation ?? 0,
+                isFrameCurrent: { revision in
+                    externalGeometry == nil || model.novelReaderPresentation?.generation == revision
+                }
             ))
             .sheet(item: $reader.searchPresentation) { presentation in
                 NovelReaderSearchView(
@@ -325,8 +332,11 @@ struct NovelReaderView: View {
                 reader.annotations.selectionController.clearSelection()
             }
             .onChange(of: model.initialPresentationPhase) { _, phase in
-                guard phase == .restoring else { return }
-                restoreVerticalPositionIfNeeded()
+                if phase == .restoring {
+                    restoreVerticalPositionIfNeeded()
+                } else if phase == .failed, viewport.accepts(attachmentID) {
+                    viewport.didFailInitialPresentation?()
+                }
             }
             .onChange(of: verticalRestore.verticalRestoreController.shouldConcealViewportContent) { _, concealed in
                 guard viewport.accepts(attachmentID) else { return }
@@ -717,10 +727,12 @@ struct NovelReaderView: View {
     }
 
     private func readerLayout(proxy: GeometryProxy, topInset: CGFloat, bottomInset: CGFloat) -> NovelReaderLayout {
-        NovelReaderLayoutPresentation.layout(
-            containerSize: externalGeometry?.size ?? proxy.size,
-            safeAreaInsets: NovelReaderLayoutInsets(top: topInset, leading: externalGeometry?.insets.leading ?? 0,
-                                                    bottom: bottomInset, trailing: externalGeometry?.insets.trailing ?? 0),
+        if let externalGeometry {
+            return NovelReaderLayoutPresentation.externalLayout(externalGeometry, settings: model.settings)
+        }
+        return NovelReaderLayoutPresentation.layout(
+            containerSize: proxy.size,
+            safeAreaInsets: NovelReaderLayoutInsets(top: topInset, bottom: bottomInset),
             settings: model.settings
         )
     }
@@ -1081,6 +1093,9 @@ struct NovelReaderView: View {
         model.completeInitialPresentationIfReady(
             isRestoringViewport: verticalRestore.verticalRestoreController.shouldConcealViewportContent
         )
+        if externalGeometry != nil {
+            positionedExternalGeneration = model.novelReaderPresentation?.generation
+        }
     }
 
     private func commitProgressSlider(_ targetIndex: Int) {

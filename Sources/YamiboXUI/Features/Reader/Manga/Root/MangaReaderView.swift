@@ -35,6 +35,10 @@ struct MangaReaderView: View {
     private var model: MangaReaderViewModel { reader.model }
     private var context: MangaLaunchContext { model.context }
     private var showsChrome: Bool { externalGeometry == nil && reader.isChromeVisible }
+    private var initialPresentationFailed: Bool {
+        if case .failed = model.presentation.state { return true }
+        return false
+    }
 
     private var admitsContentInput: Bool {
         viewport.acceptsInput(attachmentID) && model.hasCurrentPage && !reader.isDismissing && !hasControlBlockingSheet
@@ -173,6 +177,10 @@ struct MangaReaderView: View {
                                        content: identity)
             }
             .modifier(ReaderViewportRenderAcknowledgement(ready: model.hasCurrentPage, viewport: viewport))
+            .onChange(of: initialPresentationFailed, initial: true) { _, failed in
+                guard failed, viewport.acceptsGeometry else { return }
+                viewport.didFailInitialPresentation?()
+            }
             .ignoresSafeArea()
             .toolbar(.hidden, for: .navigationBar)
             .onChange(of: proxy.size, initial: true) { _, size in

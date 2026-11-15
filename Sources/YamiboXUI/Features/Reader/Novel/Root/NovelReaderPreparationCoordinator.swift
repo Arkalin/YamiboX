@@ -36,8 +36,8 @@ final class NovelReaderPreparationCoordinator {
     func setDisplayReporter(active: Bool) {
         hasDisplayReporter = active
         if !active {
-            // Detaching a window removes its display wait, not the session's
-            // data load. Only closing/refreshing cancels the preparation.
+            // Detaching only removes the display wait. The session separately
+            // invalidates initial work when it switches viewport ownership.
             finishDisplayWait()
             hasDisplayedInitialSurface = false
         }
@@ -94,6 +94,24 @@ final class NovelReaderPreparationCoordinator {
             return .updateLayout
         }
         return .load
+    }
+
+    func resetForViewportChange(hasPresentation: Bool) {
+        guard phase != .ready else { return }
+        sequence &+= 1
+        task?.cancel()
+        task = nil
+        finishDisplayWait(error: CancellationError())
+        layoutRevision &+= 1
+        if hasPresentation {
+            requestedLayout = layout
+            phase = .ready
+        } else {
+            hasStarted = false
+            requestedLayout = .zero
+            layout = .zero
+            phase = .idle
+        }
     }
 
     func runIfNeeded(_ operation: @escaping @MainActor (UInt64) async -> Void) async {

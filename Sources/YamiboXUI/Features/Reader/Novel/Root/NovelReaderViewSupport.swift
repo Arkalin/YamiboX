@@ -6,6 +6,19 @@ import YamiboXCore
 /// inputs so publishing new settings does not trigger a second pagination.
 @MainActor
 enum NovelReaderLayoutPresentation {
+    static func externalLayout(
+        _ geometry: ReaderViewportGeometry, settings: NovelReaderAppearanceSettings
+    ) -> NovelReaderLayout {
+        layout(
+            containerSize: geometry.size,
+            safeAreaInsets: NovelReaderLayoutInsets(
+                top: geometry.insets.top, leading: geometry.insets.leading,
+                bottom: geometry.insets.bottom, trailing: geometry.insets.trailing
+            ),
+            settings: settings
+        )
+    }
+
     static func layout(
         containerSize: CGSize,
         safeAreaInsets: NovelReaderLayoutInsets,

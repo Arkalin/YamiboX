@@ -24,6 +24,7 @@ final class NovelReaderRuntimeUpdateCoordinator {
 
     let preparation = NovelReaderPreparationCoordinator()
     var bootstrapSettings = NovelReaderAppearanceSettings()
+    @ObservationIgnored var initialViewportSettings: NovelReaderAppearanceSettings?
     var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
     private var activity = Activity.idle
     @ObservationIgnored private(set) var usesPadPresentation = false
@@ -144,6 +145,47 @@ final class NovelReaderRuntimeUpdateCoordinator {
         appearanceSettingsApplicationSequence &+= 1
         preparation.rollbackLayoutRequest(ifCurrent: layoutRequestSequence)
         if isApplyingAppearanceSettings { activity = .idle }
+    }
+
+    /// Apply the target geometry directly. Applying appearance to the old
+    /// window first would index the same document twice during handoff.
+    func commitReaderViewport(_ update: NovelReadingWorkflowRuntimeUpdate) async throws -> Bool {
+        guard initialPresentationPhase != .cancelled, !Task.isCancelled else { return false }
+        guard update.layout.novelTextBoxLayout(
+                settings: update.settings, usesPadPresentation: update.usesPadPresentation
+              ).isReadyForTextLayout else {
+            throw NovelTextLayoutFailure.textKitIndexing
+        }
+        if !preparation.hasStarted {
+            initialViewportSettings = update.settings
+            bootstrapSettings = update.settings
+            usesPadPresentation = update.usesPadPresentation
+            preparation.requestLayout(update.layout)
+            preparation.commitLayout(update.layout)
+            return true
+        }
+        guard initialPresentationPhase == .ready, reading.workflow()?.state != nil else {
+            throw NovelTextLayoutFailure.textKitIndexing
+        }
+        guard settings != update.settings || layout != update.layout ||
+                usesPadPresentation != update.usesPadPresentation else { return true }
+
+        let ownership = beginLayoutRequestOwnership()
+        let revision = preparation.requestLayout(update.layout)
+        defer { rollbackLayoutRequest(ifCurrent: revision, ownership: ownership) }
+        do {
+            guard let state = try await requestRuntimeUpdate(
+                settings: update.settings, layout: update.layout, usesPadPresentation: update.usesPadPresentation
+            ), !Task.isCancelled, layoutRequestOwnershipSequence == ownership,
+               layoutRequestSequence == revision else { return false }
+            usesPadPresentation = update.usesPadPresentation
+            preparation.commitLayout(update.layout)
+            bootstrapSettings = update.settings
+            reading.publish(state)
+            return true
+        } catch is CancellationError {
+            return false
+        }
     }
 
     func applyNovelTextAppearance(_ newSettings: NovelReaderAppearanceSettings) async {
