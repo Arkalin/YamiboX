@@ -833,6 +833,7 @@
 "manga.download.title" = "漫画下载";
 "manga.download.not_downloaded" = "未下载";
 "manga.double_tap_zoom" = "双击缩放";
+"manga.zoom_animation" = "缩放动画";
 "manga.page_turn_direction" = "翻页方向";
 "manga.page_turn_direction.left_to_right" = "从左向右";
 "manga.page_turn_direction.right_to_left" = "从右向左";

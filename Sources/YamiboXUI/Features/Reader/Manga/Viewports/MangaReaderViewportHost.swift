@@ -117,6 +117,7 @@ private struct MangaReaderLoadedContent: View {
                     imageLoader: imageLoader,
                     isChromeVisible: isChromeVisible,
                     zoomEnabled: settings.zoomEnabled,
+                    zoomAnimationEnabled: settings.zoomAnimationEnabled,
                     likedPageIDs: likedPageIDs,
                     onCurrentPageChange: onCurrentPageChange,
                     onVerticalBoundaryPull: onVerticalBoundaryPull,

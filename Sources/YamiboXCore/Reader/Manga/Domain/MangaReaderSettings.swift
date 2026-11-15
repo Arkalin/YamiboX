@@ -72,6 +72,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
     public var pageEdgeFillStyle: MangaPageEdgeFillStyle
     public var brightness: Double
     public var zoomEnabled: Bool
+    public var zoomAnimationEnabled: Bool
     /// Retained for persisted-settings compatibility; the viewport determines spreads.
     public var showsTwoPagesInLandscapeOnPad: Bool
     public var ignoresTopSafeArea: Bool
@@ -87,6 +88,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         pageEdgeFillStyle: MangaPageEdgeFillStyle = .black,
         brightness: Double = 1,
         zoomEnabled: Bool = true,
+        zoomAnimationEnabled: Bool = true,
         showsTwoPagesInLandscapeOnPad: Bool = true,
         ignoresTopSafeArea: Bool = true,
         directorySortOrder: MangaDirectorySortOrder = .ascending
@@ -100,6 +102,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         self.pageEdgeFillStyle = pageEdgeFillStyle
         self.brightness = brightness
         self.zoomEnabled = zoomEnabled
+        self.zoomAnimationEnabled = zoomAnimationEnabled
         self.showsTwoPagesInLandscapeOnPad = showsTwoPagesInLandscapeOnPad
         self.ignoresTopSafeArea = ignoresTopSafeArea
         self.directorySortOrder = directorySortOrder
@@ -115,6 +118,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         case pageEdgeFillStyle
         case brightness
         case zoomEnabled
+        case zoomAnimationEnabled
         case showsTwoPagesInLandscapeOnPad
         case ignoresTopSafeArea
         case directorySortOrder
@@ -131,6 +135,7 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         pageEdgeFillStyle = try container.decode(MangaPageEdgeFillStyle.self, forKey: .pageEdgeFillStyle)
         brightness = try container.decode(Double.self, forKey: .brightness)
         zoomEnabled = try container.decode(Bool.self, forKey: .zoomEnabled)
+        zoomAnimationEnabled = try container.decodeIfPresent(Bool.self, forKey: .zoomAnimationEnabled) ?? true
         showsTwoPagesInLandscapeOnPad = try container.decode(Bool.self, forKey: .showsTwoPagesInLandscapeOnPad)
         ignoresTopSafeArea = try container.decode(Bool.self, forKey: .ignoresTopSafeArea)
         directorySortOrder = try container.decode(MangaDirectorySortOrder.self, forKey: .directorySortOrder)

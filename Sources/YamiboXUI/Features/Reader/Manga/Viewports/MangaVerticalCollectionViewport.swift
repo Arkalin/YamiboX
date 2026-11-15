@@ -13,6 +13,7 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
     let imageLoader: MangaReaderPageImageLoader
     let isChromeVisible: Bool
     let zoomEnabled: Bool
+    let zoomAnimationEnabled: Bool
     let likedPageIDs: Set<String>
     let onCurrentPageChange: (Int) -> Void
     var onVerticalBoundaryPull: (ReaderPageBoundary) -> Void = { _ in }
@@ -456,9 +457,9 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             placementPageID = nil
             let factor = MangaVerticalCollectionZoomLayout.doubleTapTargetScale(from: view.normalizedZoomFactor)
             if factor == 1 {
-                view.resetZoom(animated: true)
+                view.resetZoom(animated: parent.zoomAnimationEnabled)
             } else {
-                view.zoom(factor: factor, centeredAt: point, animated: true)
+                view.zoom(factor: factor, centeredAt: point, animated: parent.zoomAnimationEnabled)
             }
         }
 

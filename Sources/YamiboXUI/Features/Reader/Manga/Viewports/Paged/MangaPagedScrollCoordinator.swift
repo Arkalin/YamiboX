@@ -11,7 +11,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     var parent: MangaPagedReaderViewport
     let informationState = ReaderAttachedInformationState()
     let pagingDriver = ReaderPagedPagingDriver()
-    let interactionRuntime = MangaPagedInteractionRuntime()
+    private(set) lazy var interactionRuntime = MangaPagedInteractionRuntime { [weak self] in
+        self?.parent.settings.zoomAnimationEnabled ?? true
+    }
     private var contentIdentity: MangaPagedReaderContentIdentity?
     private var surfaceInteractionIdentity: MangaPagedReaderSurfaceInteractionIdentity?
     private(set) var pageSurfaceInteractions: [String: MangaSurfaceAttachment] = [:]

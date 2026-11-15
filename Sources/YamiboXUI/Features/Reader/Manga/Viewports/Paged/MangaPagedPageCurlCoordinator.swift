@@ -9,7 +9,9 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
     var parent: MangaPagedPageCurlReaderViewport
     let informationState = ReaderAttachedInformationState()
     let callbackScheduler = SwiftUIViewUpdateCallbackScheduler()
-    let interactionRuntime = MangaPagedInteractionRuntime()
+    private(set) lazy var interactionRuntime = MangaPagedInteractionRuntime { [weak self] in
+        self?.parent.settings.zoomAnimationEnabled ?? true
+    }
     private var selectionResolver = MangaPagedPageCurlSelectionResolver()
     private var contentIdentity: MangaPagedReaderContentIdentity?
     private var currentSelectionIndex: Int?

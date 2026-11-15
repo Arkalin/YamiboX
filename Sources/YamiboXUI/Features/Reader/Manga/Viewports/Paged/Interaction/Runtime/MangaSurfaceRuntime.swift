@@ -24,6 +24,11 @@ final class MangaSurfaceRuntime {
     @ObservationIgnored private weak var nativeSurface: (any MangaNativeSurfaceControlling)?
     @ObservationIgnored private(set) var nativeIsInteracting = false
     @ObservationIgnored var permitsInteraction: () -> Bool = { true }
+    private let shouldAnimateZoom: () -> Bool
+
+    init(shouldAnimateZoom: @escaping () -> Bool = { true }) {
+        self.shouldAnimateZoom = shouldAnimateZoom
+    }
 
     func mount(_ instance: UUID) {
         guard mountingInstance != instance else { return }
@@ -121,6 +126,10 @@ final class MangaSurfaceRuntime {
     }
 
     func apply(_ result: MangaInteractionDecision, animated: Bool = true) {
-        nativeSurface?.applyNative(result, animated: animated)
+        if case .zoom = result {
+            nativeSurface?.applyNative(result, animated: animated && shouldAnimateZoom())
+        } else {
+            nativeSurface?.applyNative(result, animated: animated)
+        }
     }
 }

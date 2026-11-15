@@ -42,10 +42,15 @@ final class MangaPagedInteractionRuntime {
     private var surfaces: [SurfaceID: MangaSurfaceRuntime] = [:]
     private(set) var activeSurface: SurfaceID?
     private(set) var navigationGeneration: UInt64 = 0
+    private let shouldAnimateZoom: () -> Bool
+
+    init(shouldAnimateZoom: @escaping () -> Bool) {
+        self.shouldAnimateZoom = shouldAnimateZoom
+    }
 
     func surface(_ id: SurfaceID) -> MangaSurfaceRuntime {
         if let existing = surfaces[id] { return existing }
-        let surface = MangaSurfaceRuntime()
+        let surface = MangaSurfaceRuntime(shouldAnimateZoom: shouldAnimateZoom)
         surfaces[id] = surface
         return surface
     }

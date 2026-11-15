@@ -23,6 +23,7 @@ struct MangaReaderSettingsSections: View {
 
                 MangaReaderSettingsOtherSection(
                     zoomEnabled: $settings.zoomEnabled,
+                    zoomAnimationEnabled: $settings.zoomAnimationEnabled,
                     palette: palette,
                     onOpenPeripheralSettings: onOpenPeripheralSettings
                 )
@@ -96,6 +97,7 @@ struct MangaReaderSettingsPagingSection: View {
 
 private struct MangaReaderSettingsOtherSection: View {
     @Binding var zoomEnabled: Bool
+    @Binding var zoomAnimationEnabled: Bool
     let palette: MangaReaderSettingsPalette
     let onOpenPeripheralSettings: () -> Void
 
@@ -109,6 +111,14 @@ private struct MangaReaderSettingsOtherSection: View {
                 palette: palette,
                 isOn: $zoomEnabled
             )
+            if zoomEnabled {
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsToggleRow(
+                    title: L10n.string("manga.zoom_animation"),
+                    palette: palette,
+                    isOn: $zoomAnimationEnabled
+                )
+            }
             ReaderSettingsDivider(palette: palette)
             ReaderSettingsNavigationRow(
                 title: L10n.string("settings.peripheral_behavior"),
