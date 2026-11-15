@@ -37,6 +37,7 @@ struct SettingsPeripheralSections: View {
     @State private var capturingKeyboardAction: ReaderControlAction?
     @State private var showsKeyboardCaptureRejectedNotice = false
     @State private var keyboardCaptureRejectionDismissTask: Task<Void, Never>?
+    @State private var trackpadSensitivityDraft: Double?
     @Environment(\.appTheme) private var appTheme
 
     private var showsApplePencilSection: Bool {
@@ -151,6 +152,7 @@ struct SettingsPeripheralSections: View {
                 ))
                 .disabled(viewModel.isBusy)
                 if viewModel.externalDisplay.isEnabled {
+                    trackpadSensitivityRow
                     Picker(
                         L10n.string("settings.external_display.shortcut"),
                         selection: Binding(
@@ -170,6 +172,48 @@ struct SettingsPeripheralSections: View {
             cancelCaptureIfNeeded()
             cancelKeyboardCaptureIfNeeded()
         }
+    }
+
+    private var trackpadSensitivityRow: some View {
+        let title = L10n.string("settings.external_display.trackpad_sensitivity")
+        let percentage = (trackpadSensitivityDraft ?? viewModel.externalDisplay.trackpadSensitivity)
+            .formatted(.percent.precision(.fractionLength(0)))
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(percentage)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .accessibilityHidden(true)
+            Slider(
+                value: Binding(
+                    get: { trackpadSensitivityDraft ?? viewModel.externalDisplay.trackpadSensitivity },
+                    set: { value in
+                        if trackpadSensitivityDraft != nil {
+                            trackpadSensitivityDraft = value
+                        } else {
+                            viewModel.updateTrackpadSensitivity(value)
+                        }
+                    }
+                ),
+                in: ExternalDisplaySettings.trackpadSensitivityRange,
+                step: 0.1,
+                onEditingChanged: { isEditing in
+                    if isEditing {
+                        trackpadSensitivityDraft = viewModel.externalDisplay.trackpadSensitivity
+                    } else if let draft = trackpadSensitivityDraft {
+                        viewModel.updateTrackpadSensitivity(draft)
+                        trackpadSensitivityDraft = nil
+                    }
+                }
+            )
+            .tint(appTheme.controlAccent)
+            .accessibilityLabel(title)
+            .accessibilityValue(percentage)
+        }
+        .disabled(viewModel.isBusy)
     }
 
     private var connectionStatusRow: some View {

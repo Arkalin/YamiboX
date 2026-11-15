@@ -92,19 +92,31 @@ public enum ExternalDisplayShortcutAction: String, Codable, Hashable, CaseIterab
 }
 
 public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
+    public static let trackpadSensitivityRange = 0.5...2.0
+    public static let defaultTrackpadSensitivity = 1.0
+
     public var isEnabled: Bool
     public var shortcutAction: ExternalDisplayShortcutAction
+    public var trackpadSensitivity: Double
 
-    public init(isEnabled: Bool = true, shortcutAction: ExternalDisplayShortcutAction = .comments) {
+    public init(
+        isEnabled: Bool = true,
+        shortcutAction: ExternalDisplayShortcutAction = .comments,
+        trackpadSensitivity: Double = Self.defaultTrackpadSensitivity
+    ) {
         self.isEnabled = isEnabled
         self.shortcutAction = shortcutAction
+        self.trackpadSensitivity = trackpadSensitivity.isFinite
+            ? min(max(trackpadSensitivity, Self.trackpadSensitivityRange.lowerBound), Self.trackpadSensitivityRange.upperBound)
+            : Self.defaultTrackpadSensitivity
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             isEnabled: try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true,
-            shortcutAction: try container.decodeIfPresent(ExternalDisplayShortcutAction.self, forKey: .shortcutAction) ?? .comments
+            shortcutAction: try container.decodeIfPresent(ExternalDisplayShortcutAction.self, forKey: .shortcutAction) ?? .comments,
+            trackpadSensitivity: (try? container.decode(Double.self, forKey: .trackpadSensitivity)) ?? Self.defaultTrackpadSensitivity
         )
     }
 }

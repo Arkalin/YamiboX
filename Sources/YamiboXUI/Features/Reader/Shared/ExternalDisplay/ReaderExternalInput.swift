@@ -25,6 +25,7 @@ final class ReaderExternalInput {
     private(set) var location = CGPoint.zero
     private(set) var isVisible = false
     @ObservationIgnored private var bounds = CGRect.zero
+    @ObservationIgnored var sensitivity = CGFloat(ExternalDisplaySettings.defaultTrackpadSensitivity)
     private(set) var isEnabled = false
     @ObservationIgnored private var idleTask: Task<Void, Never>?
     @ObservationIgnored private var touching = false
@@ -73,7 +74,8 @@ final class ReaderExternalInput {
 
     func move(_ delta: CGPoint, epoch: UUID) {
         guard admits(epoch) else { return }
-        location = clamped(CGPoint(x: location.x + delta.x * 1.6, y: location.y + delta.y * 1.6))
+        let gain = 1.6 * sensitivity
+        location = clamped(CGPoint(x: location.x + delta.x * gain, y: location.y + delta.y * gain))
     }
 
     func end(epoch: UUID) {

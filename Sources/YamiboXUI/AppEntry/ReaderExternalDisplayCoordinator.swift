@@ -71,16 +71,21 @@ final class ReaderExternalDisplayCoordinator {
         settingsObservation = Task { [weak self] in
             let initial = await settingsStore.load()
             guard !Task.isCancelled else { return }
-            self?.setTakeoverEnabled(initial.system.externalDisplay.isEnabled)
+            self?.applySettings(initial.system.externalDisplay)
             for await _ in changes {
                 let settings = await settingsStore.load()
                 guard !Task.isCancelled, let self else { return }
-                setTakeoverEnabled(settings.system.externalDisplay.isEnabled)
+                applySettings(settings.system.externalDisplay)
             }
         }
     }
 
     deinit { settingsObservation?.cancel() }
+
+    private func applySettings(_ settings: ExternalDisplaySettings) {
+        pointer.sensitivity = CGFloat(settings.trackpadSensitivity)
+        setTakeoverEnabled(settings.isEnabled)
+    }
 
     private func setTakeoverEnabled(_ enabled: Bool) {
         guard isTakeoverEnabled != enabled else { return }

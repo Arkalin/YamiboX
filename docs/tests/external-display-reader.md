@@ -13,6 +13,8 @@
 
 证据：`/tmp/yamibox-display-takeover-evidence/`。未实测有线真机、AirPlay 或 iOS 18–26 的外屏行为。
 
+同一模拟器的触控板灵敏度回归：旧配置显示 100%，拖到 50% 后关开接管及冷启动均保留。对 TVOut 执行相同的 80 点单指横向拖动，光标在 50% 和 200% 时分别移动约 63 和 253 像素。证据：`/tmp/yamibox-trackpad-sensitivity-evidence/`。
+
 ## 四区控制验收清单
 
 - iPhone 竖屏及 iPad 横竖屏下，上方均为触控板，底部三个按钮可分别点按；检查大字号、安全区和从触控板滑入按钮区域时不误触。iPhone 沿用 App 只支持竖屏的配置。

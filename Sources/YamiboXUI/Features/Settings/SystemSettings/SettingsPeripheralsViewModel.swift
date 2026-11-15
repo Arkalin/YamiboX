@@ -56,6 +56,13 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         }
     }
 
+    func updateTrackpadSensitivity(_ sensitivity: Double) {
+        guard externalDisplay.trackpadSensitivity != sensitivity else { return }
+        persistSettings(\.externalDisplay.trackpadSensitivity, to: sensitivity) {
+            $0.system.externalDisplay.trackpadSensitivity = sensitivity
+        }
+    }
+
     // MARK: - Apple Pencil
 
     func updateApplePencilPageTurnEnabled(_ isEnabled: Bool) {
