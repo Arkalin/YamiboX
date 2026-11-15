@@ -40,6 +40,10 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             self?.onInformationZoomChange?(MangaPageZoomPolicy.isActive(snapshot.factor) || snapshot.isInteracting)
             self?.publishNativeState()
         }
+        onInteractionEnd = { [weak self] in
+            guard let self else { return }
+            self.runtime?.nativeInteractionDidEnd(instance: self.instance)
+        }
         onViewportSizeChange = { [weak self] size, previous in
             guard let self else { return }
             self.updateGeometry(self.geometry.replacingNativeViewport(size), preserving: previous)
@@ -111,6 +115,13 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
               normalizedZoomFactor > 1.001 else { return nil }
         let rect = snapshot.visibleRect
         return (CGPoint(x: rect.midX / baseContentSize.width, y: rect.midY / baseContentSize.height), normalizedZoomFactor)
+    }
+
+    var keepsPageFixedDuringImageInteraction: Bool {
+        // The paging recognizer needs UIKit's current state, not the last
+        // transform delivered through a representable update.
+        MangaPageZoomPolicy.isActive(normalizedZoomFactor) || isZooming || isZoomAnimating || isZoomBouncing ||
+            isDragging || isDecelerating || isScrollAnimating || isDrivenTransform
     }
 
     func remoteImageHit(at point: CGPoint, in window: UIWindow) -> Bool {

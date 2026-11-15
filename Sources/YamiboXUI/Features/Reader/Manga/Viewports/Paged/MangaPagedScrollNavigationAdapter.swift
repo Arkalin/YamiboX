@@ -56,7 +56,8 @@ final class MangaPagedScrollNavigationAdapter {
         input.install(input.navigationPan, in: collection)
         collection.shouldBeginPanGesture = { [weak self, weak collection] pan in
             guard let self, let collection, let coordinator = self.coordinator,
-                  !coordinator.parent.settings.pagedTurnStyle.usesDiscretePageTurns else { return false }
+                  !coordinator.parent.settings.pagedTurnStyle.usesDiscretePageTurns,
+                  !coordinator.slideImageOwnsPan else { return false }
             return self.navigationStep(for: pan, in: collection) != nil
         }
     }
@@ -99,7 +100,7 @@ final class MangaPagedScrollNavigationAdapter {
                     }
                 }
             } else {
-                _ = coordinator.pagingDriver.animateAdjacentSelection(for: step.readerTapZone, in: collection, inputs: inputs)
+                coordinator.animateAdjacentSelection(for: step, targetSpreadIndex: target, in: collection, inputs: inputs)
             }
         case .toggleChrome:
             coordinator.callbackScheduler.publish { [weak coordinator] in coordinator?.parent.onTap() }
@@ -116,11 +117,8 @@ final class MangaPagedScrollNavigationAdapter {
     }
 
     func currentSurface(in collection: UICollectionView) -> MangaSurfaceRuntime? {
-        guard let coordinator, let index = coordinator.currentSpreadIndex(in: collection),
-              let spread = coordinator.parent.plan.spread(at: index) else { return nil }
-        return coordinator.parent.plan.usesTwoPageSpread
-            ? coordinator.spreadSurfaceInteractions[spread.id]?.runtime
-            : coordinator.pageSurfaceInteractions[spread.preferredPage.id]?.runtime
+        guard let coordinator, let index = coordinator.currentSpreadIndex(in: collection) else { return nil }
+        return coordinator.surface(forSpreadAt: index)
     }
 
     private func surfaceLocation(_ point: CGPoint, in collection: UICollectionView) -> CGPoint {

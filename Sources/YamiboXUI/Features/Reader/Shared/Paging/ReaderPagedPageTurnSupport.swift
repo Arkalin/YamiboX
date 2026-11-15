@@ -433,6 +433,26 @@ final class ReaderPagedPagingDriver {
         endPageTurnVisuals(in: collectionView, inputs: inputs)
     }
 
+    /// Animates a target already resolved by the caller's layout. Unlike a
+    /// selection request, this doesn't queue a retry or publish selection.
+    func slideToResolvedOffset(
+        _ offsetX: CGFloat,
+        selectionIndex: Int,
+        in collectionView: UICollectionView,
+        inputs: ReaderPagedPagingInputs,
+        onFinished: @escaping (Bool) -> Void
+    ) {
+        pendingSelectionIndex = nil
+        cancelSlideTransition(in: collectionView, inputs: inputs)
+        startSlide(
+            to: selectionIndex,
+            offset: CGPoint(x: offsetX, y: collectionView.contentOffset.y),
+            in: collectionView,
+            inputs: inputs,
+            onFinished: onFinished
+        )
+    }
+
     func updateContentAndRequestSelectionScroll(
         in collectionView: UICollectionView,
         didChangeContentIdentity: Bool,
@@ -767,27 +787,15 @@ final class ReaderPagedPagingDriver {
             break // Handled by the immediate-placement path above.
         case .slide, .pageCurl:
             pendingSelectionIndex = nil
-            guard abs(collectionView.contentOffset.x - targetOffset.x) > 0.5 else {
-                collectionView.setContentOffset(targetOffset, animated: false)
-                publishSelectionIfNeeded(selectionIndex, inputs: inputs)
-                onTransitionCompletion?()
-                return true
-            }
-            let transitionID = UUID()
-            slideTransition = (transitionID, inputs.selectionIndex, selectionIndex, collectionView.bounds.size)
-            collectionView.setContentOffset(collectionView.contentOffset, animated: false)
-            beginPageTurnVisuals(in: collectionView, inputs: inputs)
-            slideAnimation = ReaderPagedSlideAnimation(in: collectionView, targetOffset: targetOffset) {
+            startSlide(to: selectionIndex, offset: targetOffset, in: collectionView, inputs: inputs) {
                 [weak self, weak collectionView] completed in
-                guard let self, let collectionView, self.slideTransition?.id == transitionID else { return }
-                self.cancelSlideTransition(in: collectionView, inputs: inputs)
+                guard let self, let collectionView else { return }
                 if completed {
                     self.publishSelectionIfNeeded(selectionIndex, inputs: inputs)
                 } else if collectionView.window != nil, !collectionView.isDragging {
                     self.requestSelectionScroll(in: collectionView, animated: false, inputs: inputs)
                 }
             }
-            applyPageTurnVisuals(in: collectionView, inputs: inputs)
             onTransitionCompletion?()
         case .quickFade:
             isPerformingQuickFadeTransition = true
@@ -828,6 +836,32 @@ final class ReaderPagedPagingDriver {
             }
         }
         return true
+    }
+
+    private func startSlide(
+        to selectionIndex: Int,
+        offset targetOffset: CGPoint,
+        in collectionView: UICollectionView,
+        inputs: ReaderPagedPagingInputs,
+        onFinished: @escaping (Bool) -> Void
+    ) {
+        guard abs(collectionView.contentOffset.x - targetOffset.x) > 0.5 else {
+            collectionView.setContentOffset(targetOffset, animated: false)
+            onFinished(true)
+            return
+        }
+        let transitionID = UUID()
+        slideTransition = (transitionID, inputs.selectionIndex, selectionIndex, collectionView.bounds.size)
+        collectionView.setContentOffset(collectionView.contentOffset, animated: false)
+        guard slideTransition?.id == transitionID else { return }
+        beginPageTurnVisuals(in: collectionView, inputs: inputs)
+        slideAnimation = ReaderPagedSlideAnimation(in: collectionView, targetOffset: targetOffset) {
+            [weak self, weak collectionView] completed in
+            guard let self, let collectionView, self.slideTransition?.id == transitionID else { return }
+            self.cancelSlideTransition(in: collectionView, inputs: inputs)
+            onFinished(completed)
+        }
+        applyPageTurnVisuals(in: collectionView, inputs: inputs)
     }
 
     private func horizontalPanDelta(

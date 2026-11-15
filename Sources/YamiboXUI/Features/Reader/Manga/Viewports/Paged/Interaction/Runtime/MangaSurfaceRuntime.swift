@@ -5,6 +5,7 @@ import Observation
 protocol MangaNativeSurfaceControlling: AnyObject {
     func applyNative(_ decision: MangaInteractionDecision, animated: Bool)
     func cancelNative(reset: Bool)
+    var keepsPageFixedDuringImageInteraction: Bool { get }
     var normalizedFocus: (point: CGPoint, factor: CGFloat)? { get }
     func doubleTapFromTrackpad(at windowPoint: CGPoint)
     func remoteTransform(at windowPoint: CGPoint, canZoom: Bool,
@@ -24,6 +25,7 @@ final class MangaSurfaceRuntime {
     @ObservationIgnored private weak var nativeSurface: (any MangaNativeSurfaceControlling)?
     @ObservationIgnored private(set) var nativeIsInteracting = false
     @ObservationIgnored var permitsInteraction: () -> Bool = { true }
+    @ObservationIgnored var onNativeInteractionEnd: (() -> Void)?
     private let shouldAnimateZoom: () -> Bool
 
     init(shouldAnimateZoom: @escaping () -> Bool = { true }) {
@@ -57,6 +59,15 @@ final class MangaSurfaceRuntime {
     }
 
     func isMounted(_ instance: UUID) -> Bool { mountingInstance == instance }
+
+    var keepsPageFixedDuringImageInteraction: Bool {
+        nativeSurface?.keepsPageFixedDuringImageInteraction == true
+    }
+
+    func nativeInteractionDidEnd(instance: UUID) {
+        guard isMounted(instance) else { return }
+        onNativeInteractionEnd?()
+    }
 
     var hiddenEdges: Set<MangaPagedImageSurfaceHorizontalEdge> { geometry.hiddenEdges(transform) }
     var isManipulating: Bool { nativeIsInteracting }

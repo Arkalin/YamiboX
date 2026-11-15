@@ -8,7 +8,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
     var attachedInformation = ReaderAttachedInformationConfiguration()
     static func dismantleUIView(_ view: UICollectionView, coordinator: MangaPagedScrollCoordinator) {
         coordinator.stopImagePrefetch()
-        coordinator.stopPagingSettlementObservation()
+        coordinator.detachViewport()
         coordinator.pagingDriver.cancelSlideTransition(in: view, inputs: coordinator.pagingInputs)
         (view as? MangaPagedReaderCollectionView)?.shouldBeginPanGesture = nil
         (view as? MangaPagedReaderCollectionView)?.onLayoutSubviews = nil
@@ -68,6 +68,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
             forCellWithReuseIdentifier: MangaPagedScrollCoordinator.reuseIdentifier
         )
         let coordinator = context.coordinator
+        coordinator.attach(to: collectionView)
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
             guard let coordinator, let collectionView else { return }
             // Layout can run inside the SwiftUI render commit; defer callbacks
@@ -76,6 +77,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
                 coordinator.realignViewportAfterBoundsChangeIfNeeded(in: collectionView)
                 coordinator.applyInitialPlacementIfNeeded(in: collectionView)
                 coordinator.applyViewportPlacementIfNeeded(in: collectionView)
+                coordinator.reconcileSlideAfterLayout()
             }
         }
         context.coordinator.gestures.install(in: collectionView)
