@@ -98,6 +98,10 @@ final class ReaderExternalInput {
         if touching || scrollRelay?.isMoving == true { cancel() }
     }
 
+    func cancelForTrackpadResize() {
+        cancel()
+    }
+
     func begin() -> UUID {
         if isEnabled {
             scrollRelay?.interrupt()
@@ -328,14 +332,25 @@ struct ReaderExternalCursor: View {
     }
 }
 
+struct ReaderDeviceTrackpadLayout {
+    let trackpadHeight: CGFloat
+    let controlsHeight: CGFloat
+
+    init(height: CGFloat, trackpadRatio: Double) {
+        trackpadHeight = height * CGFloat(ExternalDisplaySettings.clampTrackpadHeightRatio(trackpadRatio))
+        controlsHeight = height - trackpadHeight
+    }
+}
+
 struct ReaderDeviceTrackpad: View {
     let input: ReaderExternalInput
+    let heightRatio: Double
     let showsControls: Bool
     let onMenu: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
-            let height = proxy.size.height / 2
+            let layout = ReaderDeviceTrackpadLayout(height: proxy.size.height, trackpadRatio: heightRatio)
             VStack(spacing: 0) {
                 ZStack(alignment: .top) {
                     if input.textMenu == nil {
@@ -349,7 +364,7 @@ struct ReaderDeviceTrackpad: View {
                             .id(menu.id)
                     }
                 }
-                .frame(height: height)
+                .frame(height: layout.trackpadHeight)
 
                 Group {
                     if input.kind.isVertical {
@@ -361,11 +376,12 @@ struct ReaderDeviceTrackpad: View {
                         .id(input.gestureRegionLayout)
                     }
                 }
-                .frame(height: height)
+                .frame(height: layout.controlsHeight)
                 .overlay(alignment: .top) { separator.frame(height: 1) }
             }
             .disabled(!input.isEnabled)
             .readerChromeFadeVisibility(showsControls, hiddenOpacity: 0.25)
+            .onChange(of: proxy.size) { input.cancelForTrackpadResize() }
         }
         .environment(\.colorScheme, .dark)
         .background(Color(white: 0.08).ignoresSafeArea())
