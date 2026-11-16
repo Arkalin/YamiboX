@@ -5,6 +5,7 @@ struct SettingsReadingView: View {
     let viewModel: SettingsReadingViewModel
     let peripheralsViewModel: SettingsPeripheralsViewModel
     var peripheralInput: ReaderPeripheralInputManager?
+    @State private var showsTouchAreaPreview = false
 
     var body: some View {
         Form {
@@ -68,10 +69,15 @@ struct SettingsReadingView: View {
                 )
                 .disabled(viewModel.isBusy)
             }
-            SettingsPeripheralSections(viewModel: peripheralsViewModel, peripheralInput: peripheralInput)
+            SettingsPeripheralSections(viewModel: peripheralsViewModel, peripheralInput: peripheralInput) {
+                showsTouchAreaPreview = true
+            }
         }
         .navigationTitle(L10n.string("settings.section.reading"))
         .navigationBarTitleDisplayMode(.inline)
+        .fullScreenCover(isPresented: $showsTouchAreaPreview) {
+            ExternalDisplayTouchAreaPreview(viewModel: peripheralsViewModel)
+        }
         .failureAlert(
             L10n.string("common.operation_failed"),
             message: viewModel.errorMessage,
@@ -86,7 +92,7 @@ struct SettingsReadingView: View {
 
     private var errorIsPresented: Binding<Bool> {
         .presentation(
-            isPresented: { viewModel.errorMessage != nil && !viewModel.isEditingCommentRule },
+            isPresented: { !showsTouchAreaPreview && viewModel.errorMessage != nil && !viewModel.isEditingCommentRule },
             clearOnDismiss: { viewModel.errorMessage = nil }
         )
     }

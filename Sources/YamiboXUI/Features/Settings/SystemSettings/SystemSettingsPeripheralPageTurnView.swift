@@ -5,18 +5,24 @@ import UIKit
 struct SystemSettingsPeripheralPageTurnView: View {
     let viewModel: SettingsPeripheralsViewModel
     var peripheralInput: ReaderPeripheralInputManager?
+    @State private var showsTouchAreaPreview = false
 
     var body: some View {
         Form {
-            SettingsPeripheralSections(viewModel: viewModel, peripheralInput: peripheralInput)
+            SettingsPeripheralSections(viewModel: viewModel, peripheralInput: peripheralInput) {
+                showsTouchAreaPreview = true
+            }
         }
         .navigationTitle(L10n.string("settings.peripheral_behavior"))
+        .fullScreenCover(isPresented: $showsTouchAreaPreview) {
+            ExternalDisplayTouchAreaPreview(viewModel: viewModel)
+        }
         .failureAlert(
             L10n.string("common.operation_failed"),
             message: viewModel.errorMessage,
             details: viewModel.errorDetails,
             isPresented: .presentation(
-                isPresented: { viewModel.errorMessage != nil },
+                isPresented: { !showsTouchAreaPreview && viewModel.errorMessage != nil },
                 clearOnDismiss: { viewModel.errorMessage = nil }
             )
         ) {
@@ -30,6 +36,7 @@ struct SystemSettingsPeripheralPageTurnView: View {
 struct SettingsPeripheralSections: View {
     let viewModel: SettingsPeripheralsViewModel
     var peripheralInput: ReaderPeripheralInputManager?
+    let showTouchAreaPreview: () -> Void
     @State private var showsApplePencilHelp = false
     @State private var capturingAction: ReaderControlAction?
     @State private var showsCaptureRejectedNotice = false
@@ -153,6 +160,15 @@ struct SettingsPeripheralSections: View {
                 .disabled(viewModel.isBusy)
                 if viewModel.externalDisplay.isEnabled {
                     trackpadSensitivityRow
+                    Button(action: showTouchAreaPreview) {
+                        SystemSettingsRow(
+                            title: L10n.string("settings.external_display.touch_area"),
+                            value: viewModel.externalDisplay.trackpadHeightRatio.formatted(.percent.precision(.fractionLength(0))),
+                            showsChevronAfterValue: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.isBusy)
                 }
             }
         }

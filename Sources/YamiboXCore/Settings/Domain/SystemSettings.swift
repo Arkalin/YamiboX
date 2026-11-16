@@ -76,16 +76,26 @@ public struct ApplePencilPageTurnSettings: Codable, Hashable, Sendable {
 public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
     public static let trackpadSensitivityRange = 0.5...3.5
     public static let defaultTrackpadSensitivity = 1.5
+    public static let trackpadHeightRatioRange = 0.33...0.66
+    public static let defaultTrackpadHeightRatio = 0.5
 
     public var isEnabled: Bool
     public var trackpadSensitivity: Double
+    public var trackpadHeightRatio: Double
 
     public init(
         isEnabled: Bool = true,
-        trackpadSensitivity: Double = Self.defaultTrackpadSensitivity
+        trackpadSensitivity: Double = Self.defaultTrackpadSensitivity,
+        trackpadHeightRatio: Double = Self.defaultTrackpadHeightRatio
     ) {
         self.isEnabled = isEnabled
         self.trackpadSensitivity = Self.clampTrackpadSensitivity(trackpadSensitivity)
+        self.trackpadHeightRatio = Self.clampTrackpadHeightRatio(trackpadHeightRatio)
+    }
+
+    public static func clampTrackpadHeightRatio(_ value: Double) -> Double {
+        guard value.isFinite else { return defaultTrackpadHeightRatio }
+        return min(max(value, trackpadHeightRatioRange.lowerBound), trackpadHeightRatioRange.upperBound)
     }
 
     static func clampTrackpadSensitivity(_ value: Double) -> Double {
@@ -97,7 +107,8 @@ public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
             isEnabled: try container.decodeIfPresent(Bool.self, forKey: .isEnabled) ?? true,
-            trackpadSensitivity: (try? container.decode(Double.self, forKey: .trackpadSensitivity)) ?? Self.defaultTrackpadSensitivity
+            trackpadSensitivity: (try? container.decode(Double.self, forKey: .trackpadSensitivity)) ?? Self.defaultTrackpadSensitivity,
+            trackpadHeightRatio: (try? container.decode(Double.self, forKey: .trackpadHeightRatio)) ?? Self.defaultTrackpadHeightRatio
         )
     }
 }

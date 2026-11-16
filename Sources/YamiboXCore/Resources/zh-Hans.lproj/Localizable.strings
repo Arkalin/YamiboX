@@ -1247,6 +1247,9 @@
 "settings.external_display" = "显示器";
 "settings.external_display.enabled" = "接管显示器";
 "settings.external_display.trackpad_sensitivity" = "触控板灵敏度";
+"settings.external_display.touch_area" = "触控区域";
+"settings.external_display.touch_area.controls" = "翻页／滚动区域";
+"settings.external_display.touch_area.handle" = "调整触控板占比";
 "settings.favorite_background" = "收藏页背景";
 "settings.favorite_background.custom" = "自定义";
 "settings.favorite_background.default" = "默认";

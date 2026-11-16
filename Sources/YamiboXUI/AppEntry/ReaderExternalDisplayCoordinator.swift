@@ -52,6 +52,7 @@ final class ReaderExternalDisplayCoordinator {
 
     private(set) var phase = Phase.local
     private(set) var sessionID: UUID?
+    private(set) var trackpadHeightRatio = ExternalDisplaySettings.defaultTrackpadHeightRatio
     private var isDeviceMenuPresented = false
     @ObservationIgnored private(set) var deviceFrameDuringPreparation: UIView?
     let pointer = ReaderExternalInput()
@@ -82,16 +83,25 @@ final class ReaderExternalDisplayCoordinator {
         settingsObservation = Task { [weak self] in
             let initial = await settingsStore.load()
             guard !Task.isCancelled else { return }
-            self?.setTakeoverEnabled(initial.system.externalDisplay.isEnabled)
+            self?.applyDisplaySettings(initial.system.externalDisplay)
             for await _ in changes {
                 let settings = await settingsStore.load()
                 guard !Task.isCancelled, let self else { return }
-                setTakeoverEnabled(settings.system.externalDisplay.isEnabled)
+                applyDisplaySettings(settings.system.externalDisplay)
             }
         }
     }
 
     deinit { settingsObservation?.cancel() }
+
+    private func applyDisplaySettings(_ settings: ExternalDisplaySettings) {
+        let ratio = settings.trackpadHeightRatio
+        if trackpadHeightRatio != ratio {
+            pointer.cancelForTrackpadResize()
+            trackpadHeightRatio = ratio
+        }
+        setTakeoverEnabled(settings.isEnabled)
+    }
 
     private func setTakeoverEnabled(_ enabled: Bool) {
         guard !hasLoadedTakeoverSettings || isTakeoverEnabled != enabled else { return }

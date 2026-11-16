@@ -57,6 +57,13 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         }
     }
 
+    func updateTrackpadHeightRatio(_ ratio: Double) async -> Bool {
+        let ratio = ExternalDisplaySettings.clampTrackpadHeightRatio(ratio)
+        return await persistSettings(\.externalDisplay.trackpadHeightRatio, to: ratio) {
+            $0.system.externalDisplay.trackpadHeightRatio = ratio
+        }.value
+    }
+
     // MARK: - Apple Pencil
 
     func updateApplePencilPageTurnEnabled(_ isEnabled: Bool) {
