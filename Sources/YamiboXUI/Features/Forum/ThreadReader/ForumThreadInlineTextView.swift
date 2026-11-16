@@ -63,21 +63,39 @@ struct ForumThreadInlineTextView: View {
         let syntheticItalics = attributedText.characters.count <= Self.maxSyntheticItalicCharacters
             && attributedText.runs.contains(where: { $0[ForumThreadItalicKey.self] == true })
         useSyntheticItalics = syntheticItalics
+        var runs: [PreparedRun] = []
         var urls: Set<URL> = []
+        var ordinaryStart = attributedText.startIndex
         // Rebuilt with the input value, not image playback state. Static text
         // slices and modifiers must not be reconstructed for every GIF frame.
-        preparedRuns = attributedText.runs.map { run in
-            if let inline = run[ForumThreadInlineImageKey.self] {
+        for run in attributedText.runs {
+            let inline = run[ForumThreadInlineImageKey.self]
+            let italic = run[ForumThreadItalicKey.self] == true
+            let offset = run[ForumThreadBaselineOffsetKey.self] ?? 0
+            guard inline != nil || italic || offset != 0 else { continue }
+
+            if ordinaryStart < run.range.lowerBound {
+                let span = attributedText[ordinaryStart ..< run.range.lowerBound]
+                runs.append(.text(Text(AttributedString(span))))
+            }
+            ordinaryStart = run.range.upperBound
+            if let inline {
                 urls.insert(inline.url)
-                return .image(inline, count: attributedText[run.range].characters.count)
+                runs.append(.image(inline, count: attributedText[run.range].characters.count))
+            } else {
+                let text = Text(AttributedString(attributedText[run.range])).baselineOffset(offset)
+                let styled = italic
+                    ? (syntheticItalics ? text.customAttribute(ForumThreadItalicAttribute()) : text.italic())
+                    : text
+                runs.append(.text(styled))
             }
-            let text = Text(AttributedString(attributedText[run.range]))
-                .baselineOffset(run[ForumThreadBaselineOffsetKey.self] ?? 0)
-            if run[ForumThreadItalicKey.self] == true {
-                return .text(syntheticItalics ? text.customAttribute(ForumThreadItalicAttribute()) : text.italic())
-            }
-            return .text(text)
         }
+        if runs.isEmpty {
+            runs.append(.text(Text(attributedText)))
+        } else if ordinaryStart < attributedText.endIndex {
+            runs.append(.text(Text(AttributedString(attributedText[ordinaryStart...]))))
+        }
+        preparedRuns = runs
         imageURLs = urls.sorted { $0.absoluteString < $1.absoluteString }
     }
 
@@ -110,8 +128,13 @@ struct ForumThreadInlineTextView: View {
     }
 
     private func composedText() -> Text {
-        preparedRuns.reduce(Text(verbatim: "")) { result, run in
-            let part: Text
+        if preparedRuns.count == 1, case let .text(text) = preparedRuns[0] {
+            return text
+        }
+
+        var parts: [Text] = []
+        parts.reserveCapacity(preparedRuns.count)
+        for run in preparedRuns {
             switch run {
             case let .image(inline, count):
                 let image = images[inline.url] ?? Self.sizedImage(UIImage(systemName: "face.smiling") ?? UIImage(), dimension: imageSize)
@@ -119,14 +142,29 @@ struct ForumThreadInlineTextView: View {
                     .accessibilityLabel(Text(verbatim: inline.altText ?? L10n.string("forum.thread.image")))
                     .baselineOffset(-imageSize / 7)
                 // Adjacent identical smileys coalesce into one attributed run.
-                part = (0..<count).reduce(Text(verbatim: "")) { text, _ in
-                    Text("\(text)\(attachment)")
-                }
+                parts.append(contentsOf: repeatElement(attachment, count: count))
             case let .text(text):
-                part = text
+                parts.append(text)
             }
-            return Text("\(result)\(part)")
         }
+
+        // SwiftUI resolves interpolated Text recursively. Pairing adjacent parts
+        // keeps that depth logarithmic, including for runs of identical smileys.
+        while parts.count > 1 {
+            var next: [Text] = []
+            next.reserveCapacity((parts.count + 1) / 2)
+            for index in stride(from: 0, to: parts.count, by: 2) {
+                let left = parts[index]
+                if index + 1 < parts.count {
+                    let right = parts[index + 1]
+                    next.append(Text("\(left)\(right)"))
+                } else {
+                    next.append(left)
+                }
+            }
+            parts = next
+        }
+        return parts.first ?? Text(verbatim: "")
     }
 
     static func sizedImage(_ image: UIImage, dimension: CGFloat) -> Image {
