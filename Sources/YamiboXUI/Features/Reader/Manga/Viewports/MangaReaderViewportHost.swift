@@ -93,7 +93,6 @@ private struct MangaReaderLoadedContent: View {
     let onTap: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.readerExternalGeometry) private var externalGeometry
     @Environment(\.readerExternalMenuPresented) private var externalMenuPresented
     @Environment(\.mangaViewportHandoff) private var handoff
     @State private var pagedCache = MangaPagedContentCache()
@@ -133,7 +132,6 @@ private struct MangaReaderLoadedContent: View {
                 GeometryReader { proxy in
                     let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                         settings: settings,
-                        isPadDevice: externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad),
                         availableSize: CGSize(width: proxy.size.width, height: max(proxy.size.height - pagedContentTopInset, 0))
                     )
                     let plan = readingPlan(usesTwoPageSpread: usesTwoPageSpread)

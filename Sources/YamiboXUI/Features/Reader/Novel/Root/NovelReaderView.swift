@@ -432,6 +432,8 @@ struct NovelReaderView: View {
         let topInset = UIDevice.current.userInterfaceIdiom == .pad
             ? verticalBands.padVisibleStatusBarTopInset : insets.top
         return AnyView(chrome(topInset: topInset, bottomInset: insets.bottom, isVisible: isVisible)
+            .padding(.leading, insets.leading)
+            .padding(.trailing, insets.trailing)
             .modifier(NovelReaderToolbarColors(backgroundStyle: model.settings.backgroundStyle))
             .task(id: isVisible) {
                 if isVisible { await reader.annotations.refresh() }

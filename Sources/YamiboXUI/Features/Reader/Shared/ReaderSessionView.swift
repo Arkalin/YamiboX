@@ -197,7 +197,8 @@ private struct ReaderDeviceNovelGeometryProbe: View {
                 }
                 .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowInsets))
         }
-        .ignoresSafeArea()
+        // Match the local reader's usable width, including landscape cutouts.
+        .ignoresSafeArea(.container, edges: .vertical)
     }
 }
 
@@ -374,7 +375,7 @@ struct ReaderSessionContentView: View {
                 onResumeRouteChangeImmediately: { route in session.updateResumeRoute(route, contentID: contentID) }
             )
             .id(contentID)
-            .ignoresSafeArea()
+            .ignoresSafeArea(.container, edges: .vertical)
         case let .manga(context):
             MangaReaderView(
                 reader: session.mangaReader(for: context),
@@ -391,7 +392,7 @@ struct ReaderSessionContentView: View {
                 }
             )
             .id(contentID)
-            .ignoresSafeArea()
+            .ignoresSafeArea(.container, edges: .vertical)
         case let .thread(context) where externalViewport == nil:
             let model = session.threadModel(for: context, dependencies: navigator.dependencies.forum)
             ForumThreadReaderView(

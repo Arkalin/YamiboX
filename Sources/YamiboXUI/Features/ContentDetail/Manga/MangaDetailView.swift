@@ -135,7 +135,7 @@ private struct MangaDetailBodyView: View {
     let onCopyText: ((String) -> Void)?
 
     var body: some View {
-        VStack(spacing: 0) {
+        ContentDetailAdaptiveLayout { _ in
             if let directory = model.directory {
                 MangaDetailHeader(
                     directory: directory,
@@ -158,7 +158,7 @@ private struct MangaDetailBodyView: View {
                     onCopyText: onCopyText
                 )
             }
-
+        } directory: { _ in
             ChapterDirectory(
                 layout: Binding(
                     get: { ChapterDirectoryLayout(storedValue: storedLayout) },

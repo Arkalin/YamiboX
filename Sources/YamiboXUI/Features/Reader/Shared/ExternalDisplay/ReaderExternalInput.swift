@@ -336,12 +336,19 @@ struct ReaderExternalCursor: View {
 }
 
 struct ReaderDeviceTrackpadLayout {
+    let isHorizontal: Bool
+    let trackpadWidth: CGFloat
+    let controlsWidth: CGFloat
     let trackpadHeight: CGFloat
     let controlsHeight: CGFloat
 
-    init(height: CGFloat, trackpadRatio: Double) {
-        trackpadHeight = height * CGFloat(ExternalDisplaySettings.clampTrackpadHeightRatio(trackpadRatio))
-        controlsHeight = height - trackpadHeight
+    init(size: CGSize, trackpadRatio: Double) {
+        isHorizontal = size.width > size.height
+        let ratio = CGFloat(ExternalDisplaySettings.clampTrackpadHeightRatio(trackpadRatio))
+        trackpadWidth = isHorizontal ? size.width * ratio : size.width
+        controlsWidth = isHorizontal ? size.width - trackpadWidth : size.width
+        trackpadHeight = isHorizontal ? size.height : size.height * ratio
+        controlsHeight = isHorizontal ? size.height : size.height - trackpadHeight
     }
 }
 
@@ -353,8 +360,9 @@ struct ReaderDeviceTrackpad: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = ReaderDeviceTrackpadLayout(height: proxy.size.height, trackpadRatio: heightRatio)
-            VStack(spacing: 0) {
+            let layout = ReaderDeviceTrackpadLayout(size: proxy.size, trackpadRatio: heightRatio)
+            let stack = layout.isHorizontal ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+            stack {
                 ZStack(alignment: .top) {
                     if input.textMenu == nil {
                         ReaderDeviceControlLabel(title: L10n.string("reader.external.trackpad"))
@@ -367,7 +375,7 @@ struct ReaderDeviceTrackpad: View {
                             .id(menu.id)
                     }
                 }
-                .frame(height: layout.trackpadHeight)
+                .frame(width: layout.trackpadWidth, height: layout.trackpadHeight)
 
                 Group {
                     if input.kind.isVertical {
@@ -379,8 +387,10 @@ struct ReaderDeviceTrackpad: View {
                         .id(input.gestureRegionLayout)
                     }
                 }
-                .frame(height: layout.controlsHeight)
-                .overlay(alignment: .top) { separator.frame(height: 1) }
+                .frame(width: layout.controlsWidth, height: layout.controlsHeight)
+                .overlay(alignment: layout.isHorizontal ? .leading : .top) {
+                    separator.frame(width: layout.isHorizontal ? 1 : nil, height: layout.isHorizontal ? nil : 1)
+                }
             }
             .disabled(!input.isEnabled)
             .readerChromeFadeVisibility(showsControls, hiddenOpacity: 0.25)

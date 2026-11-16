@@ -349,8 +349,7 @@ public final class NovelReadingWorkflow {
                 settings: settings,
                 usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
-                    layout: layout,
-                    usesPadPresentation: usesPadPresentation
+                    layout: layout
                 ),
                 pageLoadSource: currentLoadSource
             ),
@@ -465,8 +464,7 @@ public final class NovelReadingWorkflow {
             preferredResumePoint: resumePoint,
             usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                 settings: update.settings,
-                layout: update.layout,
-                usesPadPresentation: update.usesPadPresentation
+                layout: update.layout
             ),
             pageTurnDirection: update.settings.pageTurnDirection
         )
@@ -563,8 +561,7 @@ public final class NovelReadingWorkflow {
                 settings: settings,
                 usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
-                    layout: layout,
-                    usesPadPresentation: usesPadPresentation
+                    layout: layout
                 ),
                 pageLoadSource: currentLoadSource
             ),
@@ -1018,8 +1015,7 @@ public final class NovelReadingWorkflow {
             resumePoint: effectiveResumePoint,
             usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                 settings: preparedUpdate.settings,
-                layout: preparedUpdate.layout,
-                usesPadPresentation: preparedUpdate.usesPadPresentation
+                layout: preparedUpdate.layout
             )
         )
         let nextAuthorID = nextProjection.resolvedAuthorID ?? currentAuthorID ?? context.authorID
@@ -1156,8 +1152,7 @@ public final class NovelReadingWorkflow {
             currentAuthorID: nextAuthorID,
             usesPagedSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                 settings: preparedUpdate.settings,
-                layout: preparedUpdate.layout,
-                usesPadPresentation: preparedUpdate.usesPadPresentation
+                layout: preparedUpdate.layout
             ),
             pageTurnDirection: preparedUpdate.settings.pageTurnDirection
         )
@@ -1261,8 +1256,7 @@ public final class NovelReadingWorkflow {
                 settings: settings,
                 usesTwoPageSpread: NovelReaderPresentationBuilder.usesPagedSpread(
                     settings: settings,
-                    layout: layout,
-                    usesPadPresentation: usesPadPresentation
+                    layout: layout
                 ),
                 pageLoadSource: currentLoadSource
             ),

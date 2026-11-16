@@ -19,27 +19,34 @@ struct ExternalDisplayTouchAreaPreview: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let ratio = adjustedRatio(by: dragOffset ?? 0, in: proxy.size.height)
+            let isHorizontal = proxy.size.width > proxy.size.height
+            let extent = isHorizontal ? proxy.size.width : proxy.size.height
+            let ratio = adjustedRatio(by: dragOffset ?? 0, in: extent)
             let displayRatio = (ratio * 100).rounded() / 100
-            let layout = ReaderDeviceTrackpadLayout(height: proxy.size.height, trackpadRatio: ratio)
+            let layout = ReaderDeviceTrackpadLayout(size: proxy.size, trackpadRatio: ratio)
+            let stack = isHorizontal ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
             ZStack(alignment: .top) {
-                VStack(spacing: 0) {
+                stack {
                     region(L10n.string("reader.external.trackpad"), ratio: displayRatio)
                         .padding(.top, 52)
                         .padding(.bottom, 22)
-                        .frame(height: layout.trackpadHeight)
+                        .frame(width: layout.trackpadWidth, height: layout.trackpadHeight)
                     region(L10n.string("settings.external_display.touch_area.controls"), ratio: 1 - displayRatio)
-                        .frame(height: layout.controlsHeight)
+                        .padding(.top, isHorizontal ? 52 : 0)
+                        .padding(.bottom, isHorizontal ? 22 : 0)
+                        .frame(width: layout.controlsWidth, height: layout.controlsHeight)
                         .background(Color(white: 0.14))
-                        .overlay(alignment: .top) {
+                        .overlay(alignment: isHorizontal ? .leading : .top) {
                             Color.white.opacity(0.18)
-                                .frame(height: 1)
+                                .frame(width: isHorizontal ? 1 : nil, height: isHorizontal ? nil : 1)
                         }
                 }
                 .allowsHitTesting(false)
 
-                resizeHandle(height: proxy.size.height, ratio: displayRatio)
-                    .position(x: proxy.size.width / 2, y: layout.trackpadHeight)
+                resizeHandle(extent: extent, ratio: displayRatio, isHorizontal: isHorizontal)
+                    .id(isHorizontal)
+                    .position(x: isHorizontal ? layout.trackpadWidth : proxy.size.width / 2,
+                              y: isHorizontal ? proxy.size.height / 2 : layout.trackpadHeight)
 
                 header
             }
@@ -115,8 +122,8 @@ struct ExternalDisplayTouchAreaPreview: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func resizeHandle(height: CGFloat, ratio: Double) -> some View {
-        Image(systemName: "arrow.up.and.down")
+    private func resizeHandle(extent: CGFloat, ratio: Double, isHorizontal: Bool) -> some View {
+        Image(systemName: isHorizontal ? "arrow.left.and.right" : "arrow.up.and.down")
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(.white)
             .frame(width: 52, height: 28)
@@ -125,8 +132,12 @@ struct ExternalDisplayTouchAreaPreview: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 4, coordinateSpace: .named(Self.previewSpace))
-                    .updating($dragOffset) { value, offset, _ in offset = value.translation.height }
-                    .onEnded { value in draft = adjustedRatio(by: value.translation.height, in: height) }
+                    .updating($dragOffset) { value, offset, _ in
+                        offset = isHorizontal ? value.translation.width : value.translation.height
+                    }
+                    .onEnded { value in
+                        draft = adjustedRatio(by: isHorizontal ? value.translation.width : value.translation.height, in: extent)
+                    }
             )
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(L10n.string("settings.external_display.touch_area.handle"))

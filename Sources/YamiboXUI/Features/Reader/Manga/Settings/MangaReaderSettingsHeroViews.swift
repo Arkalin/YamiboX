@@ -7,15 +7,15 @@ import UIKit
 struct MangaReaderSettingsBackground: View {
     let palette: MangaReaderSettingsPalette
     let heroHeight: CGFloat
+    let heroWidth: CGFloat?
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topLeading) {
             palette.bodyBackground
                 .ignoresSafeArea()
 
             palette.heroBackground
-                .frame(height: heroHeight)
-                .frame(maxWidth: .infinity, alignment: .top)
+                .frame(width: heroWidth, height: heroHeight)
                 .ignoresSafeArea(edges: .top)
         }
     }
@@ -26,6 +26,7 @@ struct MangaReaderSettingsHero: View {
     let palette: MangaReaderSettingsPalette
     let topInset: CGFloat
     let height: CGFloat
+    let isCompact: Bool
     let usesTwoPageSpread: Bool
     let readerViewportSize: CGSize
     let onClose: () -> Void
@@ -39,7 +40,7 @@ struct MangaReaderSettingsHero: View {
                 usesTwoPageSpread: usesTwoPageSpread,
                 readerViewportSize: readerViewportSize,
                 height: height,
-                contentTopPadding: topInset + 78
+                contentTopPadding: topInset + (isCompact ? 64 : 78)
             )
 
             MangaReaderSettingsHeader(
@@ -48,7 +49,7 @@ struct MangaReaderSettingsHero: View {
                 onConfirm: onConfirm
             )
             .padding(.horizontal, 16)
-            .padding(.top, topInset + 12)
+            .padding(.top, topInset + (isCompact ? 8 : 12))
         }
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .top)
     }

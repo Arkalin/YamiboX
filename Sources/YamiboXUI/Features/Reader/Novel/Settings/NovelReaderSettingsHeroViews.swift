@@ -6,15 +6,15 @@ import YamiboXCore
 struct NovelReaderUnifiedSheetBackground: View {
     let palette: NovelReaderSheetPalette
     let heroHeight: CGFloat
+    let heroWidth: CGFloat?
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topLeading) {
             palette.bodyBackground
                 .ignoresSafeArea()
 
             palette.heroBackground
-                .frame(height: heroHeight)
-                .frame(maxWidth: .infinity, alignment: .top)
+                .frame(width: heroWidth, height: heroHeight)
                 .ignoresSafeArea(edges: .top)
         }
     }
@@ -26,11 +26,12 @@ struct NovelReaderHeroSection: View {
     let previewText: String
     let topInset: CGFloat
     let height: CGFloat
+    let isCompact: Bool
     let onClose: () -> Void
     let onConfirm: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(alignment: .leading, spacing: isCompact ? 8 : 24) {
             NovelReaderSettingsHeader(
                 palette: palette,
                 onClose: onClose,
@@ -44,7 +45,7 @@ struct NovelReaderHeroSection: View {
                 previewText: previewText
             )
         }
-        .padding(.top, topInset + 12)
+        .padding(.top, topInset + (isCompact ? 8 : 12))
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .top)
     }
 }

@@ -94,6 +94,7 @@ struct NovelDetailView: View {
 struct NovelDetailBodyView: View {
     @Environment(\.forumTheme) private var theme
     @AppStorage(YamiboAppStorageKey.novelDetailChapterLayout) private var storedLayout = ChapterDirectoryLayout.list.rawValue
+    @State private var isFirstFloorPreviewExpanded = false
     let header: NovelDetailHeaderSummary
     let sections: [NovelChapterSection]
     let expandedPages: Set<Int>
@@ -112,19 +113,24 @@ struct NovelDetailBodyView: View {
     let onCopyText: ((String) -> Void)?
 
     var body: some View {
-        VStack(spacing: 0) {
-            NovelDetailHeader(
-                summary: header,
-                // Metadata can fail while the reader's offline content is available.
-                canReadStart: !isLoading,
-                hasReadingProgress: hasReadingProgress,
-                onFavoriteTap: onFavoriteTap,
-                onFavoriteLongPress: onFavoriteLongPress,
-                onAuthorTap: onAuthorTap,
-                onCopyText: onCopyText,
-                onReadStart: onReadStart
-            )
-
+        ContentDetailAdaptiveLayout { isSideBySide in
+            VStack(spacing: 0) {
+                NovelDetailHeader(
+                    summary: header,
+                    // Metadata can fail while the reader's offline content is available.
+                    canReadStart: !isLoading,
+                    hasReadingProgress: hasReadingProgress,
+                    onFavoriteTap: onFavoriteTap,
+                    onFavoriteLongPress: onFavoriteLongPress,
+                    onAuthorTap: onAuthorTap,
+                    onCopyText: onCopyText,
+                    onReadStart: onReadStart
+                )
+                if isSideBySide, let text = header.firstFloorPreviewText {
+                    NovelFirstFloorPreview(isExpanded: $isFirstFloorPreviewExpanded, text: text, onCopyText: onCopyText)
+                }
+            }
+        } directory: { isSideBySide in
             ChapterDirectory(
                 layout: Binding(
                     get: { ChapterDirectoryLayout(storedValue: storedLayout) },
@@ -154,8 +160,8 @@ struct NovelDetailBodyView: View {
                     onChapterTap(chapter)
                 }
             ) {
-                if let text = header.firstFloorPreviewText {
-                    NovelFirstFloorPreview(text: text, onCopyText: onCopyText)
+                if !isSideBySide, let text = header.firstFloorPreviewText {
+                    NovelFirstFloorPreview(isExpanded: $isFirstFloorPreviewExpanded, text: text, onCopyText: onCopyText)
                 }
             }
         }
@@ -167,7 +173,7 @@ struct NovelDetailBodyView: View {
 private struct NovelFirstFloorPreview: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isExpanded = false
+    @Binding var isExpanded: Bool
     let text: String
     let onCopyText: ((String) -> Void)?
 

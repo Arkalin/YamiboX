@@ -12,7 +12,6 @@ struct MangaReaderSettingsSheet: View {
     let controlAccent: Color
     let readerViewportSize: CGSize
     let readerTopInset: CGFloat
-    let readerSupportsSpreads: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var draftSettings = MangaReaderSettings()
@@ -25,7 +24,11 @@ struct MangaReaderSettingsSheet: View {
     var body: some View {
         GeometryReader { proxy in
             let topInset = proxy.safeAreaInsets.top
-            let heroHeight = max(318, min(382, proxy.size.height * 0.38)) + topInset
+            let layout = CompactLandscapeLayout(size: proxy.size)
+            let isCompact = proxy.size.height < 500
+            let heroHeight = layout.isSideBySide ? proxy.size.height : (isCompact
+                ? min(160, proxy.size.height * 0.4)
+                : max(318, min(382, proxy.size.height * 0.38))) + topInset
             let palette = MangaReaderSettingsPalette(
                 colorScheme: colorScheme,
                 controlAccent: controlAccent
@@ -40,27 +43,29 @@ struct MangaReaderSettingsSheet: View {
             // A narrow settings sheet must not turn a landscape reader spread into a single-page preview.
             let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
                 settings: draftSettings,
-                isPadDevice: readerSupportsSpreads,
                 availableSize: readerContentSize
             )
 
             ZStack(alignment: .top) {
                 MangaReaderSettingsBackground(
                     palette: palette,
-                    heroHeight: heroHeight
+                    heroHeight: heroHeight,
+                    heroWidth: layout.isSideBySide ? layout.leadingWidth : nil
                 )
 
-                VStack(spacing: 0) {
+                layout.stack {
                     MangaReaderSettingsHero(
                         settings: draftSettings,
                         palette: palette,
                         topInset: topInset,
                         height: heroHeight,
+                        isCompact: isCompact,
                         usesTwoPageSpread: usesTwoPageSpread,
                         readerViewportSize: readerContentSize,
                         onClose: closePanel,
                         onConfirm: commitDraft
                     )
+                    .frame(width: layout.isSideBySide ? layout.leadingWidth : nil)
 
                     MangaReaderSettingsSections(
                         settings: $draftSettings,
@@ -69,6 +74,7 @@ struct MangaReaderSettingsSheet: View {
                         onOpenPeripheralSettings: { isPeripheralSettingsPresented = true },
                         onOpenGestureRegions: { isGestureRegionPreviewPresented = true }
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }

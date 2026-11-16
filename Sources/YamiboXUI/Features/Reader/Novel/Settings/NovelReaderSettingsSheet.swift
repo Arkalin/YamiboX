@@ -31,7 +31,12 @@ struct NovelReaderSettingsSheet: View {
     var body: some View {
         GeometryReader { proxy in
             let topInset = proxy.safeAreaInsets.top
-            let heroHeight = max(300, min(356, proxy.size.height * 0.34)) + topInset
+            let layout = CompactLandscapeLayout(size: proxy.size)
+            // The portrait minimum would consume almost the entire landscape sheet.
+            let isCompact = proxy.size.height < 500
+            let heroHeight = layout.isSideBySide ? proxy.size.height : (isCompact
+                ? min(160, proxy.size.height * 0.4)
+                : max(300, min(356, proxy.size.height * 0.34))) + topInset
             let palette = NovelReaderSheetPalette(
                 settings: draftSettings,
                 colorScheme: colorScheme,
@@ -41,17 +46,21 @@ struct NovelReaderSettingsSheet: View {
             ZStack(alignment: .top) {
                 NovelReaderUnifiedSheetBackground(
                     palette: palette,
-                    heroHeight: heroHeight
+                    heroHeight: heroHeight,
+                    heroWidth: layout.isSideBySide ? layout.leadingWidth : nil
                 )
 
-                VStack(spacing: 0) {
+                layout.stack {
                     heroSection(
                         topInset: topInset,
                         heroHeight: heroHeight,
+                        isCompact: isCompact,
                         palette: palette
                     )
+                    .frame(width: layout.isSideBySide ? layout.leadingWidth : nil)
 
                     settingsSections(palette: palette)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             .background(Color.clear)
@@ -106,6 +115,7 @@ struct NovelReaderSettingsSheet: View {
     private func heroSection(
         topInset: CGFloat,
         heroHeight: CGFloat,
+        isCompact: Bool,
         palette: NovelReaderSheetPalette
     ) -> some View {
         NovelReaderHeroSection(
@@ -115,6 +125,7 @@ struct NovelReaderSettingsSheet: View {
                 ?? String(Self.defaultPreviewText.prefix(Self.previewCharacterCount)),
             topInset: topInset,
             height: heroHeight,
+            isCompact: isCompact,
             onClose: closePanel,
             onConfirm: commitDraft
         )

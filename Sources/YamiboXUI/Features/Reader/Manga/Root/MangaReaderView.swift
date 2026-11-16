@@ -93,16 +93,15 @@ struct MangaReaderView: View {
                 ? max(topInset, visibleStatusBarTopInset) : topInset
             let bottomInset = externalGeometry?.insets.bottom
                 ?? max(proxy.safeAreaInsets.bottom, windowSafeAreaInsets?.bottom ?? proxy.safeAreaInsets.bottom)
-            let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
-                settings: model.presentation.settings,
-                isPadDevice: externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad),
-                availableSize: proxy.size
-            )
             let readingTopInset = externalGeometry?.insets.top
                 ?? readingViewportInsets.topInset(for: proxy.size, proposed: topInset)
             let pagedContentTopInset = MangaPagedLayoutPolicy.pagedContentTopInset(
                 settings: model.presentation.settings,
                 topInset: readingTopInset
+            )
+            let usesTwoPageSpread = MangaPagedLayoutPolicy.usesTwoPageSpread(
+                settings: model.presentation.settings,
+                availableSize: CGSize(width: proxy.size.width, height: max(proxy.size.height - pagedContentTopInset, 0))
             )
 
             let surface = MangaReaderPresentationContent(
@@ -185,7 +184,7 @@ struct MangaReaderView: View {
                 guard failed, viewport.acceptsGeometry else { return }
                 viewport.didFailInitialPresentation?()
             }
-            .ignoresSafeArea()
+            .ignoresSafeArea(.container, edges: .vertical)
             .toolbar(.hidden, for: .navigationBar)
             .onChange(of: proxy.size, initial: true) { _, size in
                 readingViewportInsets.update(viewport: size, topInset: topInset)
@@ -257,7 +256,7 @@ struct MangaReaderView: View {
                 panelContent(panel, viewportSize: proxy.size, readingTopInset: readingTopInset, close: close)
             }
         }
-        .ignoresSafeArea()
+        .ignoresSafeArea(.container, edges: .vertical)
         .background(Color.black.ignoresSafeArea())
         .readingHandoff(handoffPayload)
         .onChange(of: scenePhase) { _, phase in
@@ -445,7 +444,9 @@ struct MangaReaderView: View {
 
     private func deviceMenu(_ insets: EdgeInsets, isVisible: Bool) -> AnyView {
         AnyView(chrome(topInset: insets.top, bottomInset: insets.bottom,
-                      isVisible: isVisible, usesTwoPageSpread: controlUsesTwoPageSpread))
+                      isVisible: isVisible, usesTwoPageSpread: controlUsesTwoPageSpread)
+            .padding(.leading, insets.leading)
+            .padding(.trailing, insets.trailing))
     }
 
     private func toggleChrome() {
@@ -483,8 +484,7 @@ struct MangaReaderView: View {
                 peripheralInput: appModel.peripheralInput,
                 controlAccent: AppTheme.theme(for: appModel.appAppearanceSettings).controlAccent,
                 readerViewportSize: viewportSize,
-                readerTopInset: readingTopInset,
-                readerSupportsSpreads: externalGeometry?.supportsSpreads ?? (UIDevice.current.userInterfaceIdiom == .pad)
+                readerTopInset: readingTopInset
             )
         case .download:
             if case let .loaded(loaded) = model.presentation.state {

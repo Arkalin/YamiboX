@@ -20,11 +20,9 @@ struct MangaReadingViewportInsets {
 enum MangaPagedLayoutPolicy {
     static func usesTwoPageSpread(
         settings: MangaReaderSettings,
-        isPadDevice: Bool,
         availableSize: CGSize
     ) -> Bool {
         settings.readingMode == .paged &&
-            isPadDevice &&
             availableSize.width.isFinite && availableSize.height.isFinite &&
             availableSize.height > 0 && availableSize.width >= 720 &&
             availableSize.width > availableSize.height

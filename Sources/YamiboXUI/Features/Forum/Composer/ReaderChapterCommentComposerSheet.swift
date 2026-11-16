@@ -39,7 +39,7 @@ struct ReaderChapterCommentComposerSheet<Destination: View>: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     // Reserve editing space above the keyboard without shrinking accessibility text.
-                    if dynamicTypeSize.isAccessibilitySize, geometry.size.height < 600 {
+                    if geometry.size.height < 300 || (dynamicTypeSize.isAccessibilitySize && geometry.size.height < 600) {
                         ScrollView { header }
                             .frame(maxHeight: geometry.size.height * 0.45)
                     } else {

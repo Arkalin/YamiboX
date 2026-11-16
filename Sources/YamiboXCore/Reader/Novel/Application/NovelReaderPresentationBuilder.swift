@@ -121,17 +121,12 @@ enum NovelReaderPresentationBuilder {
         )
     }
 
-    /// Moved verbatim from `NovelReadingWorkflow.usesPagedSpread`: the
-    /// two-page spread is a paged-mode, pad-only, landscape-only presentation
-    /// decision, and it must be computed from the same settings/layout values
-    /// a presentation or session mutation is being built with (not always the
-    /// workflow's committed fields), which is why it takes all three inputs
-    /// explicitly.
+    /// Use the pending settings and viewport, not the workflow's committed
+    /// values, so rotation and font changes share the same spread decision.
     static func usesPagedSpread(
         settings: NovelReaderAppearanceSettings,
-        layout: NovelReaderLayout,
-        usesPadPresentation: Bool
+        layout: NovelReaderLayout
     ) -> Bool {
-        layout.usesTwoPageSpread(settings: settings, usesPadPresentation: usesPadPresentation)
+        layout.usesTwoPageSpread(settings: settings)
     }
 }

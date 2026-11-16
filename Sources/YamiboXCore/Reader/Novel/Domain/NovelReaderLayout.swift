@@ -69,7 +69,7 @@ public struct NovelReaderLayout: Hashable, Sendable {
         usesPadPresentation: Bool
     ) -> NovelReaderLayout {
         var result = self
-        if usesTwoPageSpread(settings: settings, usesPadPresentation: usesPadPresentation) {
+        if usesTwoPageSpread(settings: settings) {
             result.containerSize.width /= 2
             result.safeAreaInsets.leading = 0
             result.safeAreaInsets.trailing = 0
@@ -85,15 +85,11 @@ public struct NovelReaderLayout: Hashable, Sendable {
         return result
     }
 
-    public func usesTwoPageSpread(
-        settings: NovelReaderAppearanceSettings,
-        usesPadPresentation: Bool
-    ) -> Bool {
+    public func usesTwoPageSpread(settings: NovelReaderAppearanceSettings) -> Bool {
         let minimumTextWidth = 320 * max(1, settings.fontScale)
         let columnInsets = contentInsets.leading + contentInsets.trailing
             + chromeInsets.leading + chromeInsets.trailing
         return settings.readingMode == .paged
-            && usesPadPresentation
             && width.isFinite && height.isFinite && height > 0
             && width > height
             && width / 2 - columnInsets >= minimumTextWidth

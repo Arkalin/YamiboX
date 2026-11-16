@@ -89,7 +89,6 @@ public final class NovelReaderViewModel {
     @ObservationIgnored var imagePrefetchCoordinator: ReaderImagePrefetchCoordinator
     @ObservationIgnored private var imagePrefetchSuspendedPosition: NovelReaderImagePrefetchPosition?
     private var layout: NovelReaderLayout { preparation.layout }
-    private var usesPadPresentation: Bool { runtimeUpdates.usesPadPresentation }
     private var currentStableResumePoint: NovelResumePoint? { publishedState.resumePoint }
     private let runtimeAdapter: (any NovelTextLayoutRuntimeAdapter)?
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
@@ -268,7 +267,7 @@ public final class NovelReaderViewModel {
     }
 
     var isTwoPageSpreadActive: Bool {
-        layout.usesTwoPageSpread(settings: settings, usesPadPresentation: usesPadPresentation)
+        layout.usesTwoPageSpread(settings: settings)
     }
 
     var novelReaderSurfaces: [NovelReaderSurface] {
