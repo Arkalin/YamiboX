@@ -6,6 +6,7 @@ import YamiboXCore
 struct ReaderRemoteActions {
     var tap: ((CGPoint) -> Void)?
     var doubleTap: ((CGPoint) -> Void)?
+    var canDoubleTapAt: ((CGPoint) -> Bool)?
     var gestureID: AnyHashable?
     var isAvailable: () -> Bool = { true }
     var blocksTap = false

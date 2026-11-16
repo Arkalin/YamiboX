@@ -135,10 +135,18 @@ struct NovelReaderView: View {
                         }
                         if let item = reader.annotations.highlightController.item(at: point, in: window) {
                             showRemoteTextMenu(for: item)
-                        } else if !NovelReaderImageInteraction.openImage(at: point, in: window, onOpen: openImageBrowser(url:title:)),
-                                  !selectionController.hasSelection || !selectionController.remoteTextHit(at: point, in: window) {
+                        } else if !selectionController.hasSelection || !selectionController.remoteTextHit(at: point, in: window) {
                             selectionController.clearSelection()
                         }
+                    },
+                    doubleTap: { point in
+                        guard let window = remoteInput?.targets.window,
+                              let image = NovelReaderImageInteraction.image(at: point, in: window) else { return }
+                        openImageBrowser(url: image.url, title: image.title)
+                    },
+                    canDoubleTapAt: { point in
+                        guard let window = remoteInput?.targets.window else { return false }
+                        return NovelReaderImageInteraction.image(at: point, in: window) != nil
                     },
                     gestureID: remoteInputID,
                     isAvailable: { admitsContentInput },
@@ -567,7 +575,6 @@ struct NovelReaderView: View {
                 topInset: topInset,
                 bottomInset: bottomInset,
                 isPadDevice: isPadDevice,
-                isChromeVisible: showsChrome,
                 verticalRestore: verticalRestore,
                 verticalScrollCoordinator: verticalScrollCoordinator,
                 viewport: viewport,
@@ -577,8 +584,7 @@ struct NovelReaderView: View {
                 onBoundaryPullRelease: scheduleVerticalBoundaryRelease,
                 updateVerticalBoundaryPullState: updateVerticalBoundaryPullState,
                 handleVerticalTap: handleVerticalTap,
-                enterImmersiveMode: enterImmersiveMode,
-                handleImageTap: handleImageTap
+                onOpenImage: openImageBrowser
             )
         }
     }
@@ -615,12 +621,7 @@ struct NovelReaderView: View {
             onScrollAnimationRequestConsumed: { request in
                 clearPagedScrollAnimationRequest(request)
             },
-            onChromeVisibleImageTap: {
-                enterImmersiveMode()
-            },
-            onImageTap: { url, title in
-                handleImageTap(url: url, title: title)
-            },
+            onOpenImage: openImageBrowser,
             onImageLongPress: { anchor, imageURL, chapterTitle in
                 reader.annotations.toggleImage(anchor, imageURL: imageURL, chapterTitle: chapterTitle)
             }
@@ -828,14 +829,6 @@ struct NovelReaderView: View {
     }
 
     // MARK: - Image taps and browser
-
-    private func handleImageTap(url: URL, title: String?) {
-        guard !showsChrome else {
-            enterImmersiveMode()
-            return
-        }
-        openImageBrowser(url: url, title: title)
-    }
 
     private func openImageBrowser(url: URL, title: String?) {
         let item = ImageBrowserItem(

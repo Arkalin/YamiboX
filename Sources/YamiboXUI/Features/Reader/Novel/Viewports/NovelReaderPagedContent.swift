@@ -80,8 +80,7 @@ struct NovelReaderPagedContent: View {
                     onBoundaryPageTurnRejected: bindings.onBoundaryPageTurnRejected,
                     onPageTapZone: bindings.onPageTapZone,
                     onScrollAnimationRequestConsumed: bindings.onScrollAnimationRequestConsumed,
-                    onChromeVisibleImageTap: bindings.onChromeVisibleImageTap,
-                    onImageTap: bindings.onImageTap,
+                    onOpenImage: bindings.onOpenImage,
                     onImageLongPress: bindings.onImageLongPress
                 )
                 // UIKit's spine can only change on recreation or an orientation callback.
@@ -114,8 +113,7 @@ struct NovelReaderPagedContent: View {
                     onBoundaryPageTurnRejected: bindings.onBoundaryPageTurnRejected,
                     onPageTapZone: bindings.onPageTapZone,
                     onScrollAnimationRequestConsumed: bindings.onScrollAnimationRequestConsumed,
-                    onChromeVisibleImageTap: bindings.onChromeVisibleImageTap,
-                    onImageTap: bindings.onImageTap,
+                    onOpenImage: bindings.onOpenImage,
                     onImageLongPress: bindings.onImageLongPress
                 )
             }

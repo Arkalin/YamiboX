@@ -178,8 +178,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     let onPageTapZone: (ReaderGestureRegionAction) -> Void
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
-    let onChromeVisibleImageTap: () -> Void
-    let onImageTap: (URL, String?) -> Void
+    let onOpenImage: (URL, String?) -> Void
     let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -228,6 +227,16 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         tapRecognizer.cancelsTouchesInView = false
         tapRecognizer.delegate = context.coordinator
         pageViewController.view.addGestureRecognizer(tapRecognizer)
+        let coordinator = context.coordinator
+        NovelReaderImageInteraction.installDoubleTap(
+            in: pageViewController.view, singleTap: tapRecognizer,
+            canOpen: { [weak coordinator] in coordinator?.canOpenImage == true },
+            onOpen: { [weak coordinator] url, title in
+                guard let coordinator else { return }
+                let onOpenImage = coordinator.parent.onOpenImage
+                coordinator.callbackScheduler.publish { onOpenImage(url, title) }
+            }
+        )
 
         let longPressRecognizer = UILongPressGestureRecognizer(
             target: context.coordinator,
@@ -279,6 +288,9 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         private var lightingDisplayLink: CADisplayLink?
 
         private var renderingParent: NovelReaderPagedPageCurlViewport { transitionParent ?? parent }
+        fileprivate var canOpenImage: Bool {
+            transitionParent == nil && parent.selectionController?.hasSelection != true
+        }
 
         init(parent: NovelReaderPagedPageCurlViewport) {
             self.parent = parent
@@ -388,15 +400,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
                 parent.selectionController?.clearSelection()
                 return
             }
-            if let imageView = containerView.firstDescendant(
-                ofType: NovelReaderVerticalViewportImageView.self,
-                containing: location
-            ) {
-                let imageLocation = containerView.convert(location, to: imageView)
-                handleImageTap(imageView, at: imageLocation)
-                return
-            }
-
             guard let zone = parent.settings.gestureRegionLayout.action(at: location, in: containerView.bounds)
             else { return }
             let onPageTapZone = parent.onPageTapZone
@@ -442,6 +445,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
+            if otherGestureRecognizer is NovelReaderImageDoubleTapRecognizer { return false }
             if gestureRecognizer === boundaryPageTurnPanRecognizer ||
                 otherGestureRecognizer === boundaryPageTurnPanRecognizer {
                 return true
@@ -622,16 +626,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             callbackScheduler.publish {
                 onSelectionChange(selectionIndex)
             }
-        }
-
-        private func handleImageTap(_ imageView: NovelReaderVerticalViewportImageView, at location: CGPoint) {
-            NovelReaderImageInteraction.tap(
-                imageView: imageView, at: location,
-                isChromeVisible: parent.isChromeVisible,
-                scheduler: callbackScheduler,
-                onChromeVisibleTap: parent.onChromeVisibleImageTap,
-                onImageTap: parent.onImageTap
-            )
         }
 
         private func matchingScrollAnimationRequest() -> ReaderPagedScrollAnimationRequest? {
