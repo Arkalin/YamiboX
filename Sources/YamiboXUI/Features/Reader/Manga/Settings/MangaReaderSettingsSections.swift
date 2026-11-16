@@ -8,7 +8,6 @@ struct MangaReaderSettingsSections: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
     let usesTwoPageSpread: Bool
-    let onSwapPageTurnTapZonesChange: (Bool) -> Void
     let onOpenPeripheralSettings: () -> Void
 
     var body: some View {
@@ -17,8 +16,7 @@ struct MangaReaderSettingsSections: View {
                 MangaReaderSettingsPagingSection(
                     settings: $settings,
                     palette: palette,
-                    usesTwoPageSpread: usesTwoPageSpread,
-                    onSwapPageTurnTapZonesChange: onSwapPageTurnTapZonesChange
+                    usesTwoPageSpread: usesTwoPageSpread
                 )
 
                 MangaReaderSettingsOtherSection(
@@ -40,7 +38,6 @@ struct MangaReaderSettingsPagingSection: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
     let usesTwoPageSpread: Bool
-    let onSwapPageTurnTapZonesChange: (Bool) -> Void
 
     var body: some View {
         ReaderSettingsSection(
@@ -68,16 +65,6 @@ struct MangaReaderSettingsPagingSection: View {
                 ) { direction in
                     settings.pageTurnDirection = direction
                 }
-                ReaderSettingsDivider(palette: palette)
-                ReaderSettingsToggleRow(
-                    title: L10n.string("reader.swap_page_turn_tap_zones"),
-                    palette: palette,
-                    isOn: Binding(
-                        get: { settings.swapsPageTurnTapZones },
-                        set: { onSwapPageTurnTapZonesChange($0) }
-                    )
-                )
-                .accessibilityIdentifier("manga.settings.swapsPageTurnTapZones")
                 ReaderSettingsDivider(palette: palette)
                 MangaReaderPagedDisplaySettings(
                     settings: $settings,

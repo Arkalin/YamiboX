@@ -260,24 +260,6 @@ final class ReaderSession: Identifiable {
         updateNovelViewportPreparation(preparation)
     }
 
-    var leftPageButtonIsPrevious: Bool {
-        let direction: ReaderPageTurnDirection
-        let swapped: Bool
-        switch content {
-        case .novel:
-            guard let settings = novelReader?.model.settings else { return true }
-            direction = settings.pageTurnDirection
-            swapped = settings.swapsPageTurnTapZones
-        case .manga:
-            guard let settings = mangaReader?.model.presentation.settings else { return true }
-            direction = settings.pageTurnDirection.readerPageTurnDirection
-            swapped = settings.swapsPageTurnTapZones
-        case .thread:
-            return true
-        }
-        return direction.directionalTapZone(for: .previous, swapped: swapped) == .previous
-    }
-
     func isPreparingPresentation(for viewport: ReaderViewportLifetime) -> Bool {
         preparingViewport === viewport
     }

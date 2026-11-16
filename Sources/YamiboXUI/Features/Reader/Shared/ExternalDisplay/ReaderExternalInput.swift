@@ -330,7 +330,6 @@ struct ReaderExternalCursor: View {
 struct ReaderDeviceTrackpad: View {
     let input: ReaderExternalInput
     let showsControls: Bool
-    let leftPageButtonIsPrevious: Bool
     let onMenu: () -> Void
 
     var body: some View {
@@ -356,13 +355,13 @@ struct ReaderDeviceTrackpad: View {
                         ReaderExternalScrollArea(input: input, onMenu: onMenu)
                     } else {
                         HStack(spacing: 0) {
-                            pageButton(isPrevious: leftPageButtonIsPrevious)
+                            pageButton(isPrevious: true)
                                 .frame(width: proxy.size.width * 0.3)
                             ReaderDeviceControlButton.menu(action: onMenu)
                                 .frame(width: proxy.size.width * 0.4)
                                 .overlay(alignment: .leading) { separator.frame(width: 1) }
                                 .overlay(alignment: .trailing) { separator.frame(width: 1) }
-                            pageButton(isPrevious: !leftPageButtonIsPrevious)
+                            pageButton(isPrevious: false)
                                 .frame(width: proxy.size.width * 0.3)
                         }
                         .environment(\.layoutDirection, .leftToRight)

@@ -132,7 +132,6 @@ struct NovelReaderDisplaySection: View {
     let onBackgroundStyleChange: (ReaderBackgroundStyle) -> Void
     let onReadingModeChange: (ReaderReadingMode, ReaderPagedTurnStyle) -> Void
     let onPageTurnDirectionChange: (ReaderPageTurnDirection) -> Void
-    let onSwapPageTurnTapZonesChange: (Bool) -> Void
     let onImmersiveModeChange: (Bool) -> Void
 
     var body: some View {
@@ -161,16 +160,6 @@ struct NovelReaderDisplaySection: View {
                     palette: palette,
                     onSelect: onPageTurnDirectionChange
                 )
-                ReaderSettingsDivider(palette: palette)
-                ReaderSettingsToggleRow(
-                    title: L10n.string("reader.swap_page_turn_tap_zones"),
-                    palette: palette,
-                    isOn: Binding(
-                        get: { settings.swapsPageTurnTapZones },
-                        set: { onSwapPageTurnTapZonesChange($0) }
-                    )
-                )
-                .accessibilityIdentifier("novel.settings.swapsPageTurnTapZones")
                 ReaderSettingsDivider(palette: palette)
                 ReaderSettingsToggleRow(
                     title: L10n.string("reader.immersive_mode"),

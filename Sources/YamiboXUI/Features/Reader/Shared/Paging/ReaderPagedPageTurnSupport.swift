@@ -53,12 +53,6 @@ enum ReaderPagedHorizontalNavigationDirection: Equatable {
     case rightSwipeAdvances
 }
 
-extension MangaPageTurnDirection {
-    var readerPageTurnDirection: ReaderPageTurnDirection {
-        self == .leftToRight ? .leftToRight : .rightToLeft
-    }
-}
-
 extension ReaderPageTurnDirection {
     var horizontalNavigationDirection: ReaderPagedHorizontalNavigationDirection {
         switch self {
@@ -75,18 +69,6 @@ extension ReaderPageTurnDirection {
             .leftToRight
         case .rightToLeft:
             .rightToLeft
-        }
-    }
-
-    func directionalTapZone(for zone: ReaderPagedTapZone, swapped: Bool = false) -> ReaderPagedTapZone {
-        let reversesZones = (self == .rightToLeft) != swapped
-        return switch (reversesZones, zone) {
-        case (true, .previous):
-            .next
-        case (true, .next):
-            .previous
-        default:
-            zone
         }
     }
 

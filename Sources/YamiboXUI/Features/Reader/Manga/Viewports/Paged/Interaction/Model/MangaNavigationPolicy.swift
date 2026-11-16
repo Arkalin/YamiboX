@@ -25,7 +25,6 @@ enum MangaReadingDirection {
 struct MangaNavigationConfiguration: Equatable {
     let direction: MangaReadingDirection
     let surface: MangaInteractionConfiguration
-    var swapsPageTurnTapZones = false
 
     func allowsDoubleTap(in zone: PhysicalZone?) -> Bool {
         guard let zone else { return false }

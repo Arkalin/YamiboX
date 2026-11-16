@@ -67,7 +67,6 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
     public var readingMode: MangaReadingMode
     public var pagedTurnStyle: ReaderPagedTurnStyle
     public var pageTurnDirection: MangaPageTurnDirection
-    public var swapsPageTurnTapZones: Bool
     public var pageScaleMode: MangaPageScaleMode
     public var pageEdgeFillStyle: MangaPageEdgeFillStyle
     public var brightness: Double
@@ -84,7 +83,6 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         readingMode: MangaReadingMode = .vertical,
         pagedTurnStyle: ReaderPagedTurnStyle = .slide,
         pageTurnDirection: MangaPageTurnDirection = .leftToRight,
-        swapsPageTurnTapZones: Bool = false,
         pageScaleMode: MangaPageScaleMode = .fitWidth,
         pageEdgeFillStyle: MangaPageEdgeFillStyle = .black,
         brightness: Double = 1,
@@ -98,7 +96,6 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         self.readingMode = readingMode
         self.pagedTurnStyle = pagedTurnStyle
         self.pageTurnDirection = pageTurnDirection
-        self.swapsPageTurnTapZones = swapsPageTurnTapZones
         self.pageScaleMode = pageScaleMode
         self.pageEdgeFillStyle = pageEdgeFillStyle
         self.brightness = brightness
@@ -114,7 +111,6 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         case readingMode
         case pagedTurnStyle
         case pageTurnDirection
-        case swapsPageTurnTapZones
         case pageScaleMode
         case pageEdgeFillStyle
         case brightness
@@ -131,7 +127,6 @@ public struct MangaReaderSettings: Codable, Hashable, Sendable {
         readingMode = try container.decode(MangaReadingMode.self, forKey: .readingMode)
         pagedTurnStyle = try container.decode(ReaderPagedTurnStyle.self, forKey: .pagedTurnStyle)
         pageTurnDirection = try container.decode(MangaPageTurnDirection.self, forKey: .pageTurnDirection)
-        swapsPageTurnTapZones = try container.decodeIfPresent(Bool.self, forKey: .swapsPageTurnTapZones) ?? false
         pageScaleMode = try container.decode(MangaPageScaleMode.self, forKey: .pageScaleMode)
         pageEdgeFillStyle = try container.decode(MangaPageEdgeFillStyle.self, forKey: .pageEdgeFillStyle)
         brightness = try container.decode(Double.self, forKey: .brightness)

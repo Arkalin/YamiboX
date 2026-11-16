@@ -1054,11 +1054,8 @@
 "reader.no_downloadable_pages" = "目前沒有可下載的網頁頁碼";
 "reader.page_number_compact" = "第%d頁";
 "reader.immersive_mode" = "沈浸模式";
-"reader.swap_page_turn_tap_zones" = "交換翻頁手勢區域";
 "reader.previous_page" = "上一頁";
 "reader.next_page" = "下一頁";
-"reader.tap_zones.left_previous" = "左側上一頁，右側下一頁；中間顯示或隱藏菜單";
-"reader.tap_zones.left_next" = "左側下一頁，右側上一頁；中間顯示或隱藏菜單";
 "reader.chapter_pages_remaining" = "本章還剩 %d 頁";
 "reader.chapter_last_page" = "本章最後一頁";
 "reader.page_number_spaced" = "第 %d 頁";

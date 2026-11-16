@@ -48,9 +48,10 @@ final class MangaPagedInteractionRuntime {
         let decision = MangaInteractionPolicy.decide(intent, configuration: configuration.surface,
             scale: surface?.transform.scale ?? 1, hiddenEdges: surface?.hiddenEdges ?? [],
             menuFrame: surface?.menuFrame ?? .zero, imageLoaded: surface?.imageLoaded ?? false)
-        // Swap only page-turn taps, not image-edge reveals, pans, or peripheral controls.
-        if configuration.swapsPageTurnTapZones, case .tap = request, case let .navigate(edge) = decision {
-            return .navigate(edge == .left ? .right : .left)
+        // Tap zones always mean previous/next; reveals and pans retain their physical edges.
+        if case .tap = request, case let .navigate(edge) = decision {
+            let step: NavigationStep = edge == .left ? .backward : .forward
+            return .navigate(configuration.direction.edge(for: step))
         }
         return decision
     }

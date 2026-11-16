@@ -28,7 +28,6 @@ struct MangaReaderSettingsHero: View {
     let height: CGFloat
     let usesTwoPageSpread: Bool
     let readerViewportSize: CGSize
-    let tapZonesPreviewRequestID: Int
     let onClose: () -> Void
     let onConfirm: () -> Void
 
@@ -40,8 +39,7 @@ struct MangaReaderSettingsHero: View {
                 usesTwoPageSpread: usesTwoPageSpread,
                 readerViewportSize: readerViewportSize,
                 height: height,
-                contentTopPadding: topInset + 78,
-                tapZonesPreviewRequestID: tapZonesPreviewRequestID
+                contentTopPadding: topInset + 78
             )
 
             MangaReaderSettingsHeader(
@@ -96,7 +94,6 @@ private struct MangaReaderSettingsPreviewSpread: View {
     let readerViewportSize: CGSize
     let height: CGFloat
     let contentTopPadding: CGFloat
-    let tapZonesPreviewRequestID: Int
 
     private var selectedMode: ReaderSettingsReadingModeOption {
         ReaderSettingsReadingModeOption(settings)
@@ -148,45 +145,10 @@ private struct MangaReaderSettingsPreviewSpread: View {
             }
 
             MangaReaderBrightnessPreviewOverlay(brightness: settings.brightness)
-
-            if selectedMode != .scroll {
-                MangaReaderSettingsPageTurnZonesPreview(
-                    settings: settings,
-                    aspectRatio: previewAspectRatio,
-                    tapZonesPreviewRequestID: tapZonesPreviewRequestID
-                )
-                .padding(.top, contentTopPadding)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 18)
-            }
         }
         .frame(maxWidth: .infinity)
         .frame(height: height)
         .clipShape(UnevenRoundedRectangle(cornerRadii: frameCornerRadii, style: .continuous))
-    }
-}
-
-private struct MangaReaderSettingsPageTurnZonesPreview: View {
-    let settings: MangaReaderSettings
-    let aspectRatio: CGFloat
-    let tapZonesPreviewRequestID: Int
-
-    var body: some View {
-        GeometryReader { proxy in
-            let size = MangaReaderSettingsPagedPreviewLayout.fittedSize(in: proxy.size, aspectRatio: aspectRatio)
-
-            // Match the visible foreground spread, not the full-width hero or its duplicate sheets.
-            ReaderSettingsPageTurnZonesPreview(
-                direction: settings.pageTurnDirection.readerPageTurnDirection,
-                swapped: settings.swapsPageTurnTapZones,
-                requestID: tapZonesPreviewRequestID,
-                isEnabled: settings.readingMode == .paged,
-                usesCompactLabels: true
-            )
-            .frame(width: size.width, height: size.height)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
     }
 }
 

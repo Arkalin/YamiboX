@@ -20,7 +20,6 @@ struct MangaReaderSettingsSheet: View {
     @State private var isSaving = false
     @State private var saveFailure: String?
     @State private var isPeripheralSettingsPresented = false
-    @State private var tapZonesPreviewRequestID = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -58,7 +57,6 @@ struct MangaReaderSettingsSheet: View {
                         height: heroHeight,
                         usesTwoPageSpread: usesTwoPageSpread,
                         readerViewportSize: readerContentSize,
-                        tapZonesPreviewRequestID: tapZonesPreviewRequestID,
                         onClose: closePanel,
                         onConfirm: commitDraft
                     )
@@ -67,10 +65,6 @@ struct MangaReaderSettingsSheet: View {
                         settings: $draftSettings,
                         palette: palette,
                         usesTwoPageSpread: usesTwoPageSpread,
-                        onSwapPageTurnTapZonesChange: { value in
-                            draftSettings.swapsPageTurnTapZones = value
-                            tapZonesPreviewRequestID += 1
-                        },
                         onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
                     )
                 }

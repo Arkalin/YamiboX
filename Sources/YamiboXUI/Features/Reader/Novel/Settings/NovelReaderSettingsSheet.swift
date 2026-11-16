@@ -20,7 +20,6 @@ struct NovelReaderSettingsSheet: View {
     @State private var isForumFormatPresented = false
     @State private var isFontLibraryPresented = false
     @State private var fontProtectionID = UUID()
-    @State private var tapZonesPreviewRequestID = 0
     private static let defaultPreviewText = L10n.string("reader.settings.preview_fallback")
     private static let previewCharacterCount = 200
     private static let previewTexts = Dictionary(uniqueKeysWithValues: ReaderTranslationMode.allCases.map { mode in
@@ -106,7 +105,6 @@ struct NovelReaderSettingsSheet: View {
                 ?? String(Self.defaultPreviewText.prefix(Self.previewCharacterCount)),
             topInset: topInset,
             height: heroHeight,
-            tapZonesPreviewRequestID: tapZonesPreviewRequestID,
             onClose: closePanel,
             onConfirm: commitDraft
         )
@@ -153,7 +151,6 @@ struct NovelReaderSettingsSheet: View {
                     onBackgroundStyleChange: setBackgroundStyle,
                     onReadingModeChange: setReadingMode,
                     onPageTurnDirectionChange: setPageTurnDirection,
-                    onSwapPageTurnTapZonesChange: setSwapPageTurnTapZones,
                     onImmersiveModeChange: { draftSettings.isImmersiveModeEnabled = $0 }
                 )
 
@@ -213,10 +210,6 @@ struct NovelReaderSettingsSheet: View {
         }
     }
     private func setPageTurnDirection(_ value: ReaderPageTurnDirection) { draftSettings.pageTurnDirection = value }
-    private func setSwapPageTurnTapZones(_ value: Bool) {
-        draftSettings.swapsPageTurnTapZones = value
-        tapZonesPreviewRequestID += 1
-    }
     private func setTranslationMode(_ value: ReaderTranslationMode) {
         draftSettings.translationMode = value
     }

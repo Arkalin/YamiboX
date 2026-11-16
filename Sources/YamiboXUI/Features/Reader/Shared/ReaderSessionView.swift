@@ -44,8 +44,7 @@ struct ReaderSessionScreen: View {
                 } else if showsTrackpad, let display = appModel.externalReader {
                     let isMenuVisible = display.isShowingDeviceMenu(for: session)
                     ZStack {
-                        ReaderDeviceTrackpad(input: display.pointer, showsControls: !isMenuVisible,
-                                             leftPageButtonIsPrevious: session.leftPageButtonIsPrevious) {
+                        ReaderDeviceTrackpad(input: display.pointer, showsControls: !isMenuVisible) {
                             display.showDeviceMenu(for: session)
                         }
                         if let viewport = display.deviceMenuViewport(for: session), let menu = viewport.deviceMenu {

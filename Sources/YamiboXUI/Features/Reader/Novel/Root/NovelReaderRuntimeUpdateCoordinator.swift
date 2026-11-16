@@ -278,7 +278,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
                 mergedSettings.pagedTurnStyle = latestSurfaceAppearanceSettings.pagedTurnStyle
                 mergedSettings.isImmersiveModeEnabled = latestSurfaceAppearanceSettings.isImmersiveModeEnabled
                 mergedSettings.pageTurnDirection = latestSurfaceAppearanceSettings.pageTurnDirection
-                mergedSettings.swapsPageTurnTapZones = latestSurfaceAppearanceSettings.swapsPageTurnTapZones
                 return workflow.commitSurfaceAppearance(mergedSettings)
             } catch {
                 guard requestSequence == sequence, reading.workflow() === workflow,
@@ -339,12 +338,9 @@ private extension NovelReaderAppearanceSettings {
         rhs.isImmersiveModeEnabled = false
         lhs.pageTurnDirection = .leftToRight
         rhs.pageTurnDirection = .leftToRight
-        lhs.swapsPageTurnTapZones = false
-        rhs.swapsPageTurnTapZones = false
         return lhs == rhs &&
             (backgroundStyle != other.backgroundStyle || pagedTurnStyle != other.pagedTurnStyle
                 || isImmersiveModeEnabled != other.isImmersiveModeEnabled
-                || pageTurnDirection != other.pageTurnDirection
-                || swapsPageTurnTapZones != other.swapsPageTurnTapZones)
+                || pageTurnDirection != other.pageTurnDirection)
     }
 }
