@@ -32,13 +32,14 @@ struct NovelReaderBottomChrome: View {
     let onVerticalProgressCommit: (Int) -> Void
     let onBeginVerticalProgressScrub: () -> Void
     let onEndVerticalProgressScrub: () -> Void
-    @State private var isProgressScrubbing = false
+    @State private var activeVerticalProgressPreview: ReaderProgressScrubPreview?
 
     @State private var scrubState = ReaderProgressScrubState()
     @State private var scrubFeedback = ReaderProgressScrubFeedback()
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
     @Environment(\.readerToolbarStyle) private var toolbarStyle
+    @Environment(\.readerProgressPreviewViewport) private var progressPreviewViewport
 
     var body: some View {
         VStack(spacing: 12) {
@@ -63,7 +64,20 @@ struct NovelReaderBottomChrome: View {
         .padding(.top, chromeLayout.bottomChromeTopPadding)
         .padding(.bottom, chromeLayout.bottomPadding(forBottomInset: bottomInset))
         .onAppear(perform: prepareFeedbackGenerators)
+        .onChange(of: isVisible ? activeProgressPreview : nil) { _, preview in
+            progressPreviewViewport?.setDeviceMenuProgressPreview(preview.map {
+                .novel($0, backgroundStyle: backgroundStyle)
+            })
+        }
+        .onDisappear { progressPreviewViewport?.setDeviceMenuProgressPreview(nil) }
     }
+
+    private var activeProgressPreview: ReaderProgressScrubPreview? {
+        if progressChromePresentation.showsVerticalScrubber { return activeVerticalProgressPreview }
+        return scrubState.phase == .scrubbing ? scrubState.preview : nil
+    }
+
+    private var isProgressScrubbing: Bool { activeVerticalProgressPreview != nil }
 
     private func prepareFeedbackGenerators() {
         scrubFeedback.prepare()
@@ -118,16 +132,12 @@ struct NovelReaderBottomChrome: View {
             restingProgressFraction: progress.progressFraction,
             scrubContext: progress.scrubContext,
             ticks: progress.ticks,
+            showsPreview: progressPreviewViewport == nil,
             stackedCapsuleCount: stackedCapsuleCount,
-            onBeginScrub: {
-                isProgressScrubbing = true
-                onBeginVerticalProgressScrub()
-            },
+            onPreviewChange: { activeVerticalProgressPreview = $0 },
+            onBeginScrub: onBeginVerticalProgressScrub,
             onCommit: onVerticalProgressCommit,
-            onEndScrub: {
-                isProgressScrubbing = false
-                onEndVerticalProgressScrub()
-            }
+            onEndScrub: onEndVerticalProgressScrub
         )
         .frame(width: chromeLayout.verticalScrubberWidth, alignment: .trailing)
     }
@@ -262,7 +272,7 @@ struct NovelReaderBottomChrome: View {
 
     private var progressControl: some View {
         VStack(spacing: chromeLayout.panelSpacing) {
-            if let preview = scrubState.preview, scrubState.phase == .scrubbing {
+            if progressPreviewViewport == nil, let preview = scrubState.preview, scrubState.phase == .scrubbing {
                 ReaderVerticalProgressPreviewCapsule(preview: preview)
                     .frame(maxWidth: .infinity)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -284,6 +294,9 @@ struct NovelReaderBottomChrome: View {
                 },
                 onEndScrub: {
                     commitHorizontalCapsuleScrub()
+                },
+                onCancelScrub: {
+                    scrubState.reset()
                 }
             )
             .opacity(shouldHideDirectoryCapsule ? 0 : 1)

@@ -1324,7 +1324,7 @@ struct NovelReaderView: View {
     }
 }
 
-private struct NovelReaderToolbarColors: ViewModifier {
+struct NovelReaderToolbarColors: ViewModifier {
     let backgroundStyle: ReaderBackgroundStyle
     @Environment(\.colorScheme) private var colorScheme
 

@@ -18,8 +18,9 @@ final class ReaderViewportLifetime {
     typealias DeviceMenu = @MainActor (EdgeInsets, _ isVisible: Bool) -> AnyView
 
     @Observable
-    fileprivate final class DeviceMenuRegistration {
+    fileprivate final class DeviceMenuState {
         var menu: DeviceMenu?
+        var progressPreview: ReaderExternalProgressPreview?
     }
 
     let settingsTarget: ReaderSettingsTarget
@@ -28,8 +29,9 @@ final class ReaderViewportLifetime {
     private var attachmentID: UUID?
     private var capturePosition: (() -> Void)?
     private var onDetach: (() -> Void)?
-    private let menuRegistration = DeviceMenuRegistration()
-    var deviceMenu: DeviceMenu? { menuRegistration.menu }
+    private let deviceMenuState = DeviceMenuState()
+    var deviceMenu: DeviceMenu? { deviceMenuState.menu }
+    var deviceMenuProgressPreview: ReaderExternalProgressPreview? { deviceMenuState.progressPreview }
     var didRender: (() -> Void)?
     var didFailInitialPresentation: (() -> Void)?
     var admitsPresentationCallbacks: (() -> Bool)?
@@ -79,7 +81,7 @@ final class ReaderViewportLifetime {
         self.capturePosition = capturePosition
         self.onDetach = onDetach
         self.peripheralInput = peripheralInput
-        menuRegistration.menu = deviceMenu
+        deviceMenuState.menu = deviceMenu
         externalInput?.buttonViewport = self
         handlerToken = peripheralInput.pushHandler { [weak self] event in
             guard self?.acceptsInput(id) == true else { return }
@@ -90,6 +92,11 @@ final class ReaderViewportLifetime {
     func performExternalPageStep(_ direction: ReaderControlScrollDirection) -> Bool {
         guard let attachmentID, acceptsInput(attachmentID), let peripheralInput else { return false }
         return peripheralInput.dispatchExternalPageStep(direction)
+    }
+
+    func setDeviceMenuProgressPreview(_ preview: ReaderExternalProgressPreview?) {
+        guard isCurrent, deviceMenu != nil else { return }
+        deviceMenuState.progressPreview = preview
     }
 
     func ownsAttachment(_ id: UUID) -> Bool { isCurrent && attachmentID == id }
@@ -162,7 +169,8 @@ final class ReaderViewportLifetime {
         handlerToken = nil
         attachmentID = nil
         capturePosition = nil
-        menuRegistration.menu = nil
+        deviceMenuState.menu = nil
+        deviceMenuState.progressPreview = nil
         let cleanup = onDetach
         onDetach = nil
         cleanup?()

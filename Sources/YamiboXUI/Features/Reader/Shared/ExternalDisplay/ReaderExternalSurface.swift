@@ -5,6 +5,12 @@ import YamiboXCore
 extension EnvironmentValues {
     @Entry var readerExternalGeometry: ReaderViewportGeometry? = nil
     @Entry var readerExternalMenuPresented = false
+    @Entry var readerProgressPreviewViewport: ReaderViewportLifetime? = nil
+}
+
+enum ReaderExternalProgressPreview {
+    case novel(ReaderProgressScrubPreview, backgroundStyle: ReaderBackgroundStyle)
+    case manga(ReaderProgressScrubPreview, page: MangaReaderPageProjection?, imageLoader: MangaReaderPageImageLoader?)
 }
 
 struct ReaderExternalSurface: View {
@@ -38,6 +44,7 @@ struct ReaderExternalSurface: View {
                         display: display, session: session, appModel: appModel
                     ))
                     ReaderExternalCursor(input: display.pointer)
+                    ReaderExternalProgressPreviewOverlay(display: display, session: session, viewport: viewport)
                     ReaderExternalPrivacyCover(display: display, sessionID: session.id)
                 }
             }
@@ -59,6 +66,29 @@ struct ReaderExternalSurface: View {
         .environment(\.forumBlacklist, appModel.appContext.blacklistWorkflow)
         .environment(\.readingHandoffAllowed, false)
         .environment(\.readerRemoteInput, display.pointer)
+    }
+}
+
+private struct ReaderExternalProgressPreviewOverlay: View {
+    let display: ReaderExternalDisplayCoordinator
+    let session: ReaderSession
+    let viewport: ReaderViewportLifetime
+
+    var body: some View {
+        if display.isShowingDeviceMenu(for: session), let preview = viewport.deviceMenuProgressPreview {
+            Group {
+                switch preview {
+                case let .novel(progress, backgroundStyle):
+                    ReaderVerticalProgressPreviewCapsule(preview: progress)
+                        .modifier(NovelReaderToolbarColors(backgroundStyle: backgroundStyle))
+                case let .manga(progress, page, imageLoader):
+                    MangaReaderProgressImagePreview(preview: progress, page: page, imageLoader: imageLoader)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 }
 

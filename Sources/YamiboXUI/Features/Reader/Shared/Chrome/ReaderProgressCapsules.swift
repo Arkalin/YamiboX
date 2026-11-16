@@ -65,7 +65,9 @@ struct ReaderDirectoryProgressCapsule: View {
     let onTapDirectory: () -> Void
     let onScrub: (CGFloat, CGFloat) -> Void
     let onEndScrub: () -> Void
+    let onCancelScrub: () -> Void
     @State private var dragStartProgressFraction: Double?
+    @GestureState private var isDragging = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appTheme) private var appTheme
     @Environment(\.readerToolbarStyle) private var toolbarStyle
@@ -85,7 +87,8 @@ struct ReaderDirectoryProgressCapsule: View {
         usesNativePressFeedback: Bool = false,
         onTapDirectory: @escaping () -> Void,
         onScrub: @escaping (CGFloat, CGFloat) -> Void,
-        onEndScrub: @escaping () -> Void
+        onEndScrub: @escaping () -> Void,
+        onCancelScrub: @escaping () -> Void
     ) {
         self.title = title
         self.progressFraction = progressFraction
@@ -99,6 +102,7 @@ struct ReaderDirectoryProgressCapsule: View {
         self.onTapDirectory = onTapDirectory
         self.onScrub = onScrub
         self.onEndScrub = onEndScrub
+        self.onCancelScrub = onCancelScrub
     }
 
     var body: some View {
@@ -130,6 +134,11 @@ struct ReaderDirectoryProgressCapsule: View {
             .accessibilityHint(L10n.string("reader.chapters"))
         }
         .frame(height: layout.progressPanelHeight)
+        .onChange(of: isDragging) { _, isDragging in
+            guard !isDragging, dragStartProgressFraction != nil else { return }
+            dragStartProgressFraction = nil
+            onCancelScrub()
+        }
     }
 
     private func booksDirectoryLabel(width: CGFloat, progress: Double) -> some View {
@@ -237,6 +246,7 @@ struct ReaderDirectoryProgressCapsule: View {
 
     private func scrubGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 6)
+            .updating($isDragging) { _, dragging, _ in dragging = true }
             .onChanged { value in
                 guard supportsScrub else { return }
                 if dragStartProgressFraction == nil {
@@ -252,9 +262,8 @@ struct ReaderDirectoryProgressCapsule: View {
                 onScrub(CGFloat(targetFraction) * width, width)
             }
             .onEnded { _ in
-                guard supportsScrub else { return }
                 dragStartProgressFraction = nil
-                onEndScrub()
+                if supportsScrub { onEndScrub() } else { onCancelScrub() }
             }
     }
 
@@ -291,6 +300,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     let onEndScrub: () -> Void
     @ViewBuilder let previewContent: (ReaderProgressScrubPreview) -> PreviewContent
     @State private var dragStartProgressFraction: Double?
+    @GestureState private var isDragging = false
     @State private var scrubState = ReaderProgressScrubState()
     @State private var progressStartFeedbackGenerator = UIImpactFeedbackGenerator(style: .light)
     @State private var progressTickFeedbackGenerator = UISelectionFeedbackGenerator()
@@ -352,6 +362,7 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
+                    .updating($isDragging) { _, dragging, _ in dragging = true }
                     .onChanged { value in
                         if dragStartProgressFraction == nil {
                             // Touch-down: spin the Taptic Engine up before the
@@ -377,6 +388,11 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
         .frame(width: totalWidth)
         .frame(height: layout.verticalScrubberHeight(capsuleCount: stackedCapsuleCount))
         .onAppear(perform: prepareFeedbackGenerators)
+        .onChange(of: isDragging) { _, isDragging in
+            guard !isDragging, dragStartProgressFraction != nil else { return }
+            dragStartProgressFraction = nil
+            resetScrub()
+        }
     }
 
     private func prepareFeedbackGenerators() {
@@ -408,17 +424,16 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     }
 
     private func commitScrub() {
-        guard scrubState.phase == .scrubbing else {
-            scrubState.reset()
-            onPreviewChange(nil)
-            onEndScrub()
-            return
-        }
+        guard scrubState.phase == .scrubbing else { return }
         let update = scrubState.end()
         triggerFeedback(update.haptics)
         if let target = update.committedTargetIndex {
             onCommit(target)
         }
+        resetScrub()
+    }
+
+    private func resetScrub() {
         scrubState.reset()
         onPreviewChange(nil)
         onEndScrub()
@@ -497,7 +512,9 @@ extension ReaderVerticalProgressCapsule where PreviewContent == ReaderVerticalPr
         restingProgressFraction: Double,
         scrubContext: ReaderProgressScrubContext,
         ticks: [ReaderChromeProgressTick],
+        showsPreview: Bool = true,
         stackedCapsuleCount: Int = ReaderBottomChromeLayoutPresentation().baseStackedCapsuleCount,
+        onPreviewChange: @escaping (ReaderProgressScrubPreview?) -> Void = { _ in },
         onBeginScrub: @escaping () -> Void,
         onCommit: @escaping (Int) -> Void,
         onEndScrub: @escaping () -> Void
@@ -508,7 +525,9 @@ extension ReaderVerticalProgressCapsule where PreviewContent == ReaderVerticalPr
             scrubContext: scrubContext,
             ticks: ticks,
             previewSize: CGSize(width: layout.verticalPreviewWidth, height: layout.verticalPreviewHeight),
+            showsPreview: showsPreview,
             stackedCapsuleCount: stackedCapsuleCount,
+            onPreviewChange: onPreviewChange,
             onBeginScrub: onBeginScrub,
             onCommit: onCommit,
             onEndScrub: onEndScrub
