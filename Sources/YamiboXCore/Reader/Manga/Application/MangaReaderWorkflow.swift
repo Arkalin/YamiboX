@@ -894,8 +894,13 @@ public final class MangaReaderWorkflow {
         from previousSettings: MangaReaderSettings,
         to settings: MangaReaderSettings
     ) -> Bool {
-        previousSettings.readingMode != settings.readingMode ||
-            previousSettings.pagedTurnStyle != settings.pagedTurnStyle ||
+        // Cut, slide and quick fade use the same mounted collection. A change
+        // between them must not issue a placement that cancels an active turn.
+        let changesPagingBackend = previousSettings.pagedTurnStyle != settings.pagedTurnStyle &&
+            (settings.readingMode != .paged ||
+             previousSettings.pagedTurnStyle == .pageCurl || settings.pagedTurnStyle == .pageCurl)
+        return previousSettings.readingMode != settings.readingMode ||
+            changesPagingBackend ||
             previousSettings.pageTurnDirection != settings.pageTurnDirection ||
             previousSettings.pageScaleMode != settings.pageScaleMode ||
             previousSettings.pageEdgeFillStyle != settings.pageEdgeFillStyle

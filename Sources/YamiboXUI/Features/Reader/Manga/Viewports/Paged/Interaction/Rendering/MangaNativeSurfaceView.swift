@@ -55,10 +55,7 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             }
             self.onInformationZoomChange?(MangaPageZoomPolicy.isActive(snapshot.factor) || snapshot.isInteracting)
             self.publishNativeState()
-        }
-        onInteractionEnd = { [weak self] in
-            guard let self else { return }
-            self.runtime?.nativeInteractionDidEnd(instance: self.instance)
+            if !self.configuring { self.runtime?.nativeInteractionDidChange(instance: self.instance) }
         }
         onViewportSizeChange = { [weak self] size, previous in
             guard let self else { return }
@@ -154,11 +151,17 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
         ), factor: normalizedZoomFactor)
     }
 
-    var keepsPageFixedDuringImageInteraction: Bool {
-        // The paging recognizer needs UIKit's current state, not the last
-        // transform delivered through a representable update.
-        MangaPageZoomPolicy.isActive(normalizedZoomFactor) || isZooming || isZoomAnimating || isZoomBouncing ||
-            isDragging || isDecelerating || isScrollAnimating || isDrivenTransform
+    var imageInteractionState: MangaImageInteractionState {
+        .init(factor: normalizedZoomFactor, isMoving: hasImageMotion,
+              hasTouch: isTracking || panGestureRecognizer.numberOfTouches > 0 ||
+                (pinchGestureRecognizer?.numberOfTouches ?? 0) > 0)
+    }
+
+    private var hasImageMotion: Bool {
+        isZooming || isZoomAnimating || isZoomBouncing || isDragging || isDecelerating ||
+            isScrollAnimating || isDrivenTransform ||
+            panGestureRecognizer.state == .began || panGestureRecognizer.state == .changed ||
+            pinchGestureRecognizer?.state == .began || pinchGestureRecognizer?.state == .changed
     }
 
     func remoteImageHit(at point: CGPoint, in window: UIWindow) -> Bool {

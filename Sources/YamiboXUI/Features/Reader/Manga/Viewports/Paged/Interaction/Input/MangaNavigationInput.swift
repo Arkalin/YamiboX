@@ -12,6 +12,7 @@ final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
     var permits: (UIGestureRecognizer) -> Bool = { _ in false }
     var receives: (UIGestureRecognizer, UITouch) -> Bool = { _, _ in true }
     var navigationContext: () -> MangaNavigationSession.Context? = { nil }
+    var onNavigationPanInvalidated: (() -> Void)?
     private var navigationSession = MangaNavigationSession()
 
     init(navigationPan: UIPanGestureRecognizer = UIPanGestureRecognizer()) {
@@ -72,7 +73,10 @@ final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
             switch recognizer.state {
             case .began: navigationSession.begin(in: navigationContext())
             case .ended:
-                guard navigationSession.finish(in: navigationContext()) else { return }
+                guard navigationSession.finish(in: navigationContext()) else {
+                    onNavigationPanInvalidated?()
+                    return
+                }
             case .cancelled, .failed: navigationSession.cancel()
             default: break
             }

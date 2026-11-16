@@ -7,13 +7,11 @@ import UIKit
 struct MangaPagedReaderViewport: UIViewRepresentable {
     var attachedInformation = ReaderAttachedInformationConfiguration()
     static func dismantleUIView(_ view: UICollectionView, coordinator: MangaPagedScrollCoordinator) {
-        coordinator.stopImagePrefetch()
-        coordinator.detachViewport()
-        coordinator.pagingDriver.cancelSelectionScroll(in: view, inputs: coordinator.pagingInputs)
         (view as? MangaPagedReaderCollectionView)?.shouldBeginPanGesture = nil
         (view as? MangaPagedReaderCollectionView)?.onLayoutSubviews = nil
+        (view as? MangaPagedReaderCollectionView)?.accessibilityPageTurn = nil
+        coordinator.detachViewport()
         coordinator.gestures.input.detach()
-        coordinator.interactionRuntime.reset()
     }
     let plan: MangaPagedReadingPlan
     let viewportPlacement: MangaNovelReaderViewportPlacement?
@@ -77,10 +75,7 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
             // Layout can run inside the SwiftUI render commit; defer callbacks
             // published by the placement work out of the update transaction.
             coordinator.callbackScheduler.performViewUpdate {
-                coordinator.realignViewportAfterBoundsChangeIfNeeded(in: collectionView)
-                coordinator.applyInitialPlacementIfNeeded(in: collectionView)
-                coordinator.applyViewportPlacementIfNeeded(in: collectionView)
-                coordinator.reconcileSlideAfterLayout()
+                coordinator.didLayoutViewport(collectionView)
             }
         }
         context.coordinator.gestures.install(in: collectionView)
@@ -90,29 +85,24 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
 
     func updateUIView(_ collectionView: UICollectionView, context: Context) {
         context.coordinator.parent = self
-        collectionView.backgroundColor = pageEdgeFillColor
-        context.coordinator.updateGestureState(in: collectionView)
         context.coordinator.callbackScheduler.performViewUpdate {
             context.coordinator.updateContentIfNeeded(in: collectionView)
         }
         let gestures = context.coordinator.gestures
-        controlPageTurnBridge.route = { [weak gestures, weak collectionView] step in
-            guard let gestures, let collectionView else { return }
-            gestures.routeControl(step, in: collectionView)
+        controlPageTurnBridge.route = { [weak gestures] step in
+            gestures?.routeControl(step)
         }
-        controlPageTurnBridge.pagedSurface = { [weak gestures, weak collectionView] in
-            guard let collectionView else { return nil }
-            return gestures?.currentSurface(in: collectionView)
+        controlPageTurnBridge.pagedSurface = { [weak gestures] in
+            gestures?.currentSurface()
         }
         let coordinator = context.coordinator
-        controlPageTurnBridge.capturePosition = { [weak coordinator, weak collectionView] in
-            guard let coordinator, let collectionView,
-                  let index = coordinator.currentSpreadIndex(in: collectionView),
+        controlPageTurnBridge.capturePosition = { [weak coordinator] in
+            guard let coordinator, let index = coordinator.currentSpreadIndex,
                   let spread = coordinator.parent.plan.spread(at: index) else { return nil }
             let plan = coordinator.parent.plan
             let retainedIndex = plan.currentPageIndex.flatMap { spread.containsPage(at: $0) ? $0 : nil }
             let fallback = retainedIndex.map { plan.pages[$0] } ?? spread.preferredPage
-            let focus = coordinator.gestures.currentSurface(in: collectionView)?.pageFocus
+            let focus = coordinator.gestures.currentSurface()?.pageFocus
             let page = [spread.leftPage, spread.rightPage].compactMap { $0 }.first { $0.id == focus?.pageID } ?? fallback
             return .init(page: page, placement: coordinator.parent.viewportPlacement, focus: focus)
         }
@@ -122,10 +112,20 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
 final class MangaPagedReaderCollectionView: UICollectionView {
     var onLayoutSubviews: (() -> Void)?
     var shouldBeginPanGesture: ((UIPanGestureRecognizer) -> Bool)?
+    var accessibilityPageTurn: ((UIAccessibilityScrollDirection) -> Bool)?
+    private var lastViewportSize: CGSize?
 
     override func layoutSubviews() {
+        if lastViewportSize != bounds.size {
+            lastViewportSize = bounds.size
+            collectionViewLayout.invalidateLayout()
+        }
         super.layoutSubviews()
         onLayoutSubviews?()
+    }
+
+    override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+        accessibilityPageTurn?(direction) ?? false
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {

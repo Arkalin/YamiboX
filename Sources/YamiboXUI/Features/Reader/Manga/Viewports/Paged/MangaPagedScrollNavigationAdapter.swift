@@ -15,15 +15,18 @@ final class MangaPagedScrollNavigationAdapter {
         self.input = input
         input.navigationContext = { [weak self] in
             guard let self, let coordinator = self.coordinator,
-                  let collection = self.input.navigationPan.view as? UICollectionView else { return nil }
-            return coordinator.interactionRuntime.navigationContext(selectionIndex: coordinator.pagingInputs.selectionIndex,
-                surface: self.currentSurface(in: collection), configuration: self.configuration)
+                  let index = coordinator.currentSpreadIndex else { return nil }
+            return coordinator.interactionRuntime.navigationContext(selectionIndex: index,
+                surface: self.currentSurface(), configuration: self.configuration)
+        }
+        input.onNavigationPanInvalidated = { [weak coordinator] in
+            coordinator?.finishDiscretePan(delta: nil)
         }
         input.permits = { [weak self] recognizer in
             guard let self, let coordinator = self.coordinator, let collection = recognizer.view as? UICollectionView else { return false }
             if recognizer === self.input.navigationPan, let pan = recognizer as? UIPanGestureRecognizer {
                 guard coordinator.parent.settings.pagedTurnStyle.usesDiscretePageTurns else { return false }
-                return self.navigationStep(for: pan, in: collection) != nil
+                return coordinator.canBeginPagePan(in: collection) && self.admitsNavigation(for: pan, in: collection)
             }
             return true
         }
@@ -42,15 +45,26 @@ final class MangaPagedScrollNavigationAdapter {
                 let zone = PhysicalZone.at(point, in: collection.bounds)
                 let request: MangaNavigationRequest = role == .tap ? .tap(zone) :
                     .doubleTap(zone: zone, location: self.surfaceLocation(point, in: collection))
-                self.route(request, in: collection)
+                self.route(request)
             case .navigationPan:
                 guard let pan = recognizer as? UIPanGestureRecognizer, let coordinator = self.coordinator else { return }
-                if pan.state == .ended {
-                    let current = coordinator.pagingInputs.selectionIndex
-                    coordinator.preparePageEntry(at: current - 1)
-                    coordinator.preparePageEntry(at: current + 1)
+                switch pan.state {
+                case .began:
+                    coordinator.beginDiscretePan()
+                case .ended:
+                    let delta = ReaderPagedBoundaryPageTurn.horizontalDelta(
+                        translation: pan.translation(in: collection), velocity: pan.velocity(in: collection),
+                        viewportWidth: collection.bounds.width
+                    ).map {
+                        ReaderPagedBoundaryPageTurn.directionalDelta(
+                            $0, direction: coordinator.parent.settings.pageTurnDirection.horizontalNavigationDirection
+                        )
+                    }
+                    coordinator.finishDiscretePan(delta: delta)
+                case .cancelled, .failed:
+                    coordinator.finishDiscretePan(delta: nil)
+                default: break
                 }
-                coordinator.pagingDriver.handleDiscretePagePan(pan, inputs: coordinator.pagingInputs)
             }
         }
     }
@@ -62,51 +76,49 @@ final class MangaPagedScrollNavigationAdapter {
         collection.shouldBeginPanGesture = { [weak self, weak collection] pan in
             guard let self, let collection, let coordinator = self.coordinator,
                   !coordinator.parent.settings.pagedTurnStyle.usesDiscretePageTurns,
-                  !coordinator.slideImageOwnsPan else { return false }
-            return self.navigationStep(for: pan, in: collection) != nil
+                  coordinator.canBeginPagePan(in: collection),
+                  self.admitsNavigation(for: pan, in: collection) else { return false }
+            coordinator.admitNativePan()
+            return true
+        }
+        collection.accessibilityPageTurn = { [weak self] direction in
+            guard let self, let coordinator = self.coordinator, coordinator.acceptsNavigationInput else { return false }
+            let step: NavigationStep
+            switch direction {
+            case .next: step = .forward
+            case .previous: step = .backward
+            case .left: step = self.configuration.direction.step(toward: .right)
+            case .right: step = self.configuration.direction.step(toward: .left)
+            default: return false
+            }
+            coordinator.navigate(step)
+            return true
         }
     }
 
-    func routeControl(_ step: NavigationStep, in collection: UICollectionView) {
-        route(.control(step), in: collection)
+    func routeControl(_ step: NavigationStep) {
+        route(.control(step))
     }
 
-    private func navigationStep(for pan: UIPanGestureRecognizer, in collection: UICollectionView) -> NavigationStep? {
-        guard let coordinator, !coordinator.parent.plan.spreads.isEmpty, pan.numberOfTouches <= 1 else { return nil }
+    private func admitsNavigation(for pan: UIPanGestureRecognizer, in collection: UICollectionView) -> Bool {
+        guard let coordinator, pan.numberOfTouches <= 1 else { return false }
         let translation = pan.translation(in: collection)
         let velocity = pan.velocity(in: collection)
         let decision = coordinator.interactionRuntime.navigationDecision(
             .pan(translation: CGSize(width: translation.x, height: translation.y), velocity: CGSize(width: velocity.x, height: velocity.y)),
-            surface: currentSurface(in: collection), configuration: configuration)
-        guard case let .navigate(edge) = decision else { return nil }
-        return configuration.direction.step(toward: edge)
+            surface: currentSurface(), configuration: configuration)
+        if case .navigate = decision { return true }
+        return false
     }
 
-    private func route(_ request: MangaNavigationRequest, in collection: UICollectionView) {
-        guard let coordinator else { return }
+    private func route(_ request: MangaNavigationRequest) {
+        guard let coordinator, coordinator.acceptsNavigationInput else { return }
         let decision = withAnimation(.easeOut(duration: 0.2)) {
-            coordinator.interactionRuntime.handleNavigation(request, surface: currentSurface(in: collection), configuration: configuration)
+            coordinator.interactionRuntime.handleNavigation(request, surface: currentSurface(), configuration: configuration)
         }
         switch decision {
         case let .navigate(edge):
-            guard !coordinator.pagingDriver.isPerformingSlideTransition else { return }
-            let step = configuration.direction.step(toward: edge)
-            let inputs = coordinator.pagingInputs
-            let target = inputs.selectionIndex + step.rawValue
-            if target < 0 || target >= inputs.itemCount {
-                guard inputs.itemCount > 0 else { return }
-                let generation = coordinator.interactionRuntime.navigationGeneration
-                coordinator.callbackScheduler.publish { [weak coordinator] in
-                    guard coordinator?.interactionRuntime.navigationGeneration == generation else { return }
-                    if inputs.canBoundaryPageTurn(step.rawValue) {
-                        inputs.onBoundaryPageTurn(step.rawValue)
-                    } else {
-                        inputs.onBoundaryPageTurnRejected(step.rawValue)
-                    }
-                }
-            } else {
-                coordinator.animateAdjacentSelection(for: step, targetSpreadIndex: target, in: collection, inputs: inputs)
-            }
+            coordinator.navigate(configuration.direction.step(toward: edge))
         case .toggleChrome:
             coordinator.callbackScheduler.publish { [weak coordinator] in coordinator?.parent.onTap() }
         default: break
@@ -121,13 +133,13 @@ final class MangaPagedScrollNavigationAdapter {
             zoomEnabled: parent.zoomEnabled, usesTwoPages: parent.plan.usesTwoPageSpread)
     }
 
-    func currentSurface(in collection: UICollectionView) -> MangaSurfaceRuntime? {
-        guard let coordinator, let index = coordinator.currentSpreadIndex(in: collection) else { return nil }
+    func currentSurface() -> MangaSurfaceRuntime? {
+        guard let coordinator, let index = coordinator.currentSpreadIndex else { return nil }
         return coordinator.surface(forSpreadAt: index)
     }
 
     private func surfaceLocation(_ point: CGPoint, in collection: UICollectionView) -> CGPoint {
-        guard let coordinator, let spreadIndex = coordinator.currentSpreadIndex(in: collection) else { return .zero }
+        guard let coordinator, let spreadIndex = coordinator.currentSpreadIndex else { return .zero }
         let indexPath = IndexPath(item: coordinator.viewportIndex(forSpreadIndex: spreadIndex), section: 0)
         guard let cell = collection.cellForItem(at: indexPath) else {
             return CGPoint(x: point.x - collection.bounds.minX, y: point.y - collection.bounds.minY)

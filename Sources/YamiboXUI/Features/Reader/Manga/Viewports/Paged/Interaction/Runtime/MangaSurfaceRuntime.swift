@@ -1,11 +1,17 @@
 import Foundation
 import Observation
 
+struct MangaImageInteractionState: Equatable {
+    let factor: CGFloat
+    let isMoving: Bool
+    let hasTouch: Bool
+}
+
 @MainActor
 protocol MangaNativeSurfaceControlling: AnyObject {
     func applyNative(_ decision: MangaInteractionDecision, animated: Bool)
     func cancelNative(reset: Bool)
-    var keepsPageFixedDuringImageInteraction: Bool { get }
+    var imageInteractionState: MangaImageInteractionState { get }
     func applyPendingPageEntry()
     var pageFocus: MangaViewportFocus? { get }
     func doubleTapFromTrackpad(at windowPoint: CGPoint)
@@ -38,7 +44,7 @@ final class MangaSurfaceRuntime {
     @ObservationIgnored weak var zoomSession: MangaPagedZoomSession?
     @ObservationIgnored private var pageEntry: PageEntryState?
     @ObservationIgnored var permitsInteraction: () -> Bool = { true }
-    @ObservationIgnored var onNativeInteractionEnd: (() -> Void)?
+    @ObservationIgnored var onImageInteractionChange: (() -> Void)?
     private let shouldAnimateZoom: () -> Bool
 
     init(shouldAnimateZoom: @escaping () -> Bool = { true }) {
@@ -75,13 +81,13 @@ final class MangaSurfaceRuntime {
 
     func isMounted(_ instance: UUID) -> Bool { mountingInstance == instance }
 
-    var keepsPageFixedDuringImageInteraction: Bool {
-        nativeSurface?.keepsPageFixedDuringImageInteraction == true
+    var imageInteractionState: MangaImageInteractionState? {
+        nativeSurface?.imageInteractionState
     }
 
-    func nativeInteractionDidEnd(instance: UUID) {
+    func nativeInteractionDidChange(instance: UUID) {
         guard isMounted(instance) else { return }
-        onNativeInteractionEnd?()
+        onImageInteractionChange?()
     }
 
     var pendingPageEntry: PageEntry? {

@@ -54,7 +54,6 @@ struct MangaPagedPageCurlReaderViewport: UIViewControllerRepresentable {
         MangaPagedReaderContentIdentity(
             spreadIDs: plan.spreadIDs,
             pageScaleMode: effectivePageScaleMode,
-            pagedTurnStyle: settings.pagedTurnStyle,
             pageTurnDirection: settings.pageTurnDirection,
             pageEdgeFillStyle: settings.pageEdgeFillStyle,
             colorScheme: colorScheme

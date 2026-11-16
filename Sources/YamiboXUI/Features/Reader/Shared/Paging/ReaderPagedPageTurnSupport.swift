@@ -384,7 +384,6 @@ struct ReaderPagedPagingInputs: @unchecked Sendable {
     var pageTurnBackgroundColor: (UITraitCollection, CGFloat) -> UIColor
     var itemIndexForSelectionIndex: (Int) -> Int = { $0 }
     var selectionIndexForItemIndex: (Int) -> Int = { $0 }
-    var onSelectionSettled: ((Int) -> Void)? = nil
 }
 
 extension ReaderPagedTurnStyle {
@@ -432,31 +431,6 @@ final class ReaderPagedPagingDriver {
         slideAnimation = nil
         slideTransition = nil
         endPageTurnVisuals(in: collectionView, inputs: inputs)
-    }
-
-    func cancelSelectionScroll(in collectionView: UICollectionView, inputs: ReaderPagedPagingInputs) {
-        pendingSelectionIndex = nil
-        pendingSelectionScrollRetryID = nil
-        cancelSlideTransition(in: collectionView, inputs: inputs)
-    }
-
-    /// Animates a target already resolved by the caller's layout. Unlike a
-    /// selection request, this doesn't queue a retry or publish selection.
-    func slideToResolvedOffset(
-        _ offsetX: CGFloat,
-        selectionIndex: Int,
-        in collectionView: UICollectionView,
-        inputs: ReaderPagedPagingInputs,
-        onFinished: @escaping (Bool) -> Void
-    ) {
-        cancelSelectionScroll(in: collectionView, inputs: inputs)
-        startSlide(
-            to: selectionIndex,
-            offset: CGPoint(x: offsetX, y: collectionView.contentOffset.y),
-            in: collectionView,
-            inputs: inputs,
-            onFinished: onFinished
-        )
     }
 
     func updateContentAndRequestSelectionScroll(
@@ -739,12 +713,9 @@ final class ReaderPagedPagingDriver {
 
     private func publishSelectionIfNeeded(_ selectionIndex: Int, inputs: ReaderPagedPagingInputs) {
         let clampedItem = min(max(selectionIndex, 0), max(inputs.itemCount - 1, 0))
-        let onSelectionChange = clampedItem != inputs.selectionIndex ? inputs.onSelectionChange : nil
-        let onSelectionSettled = inputs.onSelectionSettled
-        guard onSelectionChange != nil || onSelectionSettled != nil else { return }
+        guard clampedItem != inputs.selectionIndex, let onSelectionChange = inputs.onSelectionChange else { return }
         callbackScheduler.publish {
-            onSelectionSettled?(clampedItem)
-            onSelectionChange?(clampedItem)
+            onSelectionChange(clampedItem)
         }
     }
 

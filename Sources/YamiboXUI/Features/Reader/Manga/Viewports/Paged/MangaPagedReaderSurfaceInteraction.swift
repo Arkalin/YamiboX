@@ -7,7 +7,6 @@ import UIKit
 struct MangaPagedReaderContentIdentity: Equatable {
     var spreadIDs: [String]
     var pageScaleMode: MangaPageScaleMode
-    var pagedTurnStyle: ReaderPagedTurnStyle
     var pageTurnDirection: MangaPageTurnDirection
     var pageEdgeFillStyle: MangaPageEdgeFillStyle
     var colorScheme: ColorScheme

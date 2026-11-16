@@ -49,25 +49,3 @@ enum MangaPagedLayoutPolicy {
     /// must not reintroduce the window's top safe area on iPhone.
     static let hostedPageSafeAreaEdges: Edge.Set = .vertical
 }
-
-enum MangaPagedViewportResizePolicy {
-    static func alignedContentOffsetX(
-        itemIndex: Int,
-        previousViewportSize: CGSize?,
-        currentViewportSize: CGSize,
-        itemCount: Int
-    ) -> CGFloat? {
-        guard let previousViewportSize,
-              previousViewportSize != currentViewportSize,
-              previousViewportSize.width > 0,
-              previousViewportSize.height > 0,
-              currentViewportSize.width > 0,
-              currentViewportSize.height > 0,
-              itemCount > 0 else {
-            return nil
-        }
-
-        let clampedItemIndex = min(max(itemIndex, 0), itemCount - 1)
-        return CGFloat(clampedItemIndex) * currentViewportSize.width
-    }
-}

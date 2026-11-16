@@ -8,7 +8,3 @@ extension MangaNavigationConfiguration {
             swapsPageTurnTapZones: settings.swapsPageTurnTapZones)
     }
 }
-
-extension NavigationStep {
-    var readerTapZone: ReaderPagedTapZone { self == .forward ? .next : .previous }
-}
