@@ -1375,7 +1375,7 @@
 "settings.board_reader.restore" = "恢复";
 "settings.board_reader.restore_default" = "恢复默认配置";
 "settings.board_reader.restore_default_message" = "这将移除所有自定义的板块阅读方式，恢复为默认配置。";
-"settings.board_reader.smart_toggle" = "智能漫画模式";
+"settings.board_reader.smart_toggle" = "智能";
 "settings.about_app_with_version" = "关于Yamibo X(%@)";
 "settings.section.appearance" = "外观";
 "settings.section.favorite_sync_behavior" = "收藏同步偏好";

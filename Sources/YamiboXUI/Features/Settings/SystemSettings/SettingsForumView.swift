@@ -193,21 +193,33 @@ private struct SystemSettingsBoardReaderRowMenu: View {
             }
 
             if case let .manga(smartEnabled) = row.entry.mode {
-                AppThemeSwitch(
+                Toggle(
                     L10n.string("settings.board_reader.smart_toggle"),
                     isOn: Binding(
                         get: { smartEnabled },
                         set: { onSelectMode(.manga(smartEnabled: $0)) }
                     )
                 )
+                // Menus need a checkable action, not a visible switch control.
+                .toggleStyle(.automatic)
             }
         } label: {
-            SystemSettingsRow(
-                title: row.displayName,
-                value: row.modeLabel,
-                showsChevron: false
-            )
+            HStack(spacing: 8) {
+                SystemSettingsRow(
+                    title: row.displayName,
+                    value: row.modeLabel,
+                    showsChevron: false
+                )
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.borderless)
+        .accessibilityLabel(row.displayName)
+        .accessibilityValue(row.modeLabel)
         .disabled(isBusy)
     }
 
