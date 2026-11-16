@@ -8,7 +8,6 @@ struct NovelReaderVerticalContent: View {
     let topInset: CGFloat
     let bottomInset: CGFloat
     let isPadDevice: Bool
-    let isChromeVisible: Bool
     let verticalRestore: NovelReaderVerticalRestoreCoordinator
     let verticalScrollCoordinator: NovelReaderVerticalScrollCoordinator
     let viewport: ReaderViewportLifetime
@@ -18,8 +17,7 @@ struct NovelReaderVerticalContent: View {
     let onBoundaryPullRelease: (NovelReaderVerticalBoundaryDirection, @escaping () -> Bool) -> Void
     let updateVerticalBoundaryPullState: (NovelReaderVerticalBoundaryPullState) -> Void
     let handleVerticalTap: () -> Void
-    let enterImmersiveMode: () -> Void
-    let handleImageTap: (URL, String?) -> Void
+    let onOpenImage: (URL, String?) -> Void
 
     var body: some View {
         var displaySettings = model.settings
@@ -42,7 +40,6 @@ struct NovelReaderVerticalContent: View {
             likeHighlightController: annotations.highlightController,
             searchHighlightController: searchHighlightController,
             likedImageAnchors: annotations.likedImageAnchors,
-            isChromeVisible: isChromeVisible,
             onVisibleSurfaceIdentitiesChange: { surfaceIdentities in
                 guard viewport.acceptsGeometry else { return }
                 model.updateNovelTextViewportVisibleSurfaceIdentities(surfaceIdentities)
@@ -105,12 +102,7 @@ struct NovelReaderVerticalContent: View {
             onTap: {
                 handleVerticalTap()
             },
-            onChromeVisibleImageTap: {
-                enterImmersiveMode()
-            },
-            onImageTap: { url, title in
-                handleImageTap(url, title)
-            },
+            onOpenImage: onOpenImage,
             onImageLongPress: { anchor, imageURL, chapterTitle in
                 annotations.toggleImage(anchor, imageURL: imageURL, chapterTitle: chapterTitle)
             }

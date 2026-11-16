@@ -27,7 +27,6 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     let likeHighlightController: NovelLikeHighlightController?
     let searchHighlightController: NovelReaderSearchHighlightController?
     let likedImageAnchors: Set<NovelImageLikeAnchor>
-    let isChromeVisible: Bool
     let onVisibleSurfaceIdentitiesChange: ([NovelReaderSurfaceIdentity]) -> Void
     let onScrollRequestHandled: (NovelReaderVerticalScrollRequest) -> Void
     let onScrollViewReady: (UIScrollView, @escaping () -> Void) -> Void
@@ -36,8 +35,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     let onViewportChange: () -> Void
     let onScrollSettled: () -> Void
     let onTap: () -> Void
-    let onChromeVisibleImageTap: () -> Void
-    let onImageTap: (URL, String?) -> Void
+    let onOpenImage: (URL, String?) -> Void
     let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 
     private var contentIdentity: NovelReaderVerticalViewportContentIdentity {
@@ -81,6 +79,18 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         context.coordinator.tapGesture.cancelsTouchesInView = false
         context.coordinator.tapGesture.delegate = context.coordinator
         collectionView.addGestureRecognizer(context.coordinator.tapGesture)
+        NovelReaderImageInteraction.installDoubleTap(
+            in: collectionView, singleTap: coordinator.tapGesture,
+            canOpen: { [weak coordinator] in
+                guard let coordinator else { return false }
+                return coordinator.parent.selectionController?.hasSelection != true
+            },
+            onOpen: { [weak coordinator] url, title in
+                guard let coordinator else { return }
+                let onOpenImage = coordinator.parent.onOpenImage
+                coordinator.callbackScheduler.publish { onOpenImage(url, title) }
+            }
+        )
         context.coordinator.longPressGesture.minimumPressDuration = 0.45
         context.coordinator.longPressGesture.cancelsTouchesInView = false
         context.coordinator.longPressGesture.delegate = context.coordinator
@@ -329,20 +339,9 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
 
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
             guard recognizer.state == .ended else { return }
-            if let collectionView = recognizer.view as? UICollectionView {
-                let location = recognizer.location(in: collectionView)
-                if parent.selectionController?.hasSelection == true {
-                    parent.selectionController?.clearSelection()
-                    return
-                }
-                if let imageView = collectionView.firstDescendant(
-                    ofType: NovelReaderVerticalViewportImageView.self,
-                    containing: location
-                ) {
-                    let imageLocation = collectionView.convert(location, to: imageView)
-                    handleImageTap(imageView, at: imageLocation)
-                    return
-                }
+            if parent.selectionController?.hasSelection == true {
+                parent.selectionController?.clearSelection()
+                return
             }
             let onTap = parent.onTap
             callbackScheduler.publish {
@@ -359,16 +358,6 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             touch.view?.isDescendant(ofType: UIControl.self) != true
-        }
-
-        private func handleImageTap(_ imageView: NovelReaderVerticalViewportImageView, at location: CGPoint) {
-            NovelReaderImageInteraction.tap(
-                imageView: imageView, at: location,
-                isChromeVisible: parent.isChromeVisible,
-                scheduler: callbackScheduler,
-                onChromeVisibleTap: parent.onChromeVisibleImageTap,
-                onImageTap: parent.onImageTap
-            )
         }
 
         @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
@@ -1050,7 +1039,7 @@ final class NovelReaderVerticalViewportImageView: UIView {
     private var task: Task<Void, Never>?
     private var url: URL?
     private var title: String?
-    private var sourceIdentity: YamiboImageSource?
+    private(set) var sourceIdentity: YamiboImageSource?
 
     init(frame: CGRect = .zero, pipeline: YamiboUIImagePipeline?) {
         self.pipeline = pipeline

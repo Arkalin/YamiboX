@@ -46,8 +46,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     let onPageTapZone: (ReaderGestureRegionAction) -> Void
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
-    let onChromeVisibleImageTap: () -> Void
-    let onImageTap: (URL, String?) -> Void
+    let onOpenImage: (URL, String?) -> Void
     let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 
     var itemCount: Int {
@@ -97,6 +96,19 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         tapRecognizer.cancelsTouchesInView = false
         tapRecognizer.delegate = context.coordinator
         collectionView.addGestureRecognizer(tapRecognizer)
+        let coordinator = context.coordinator
+        NovelReaderImageInteraction.installDoubleTap(
+            in: collectionView, singleTap: tapRecognizer,
+            canOpen: { [weak coordinator] in
+                guard let coordinator else { return false }
+                return coordinator.parent.selectionController?.hasSelection != true
+            },
+            onOpen: { [weak coordinator] url, title in
+                guard let coordinator else { return }
+                let onOpenImage = coordinator.parent.onOpenImage
+                coordinator.callbackScheduler.publish { onOpenImage(url, title) }
+            }
+        )
         let longPressRecognizer = UILongPressGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleLongPress(_:))
@@ -111,7 +123,6 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         )
         discretePagePanRecognizer.delegate = context.coordinator
         collectionView.addGestureRecognizer(discretePagePanRecognizer)
-        let coordinator = context.coordinator
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
             guard let coordinator, let collectionView else { return }
             // Layout can run inside the SwiftUI render commit; defer callbacks
@@ -314,14 +325,6 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 parent.selectionController?.clearSelection()
                 return
             }
-            if let imageView = collectionView.firstDescendant(
-                ofType: NovelReaderVerticalViewportImageView.self,
-                containing: location
-            ) {
-                let imageLocation = collectionView.convert(location, to: imageView)
-                handleImageTap(imageView, at: imageLocation)
-                return
-            }
             guard let zone = parent.settings.gestureRegionLayout.action(at: location, in: collectionView.bounds)
             else { return }
             if !parent.isChromeVisible,
@@ -353,16 +356,6 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
 
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             touch.view?.isDescendant(ofType: UIControl.self) != true
-        }
-
-        private func handleImageTap(_ imageView: NovelReaderVerticalViewportImageView, at location: CGPoint) {
-            NovelReaderImageInteraction.tap(
-                imageView: imageView, at: location,
-                isChromeVisible: parent.isChromeVisible,
-                scheduler: callbackScheduler,
-                onChromeVisibleTap: parent.onChromeVisibleImageTap,
-                onImageTap: parent.onImageTap
-            )
         }
 
         @objc

@@ -397,7 +397,6 @@ struct NovelReaderPagedViewportBindings {
     var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
     let onPageTapZone: (ReaderGestureRegionAction) -> Void
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
-    let onChromeVisibleImageTap: () -> Void
-    let onImageTap: (URL, String?) -> Void
+    let onOpenImage: (URL, String?) -> Void
     let onImageLongPress: (NovelImageLikeAnchor, URL, String?) -> Void
 }

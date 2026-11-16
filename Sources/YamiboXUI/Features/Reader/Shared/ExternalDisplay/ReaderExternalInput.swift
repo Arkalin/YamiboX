@@ -186,7 +186,10 @@ final class ReaderExternalInput {
         refreshCursorStyle()
     }
 
-    var canDoubleClick: Bool { clickTarget?.actions.doubleTap != nil }
+    var canDoubleClick: Bool {
+        guard let actions = clickTarget?.actions, actions.doubleTap != nil else { return false }
+        return actions.canDoubleTapAt?(location) ?? true
+    }
 
     private var clickTarget: ReaderRemoteTargetProbe? {
         targets.target(at: location) { $0.tap != nil || $0.doubleTap != nil || $0.blocksTap }
