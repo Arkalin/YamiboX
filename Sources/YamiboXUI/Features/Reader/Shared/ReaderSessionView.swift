@@ -57,6 +57,17 @@ struct ReaderSessionScreen: View {
                             .environment(\.readerProgressPreviewViewport, viewport)
                         }
                     }
+                    .overlay {
+                        // Only the device window can receive Pencil gestures.
+                        if let viewport = display.applePencilPageTurnViewport(for: session) {
+                            let settings = display.applePencilPageTurnSettings
+                            ApplePencilPageTurnInteractionOverlay(settings: settings, canTurnPage: true) { delta in
+                                guard display.applePencilPageTurnSettings == settings,
+                                      display.applePencilPageTurnViewport(for: session) === viewport else { return }
+                                _ = viewport.performExternalPageStep(delta < 0 ? .up : .down)
+                            }
+                        }
+                    }
                     .statusBarHidden(!isMenuVisible)
                     .persistentSystemOverlays(isMenuVisible ? .automatic : .hidden)
                 } else if let display = appModel.externalReader, display.sessionID == session.id, display.isWaitingForExternalFrame {

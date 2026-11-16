@@ -18,9 +18,10 @@ final class ReaderViewportLifetime {
     typealias DeviceMenu = @MainActor (EdgeInsets, _ isVisible: Bool) -> AnyView
 
     @Observable
-    fileprivate final class DeviceMenuState {
+    fileprivate final class DeviceControls {
         var menu: DeviceMenu?
         var progressPreview: ReaderExternalProgressPreview?
+        var admitsApplePencilPageTurn: (() -> Bool)?
     }
 
     let settingsTarget: ReaderSettingsTarget
@@ -29,9 +30,12 @@ final class ReaderViewportLifetime {
     private var attachmentID: UUID?
     private var capturePosition: (() -> Void)?
     private var onDetach: (() -> Void)?
-    private let deviceMenuState = DeviceMenuState()
-    var deviceMenu: DeviceMenu? { deviceMenuState.menu }
-    var deviceMenuProgressPreview: ReaderExternalProgressPreview? { deviceMenuState.progressPreview }
+    private let deviceControls = DeviceControls()
+    var deviceMenu: DeviceMenu? { deviceControls.menu }
+    var deviceMenuProgressPreview: ReaderExternalProgressPreview? { deviceControls.progressPreview }
+    var admitsApplePencilPageTurn: Bool {
+        deviceControls.admitsApplePencilPageTurn?() == true
+    }
     var didRender: (() -> Void)?
     var didFailInitialPresentation: (() -> Void)?
     var admitsPresentationCallbacks: (() -> Bool)?
@@ -71,6 +75,7 @@ final class ReaderViewportLifetime {
         onDetach: (() -> Void)? = nil,
         externalInput: ReaderExternalInput? = nil,
         deviceMenu: DeviceMenu? = nil,
+        admitsApplePencilPageTurn: (() -> Bool)? = nil,
         handleInput: @escaping (ReaderControlEvent) -> Void
     ) {
         guard isCurrent, attachmentID != id else { return }
@@ -81,7 +86,8 @@ final class ReaderViewportLifetime {
         self.capturePosition = capturePosition
         self.onDetach = onDetach
         self.peripheralInput = peripheralInput
-        deviceMenuState.menu = deviceMenu
+        deviceControls.menu = deviceMenu
+        deviceControls.admitsApplePencilPageTurn = admitsApplePencilPageTurn
         externalInput?.buttonViewport = self
         handlerToken = peripheralInput.pushHandler { [weak self] event in
             guard self?.acceptsInput(id) == true else { return }
@@ -96,7 +102,7 @@ final class ReaderViewportLifetime {
 
     func setDeviceMenuProgressPreview(_ preview: ReaderExternalProgressPreview?) {
         guard isCurrent, deviceMenu != nil else { return }
-        deviceMenuState.progressPreview = preview
+        deviceControls.progressPreview = preview
     }
 
     func ownsAttachment(_ id: UUID) -> Bool { isCurrent && attachmentID == id }
@@ -169,8 +175,9 @@ final class ReaderViewportLifetime {
         handlerToken = nil
         attachmentID = nil
         capturePosition = nil
-        deviceMenuState.menu = nil
-        deviceMenuState.progressPreview = nil
+        deviceControls.menu = nil
+        deviceControls.progressPreview = nil
+        deviceControls.admitsApplePencilPageTurn = nil
         let cleanup = onDetach
         onDetach = nil
         cleanup?()

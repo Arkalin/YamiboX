@@ -196,13 +196,15 @@ struct NovelReaderView: View {
                     .zIndex(2.5)
                 }
 
-                ApplePencilPageTurnInteractionOverlay(
-                    settings: model.applePencilPageTurnSettings,
-                    canTurnPage: canReceiveApplePencilPageTurn
-                ) { delta in
-                    Task { await goRelativePage(delta, pagerIdentity: pagedPagerIdentity) }
+                if externalGeometry == nil {
+                    ApplePencilPageTurnInteractionOverlay(
+                        settings: model.applePencilPageTurnSettings,
+                        canTurnPage: canReceiveApplePencilPageTurn
+                    ) { delta in
+                        Task { await goRelativePage(delta, pagerIdentity: pagedPagerIdentity) }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if let warning = model.fontWarning, !reader.isFontBannerDismissed,
                    showsChrome, topChromeHeight > 0, model.sourceStatusText == nil {
@@ -286,6 +288,7 @@ struct NovelReaderView: View {
                     },
                     externalInput: remoteInput,
                     deviceMenu: deviceInteraction == nil ? nil : deviceMenu,
+                    admitsApplePencilPageTurn: { canReceiveApplePencilPageTurn && admitsContentInput },
                     handleInput: handleControlEvent
                 )
                 verticalRestore.admitsViewport = { [weak viewport] in viewport?.acceptsGeometry == true }
@@ -1287,7 +1290,7 @@ struct NovelReaderView: View {
 
     private var canReceiveApplePencilPageTurn: Bool {
         ReaderApplePencilPageTurnGate.canTurnPage(
-            isPadDevice: externalGeometry == nil && isPadDevice,
+            isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
             isPagedReadingMode: model.settings.readingMode == .paged,
             hasReadableContent: !model.novelReaderSurfaces.isEmpty,
             hasBlockingOverlay: hasPresentedOverlay,

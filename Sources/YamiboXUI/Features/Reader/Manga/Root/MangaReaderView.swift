@@ -196,13 +196,15 @@ struct MangaReaderView: View {
                 controlUsesTwoPageSpread = newValue
             }
             .overlay {
-                ApplePencilPageTurnInteractionOverlay(
-                    settings: model.applePencilPageTurnSettings,
-                    canTurnPage: canReceiveApplePencilPageTurn
-                ) { delta in
-                    performPageTurn(delta, usesTwoPageSpread: usesTwoPageSpread)
+                if externalGeometry == nil {
+                    ApplePencilPageTurnInteractionOverlay(
+                        settings: model.applePencilPageTurnSettings,
+                        canTurnPage: canReceiveApplePencilPageTurn
+                    ) { delta in
+                        performPageTurn(delta, usesTwoPageSpread: usesTwoPageSpread)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .overlay(alignment: .top) {
                 if externalGeometry == nil {
@@ -239,6 +241,7 @@ struct MangaReaderView: View {
                     },
                     externalInput: remoteInput,
                     deviceMenu: deviceInteraction == nil ? nil : deviceMenu,
+                    admitsApplePencilPageTurn: { canReceiveApplePencilPageTurn && admitsContentInput },
                     handleInput: handleControlEvent
                 )
                 reader.prepareIfNeeded()
@@ -514,7 +517,7 @@ struct MangaReaderView: View {
     private var canReceiveApplePencilPageTurn: Bool {
         guard case let .loaded(loaded) = model.presentation.state else { return false }
         return ReaderApplePencilPageTurnGate.canTurnPage(
-            isPadDevice: externalGeometry == nil && UIDevice.current.userInterfaceIdiom == .pad,
+            isPadDevice: UIDevice.current.userInterfaceIdiom == .pad,
             isPagedReadingMode: model.presentation.settings.readingMode == .paged,
             hasReadableContent: !loaded.pages.isEmpty,
             hasBlockingOverlay: reader.presentedPanel != nil

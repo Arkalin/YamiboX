@@ -53,6 +53,7 @@ final class ReaderExternalDisplayCoordinator {
     private(set) var phase = Phase.local
     private(set) var sessionID: UUID?
     private(set) var trackpadHeightRatio = ExternalDisplaySettings.defaultTrackpadHeightRatio
+    private(set) var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
     private var isDeviceMenuPresented = false
     @ObservationIgnored private(set) var deviceFrameDuringPreparation: UIView?
     let pointer = ReaderExternalInput()
@@ -83,24 +84,27 @@ final class ReaderExternalDisplayCoordinator {
         settingsObservation = Task { [weak self] in
             let initial = await settingsStore.load()
             guard !Task.isCancelled else { return }
-            self?.applyDisplaySettings(initial.system.externalDisplay)
+            self?.applySettings(initial.system)
             for await _ in changes {
                 let settings = await settingsStore.load()
                 guard !Task.isCancelled, let self else { return }
-                applyDisplaySettings(settings.system.externalDisplay)
+                applySettings(settings.system)
             }
         }
     }
 
     deinit { settingsObservation?.cancel() }
 
-    private func applyDisplaySettings(_ settings: ExternalDisplaySettings) {
-        let ratio = settings.trackpadHeightRatio
+    private func applySettings(_ settings: SystemSettings) {
+        if applePencilPageTurnSettings != settings.applePencilPageTurn {
+            applePencilPageTurnSettings = settings.applePencilPageTurn
+        }
+        let ratio = settings.externalDisplay.trackpadHeightRatio
         if trackpadHeightRatio != ratio {
             pointer.cancelForTrackpadResize()
             trackpadHeightRatio = ratio
         }
-        setTakeoverEnabled(settings.isEnabled)
+        setTakeoverEnabled(settings.externalDisplay.isEnabled)
     }
 
     private func setTakeoverEnabled(_ enabled: Bool) {
@@ -230,6 +234,16 @@ final class ReaderExternalDisplayCoordinator {
 
     private var canUseTrackpad: Bool {
         phase == .external && showsReaderOnExternalDisplay && !isDeviceMenuPresented
+    }
+
+    func applePencilPageTurnViewport(for session: ReaderSession) -> ReaderViewportLifetime? {
+        guard applePencilPageTurnSettings.isEnabled, let lease,
+              lease.owner.session === session, lease.owner.contentID == session.contentID,
+              !session.isClosed, !session.isSwitching, !session.isShowingDevicePanel,
+              session.deviceInteraction == nil, pointer.textMenu == nil,
+              let windowID = lease.owner.model?.windowID, acceptsPeripheralInput(windowID: windowID),
+              lease.viewport.admitsApplePencilPageTurn else { return nil }
+        return lease.viewport
     }
 
     func deviceMenuViewport(for session: ReaderSession) -> ReaderViewportLifetime? {
