@@ -338,9 +338,12 @@ private extension NovelReaderAppearanceSettings {
         rhs.isImmersiveModeEnabled = false
         lhs.pageTurnDirection = .leftToRight
         rhs.pageTurnDirection = .leftToRight
+        lhs.gestureRegionLayout = .classic
+        rhs.gestureRegionLayout = .classic
         return lhs == rhs &&
             (backgroundStyle != other.backgroundStyle || pagedTurnStyle != other.pagedTurnStyle
                 || isImmersiveModeEnabled != other.isImmersiveModeEnabled
-                || pageTurnDirection != other.pageTurnDirection)
+                || pageTurnDirection != other.pageTurnDirection
+                || gestureRegionLayout != other.gestureRegionLayout)
     }
 }

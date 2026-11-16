@@ -9,6 +9,7 @@ struct MangaReaderSettingsSections: View {
     let palette: MangaReaderSettingsPalette
     let usesTwoPageSpread: Bool
     let onOpenPeripheralSettings: () -> Void
+    let onOpenGestureRegions: () -> Void
 
     var body: some View {
         ScrollView {
@@ -16,7 +17,8 @@ struct MangaReaderSettingsSections: View {
                 MangaReaderSettingsPagingSection(
                     settings: $settings,
                     palette: palette,
-                    usesTwoPageSpread: usesTwoPageSpread
+                    usesTwoPageSpread: usesTwoPageSpread,
+                    onOpenGestureRegions: onOpenGestureRegions
                 )
 
                 MangaReaderSettingsOtherSection(
@@ -38,6 +40,7 @@ struct MangaReaderSettingsPagingSection: View {
     @Binding var settings: MangaReaderSettings
     let palette: MangaReaderSettingsPalette
     let usesTwoPageSpread: Bool
+    let onOpenGestureRegions: () -> Void
 
     var body: some View {
         ReaderSettingsSection(
@@ -65,6 +68,13 @@ struct MangaReaderSettingsPagingSection: View {
                 ) { direction in
                     settings.pageTurnDirection = direction
                 }
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsNavigationRow(
+                    title: L10n.string("reader.gesture_regions.title"),
+                    palette: palette,
+                    value: settings.gestureRegionLayout.title,
+                    action: onOpenGestureRegions
+                )
                 ReaderSettingsDivider(palette: palette)
                 MangaReaderPagedDisplaySettings(
                     settings: $settings,

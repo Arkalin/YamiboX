@@ -256,6 +256,10 @@ struct NovelReaderView: View {
             .onChange(of: remoteInputID, initial: true) { _, identity in
                 if let identity { configureRemoteInput(identity) }
             }
+            .onChange(of: model.settings.gestureRegionLayout, initial: true) { _, layout in
+                guard viewport.isCurrent else { return }
+                remoteInput?.gestureRegionLayout = layout
+            }
             .onAppear { [viewport] in
                 guard viewport.isCurrent else { return }
                 viewport.attach(attachmentID, peripheralInput: appModel.peripheralInput,
@@ -965,7 +969,7 @@ struct NovelReaderView: View {
         }
     }
 
-    private func handlePagedTapZone(_ zone: ReaderPagedTapZone, pagerIdentity: ReaderPagedPagerIdentity) {
+    private func handlePagedTapZone(_ zone: ReaderGestureRegionAction, pagerIdentity: ReaderPagedPagerIdentity) {
         switch zone {
         case .previous:
             handlePagedContentTap(pageDelta: -1, pagerIdentity: pagerIdentity)

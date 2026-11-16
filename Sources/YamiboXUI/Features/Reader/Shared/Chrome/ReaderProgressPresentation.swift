@@ -460,22 +460,3 @@ struct ReaderPagedPagerIdentity: Hashable {
         layoutHeight = Int(layout.height.rounded())
     }
 }
-
-enum ReaderPagedTapZone: Equatable {
-    case previous
-    case toggleChrome
-    case next
-
-    static func zone(for point: CGPoint, in bounds: CGRect) -> ReaderPagedTapZone {
-        guard bounds.width > 0 else { return .toggleChrome }
-        let relativeX = point.x - bounds.minX
-        let thirdWidth = bounds.width / 3
-        if relativeX < thirdWidth {
-            return .previous
-        }
-        if relativeX > thirdWidth * 2 {
-            return .next
-        }
-        return .toggleChrome
-    }
-}

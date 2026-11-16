@@ -1055,6 +1055,11 @@
 "reader.page_number_compact" = "第%d页";
 "reader.immersive_mode" = "沉浸模式";
 "reader.previous_page" = "上一页";
+"reader.gesture_regions.title" = "手势区域";
+"reader.gesture_regions.classic" = "经典左右";
+"reader.gesture_regions.kindle" = "Kindle 式";
+"reader.gesture_regions.lShape" = "L 形";
+"reader.gesture_regions.bothSidesAdvance" = "两侧前进";
 "reader.next_page" = "下一页";
 "reader.chapter_pages_remaining" = "本章还剩 %d 页";
 "reader.chapter_last_page" = "本章最后一页";

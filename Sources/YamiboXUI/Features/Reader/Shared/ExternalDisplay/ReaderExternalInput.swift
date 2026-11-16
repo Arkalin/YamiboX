@@ -32,6 +32,7 @@ final class ReaderExternalInput {
     private(set) var isVisible = false
     private(set) var isEnabled = false
     private(set) var kind = ReaderRemoteKind.novelPaged
+    var gestureRegionLayout: ReaderGestureRegionLayout = .classic
     private(set) var textMenu: NovelTextMenu?
     @ObservationIgnored private var bounds = CGRect.zero
     @ObservationIgnored var sensitivity = CGFloat(ExternalDisplaySettings.defaultTrackpadSensitivity)
@@ -354,17 +355,10 @@ struct ReaderDeviceTrackpad: View {
                     if input.kind.isVertical {
                         ReaderExternalScrollArea(input: input, onMenu: onMenu)
                     } else {
-                        HStack(spacing: 0) {
-                            pageButton(isPrevious: true)
-                                .frame(width: proxy.size.width * 0.3)
-                            ReaderDeviceControlButton.menu(action: onMenu)
-                                .frame(width: proxy.size.width * 0.4)
-                                .overlay(alignment: .leading) { separator.frame(width: 1) }
-                                .overlay(alignment: .trailing) { separator.frame(width: 1) }
-                            pageButton(isPrevious: false)
-                                .frame(width: proxy.size.width * 0.3)
+                        ReaderGestureRegionMap(layout: input.gestureRegionLayout) { action, index, shape in
+                            regionButton(action, index: index, shape: shape)
                         }
-                        .environment(\.layoutDirection, .leftToRight)
+                        .id(input.gestureRegionLayout)
                     }
                 }
                 .frame(height: height)
@@ -378,11 +372,37 @@ struct ReaderDeviceTrackpad: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func pageButton(isPrevious: Bool) -> some View {
-        let action: ReaderControlAction = isPrevious ? .previousPage : .nextPage
-        return ReaderDeviceControlButton(title: action.title, id: isPrevious ? "previous" : "next") {
-            input.step(isPrevious ? .up : .down)
+    private func regionButton(_ action: ReaderGestureRegionAction, index: Int, shape: ReaderGestureRegionShape) -> some View {
+        let shade: Double = switch action {
+        case .previous: 0.08
+        case .toggleChrome: 0.19
+        case .next: 0.13
         }
+        let id: String = switch action {
+        case .previous: "previous"
+        case .toggleChrome: "menu"
+        case .next: input.gestureRegionLayout == .bothSidesAdvance && index == 0 ? "next-left" : "next"
+        }
+        return Button {
+            switch action {
+            case .previous: input.step(.up)
+            case .toggleChrome: onMenu()
+            case .next: input.step(.down)
+            }
+        } label: {
+            GeometryReader { proxy in
+                let frame = shape.labelFrame(in: CGRect(origin: .zero, size: proxy.size))
+                ReaderDeviceControlLabel(title: action.title)
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
+            }
+            .background { shape.fill(Color(white: shade)) }
+            .contentShape(.interaction, shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(action.title)
+        .accessibilityActivationPoint(shape.labelCenter)
+        .accessibilityIdentifier("reader-external-\(id)")
     }
 
     private var separator: some View {

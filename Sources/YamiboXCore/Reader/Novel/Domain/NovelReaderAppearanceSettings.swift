@@ -112,6 +112,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var readingMode: ReaderReadingMode
     public var pagedTurnStyle: ReaderPagedTurnStyle
     public var pageTurnDirection: ReaderPageTurnDirection
+    public var gestureRegionLayout: ReaderGestureRegionLayout
     public var translationMode: ReaderTranslationMode
 
     public init(
@@ -130,6 +131,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         readingMode: ReaderReadingMode = .paged,
         pagedTurnStyle: ReaderPagedTurnStyle = .slide,
         pageTurnDirection: ReaderPageTurnDirection = .leftToRight,
+        gestureRegionLayout: ReaderGestureRegionLayout = .classic,
         translationMode: ReaderTranslationMode = .none
     ) {
         self.fontScale = fontScale
@@ -147,6 +149,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         self.readingMode = readingMode
         self.pagedTurnStyle = pagedTurnStyle
         self.pageTurnDirection = pageTurnDirection
+        self.gestureRegionLayout = gestureRegionLayout
         self.translationMode = translationMode
     }
 
@@ -166,6 +169,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         case readingMode
         case pagedTurnStyle
         case pageTurnDirection
+        case gestureRegionLayout
         case translationMode
     }
 
@@ -192,6 +196,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         readingMode = try container.decode(ReaderReadingMode.self, forKey: .readingMode)
         pagedTurnStyle = try container.decode(ReaderPagedTurnStyle.self, forKey: .pagedTurnStyle)
         pageTurnDirection = try container.decode(ReaderPageTurnDirection.self, forKey: .pageTurnDirection)
+        gestureRegionLayout = (try? container.decode(ReaderGestureRegionLayout.self, forKey: .gestureRegionLayout)) ?? .classic
         translationMode = try container.decode(ReaderTranslationMode.self, forKey: .translationMode)
     }
 
@@ -216,6 +221,7 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
         try container.encode(readingMode, forKey: .readingMode)
         try container.encode(pagedTurnStyle, forKey: .pagedTurnStyle)
         try container.encode(pageTurnDirection, forKey: .pageTurnDirection)
+        try container.encode(gestureRegionLayout, forKey: .gestureRegionLayout)
         try container.encode(translationMode, forKey: .translationMode)
     }
 

@@ -31,6 +31,8 @@ struct NovelReaderPagedViewportContentIdentity: Equatable {
         self.structureID = structureID
         self.settings = settings
         self.settings.isImmersiveModeEnabled = false
+        // Input-only changes must not rebuild the mounted page or text selection.
+        self.settings.gestureRegionLayout = .classic
         self.topInset = topInset
         self.bottomInset = bottomInset
     }

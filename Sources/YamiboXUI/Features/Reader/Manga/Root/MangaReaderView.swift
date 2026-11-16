@@ -176,6 +176,10 @@ struct MangaReaderView: View {
                 remoteInput?.configure(model.presentation.settings.readingMode == .vertical ? .mangaVertical : .mangaPaged,
                                        content: identity)
             }
+            .onChange(of: model.presentation.settings.gestureRegionLayout, initial: true) { _, layout in
+                guard viewport.isCurrent else { return }
+                remoteInput?.gestureRegionLayout = layout
+            }
             .modifier(ReaderViewportRenderAcknowledgement(ready: model.hasCurrentPage, viewport: viewport))
             .onChange(of: initialPresentationFailed, initial: true) { _, failed in
                 guard failed, viewport.acceptsGeometry else { return }

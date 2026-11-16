@@ -19,6 +19,7 @@ struct NovelReaderSettingsSheet: View {
     @State private var isPeripheralSettingsPresented = false
     @State private var isForumFormatPresented = false
     @State private var isFontLibraryPresented = false
+    @State private var isGestureRegionPreviewPresented = false
     @State private var fontProtectionID = UUID()
     private static let defaultPreviewText = L10n.string("reader.settings.preview_fallback")
     private static let previewCharacterCount = 200
@@ -65,7 +66,10 @@ struct NovelReaderSettingsSheet: View {
         ) {
             Button(L10n.string("common.ok")) { saveFailure = nil }
         }
-        .onAppear(perform: loadDraftIfNeeded)
+        .onAppear {
+            loadDraftIfNeeded()
+            model.fontLibrary.protect(draftSettings.fontSelection, owner: fontProtectionID)
+        }
         .onChange(of: draftSettings.fontSelection) { _, selection in
             model.fontLibrary.protect(selection, owner: fontProtectionID)
         }
@@ -90,6 +94,12 @@ struct NovelReaderSettingsSheet: View {
         }
         .sheet(isPresented: $isForumFormatPresented) {
             NovelReaderForumFormatSheet(settings: $draftSettings, controlAccent: controlAccent)
+        }
+        .fullScreenCover(isPresented: $isGestureRegionPreviewPresented) {
+            ReaderGestureRegionPreview(selection: draftSettings.gestureRegionLayout) {
+                draftSettings.gestureRegionLayout = $0
+            }
+            .tint(controlAccent)
         }
     }
 
@@ -151,6 +161,7 @@ struct NovelReaderSettingsSheet: View {
                     onBackgroundStyleChange: setBackgroundStyle,
                     onReadingModeChange: setReadingMode,
                     onPageTurnDirectionChange: setPageTurnDirection,
+                    onOpenGestureRegions: { isGestureRegionPreviewPresented = true },
                     onImmersiveModeChange: { draftSettings.isImmersiveModeEnabled = $0 }
                 )
 
@@ -171,7 +182,6 @@ struct NovelReaderSettingsSheet: View {
         guard baseline == nil else { return }
         draftSettings = model.settings
         baseline = draftSettings
-        model.fontLibrary.protect(draftSettings.fontSelection, owner: fontProtectionID)
     }
 
     private func commitDraft() {

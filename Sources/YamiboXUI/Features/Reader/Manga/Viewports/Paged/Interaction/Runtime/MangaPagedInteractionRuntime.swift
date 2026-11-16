@@ -44,16 +44,10 @@ final class MangaPagedInteractionRuntime {
         surface: MangaSurfaceRuntime?,
         configuration: MangaNavigationConfiguration
     ) -> MangaInteractionDecision {
-        guard let intent = request.intent(direction: configuration.direction) else { return .ignore }
-        let decision = MangaInteractionPolicy.decide(intent, configuration: configuration.surface,
+        let intent = request.intent(direction: configuration.direction)
+        return MangaInteractionPolicy.decide(intent, configuration: configuration.surface,
             scale: surface?.transform.scale ?? 1, hiddenEdges: surface?.hiddenEdges ?? [],
             menuFrame: surface?.menuFrame ?? .zero, imageLoaded: surface?.imageLoaded ?? false)
-        // Tap zones always mean previous/next; reveals and pans retain their physical edges.
-        if case .tap = request, case let .navigate(edge) = decision {
-            let step: NavigationStep = edge == .left ? .backward : .forward
-            return .navigate(configuration.direction.edge(for: step))
-        }
-        return decision
     }
 
     @discardableResult

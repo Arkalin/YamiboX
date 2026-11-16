@@ -44,7 +44,7 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
     let onSelectionChange: (Int) -> Void
     let onBoundaryPageTurn: (Int) -> Void
     var onBoundaryPageTurnRejected: (Int) -> Void = { _ in }
-    let onPageTapZone: (ReaderPagedTapZone) -> Void
+    let onPageTapZone: (ReaderGestureRegionAction) -> Void
     let onScrollAnimationRequestConsumed: (ReaderPagedScrollAnimationRequest) -> Void
     let onChromeVisibleImageTap: () -> Void
     let onImageTap: (URL, String?) -> Void
@@ -322,7 +322,8 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
                 handleImageTap(imageView, at: imageLocation)
                 return
             }
-            let zone = ReaderPagedTapZone.zone(for: location, in: collectionView.bounds)
+            guard let zone = parent.settings.gestureRegionLayout.action(at: location, in: collectionView.bounds)
+            else { return }
             if !parent.isChromeVisible,
                pagingDriver.animateAdjacentSelection(for: zone, in: collectionView, inputs: pagingInputs) {
                 return

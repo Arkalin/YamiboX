@@ -529,7 +529,7 @@ final class ReaderPagedPagingDriver {
     }
 
     func animateAdjacentSelection(
-        for zone: ReaderPagedTapZone,
+        for zone: ReaderGestureRegionAction,
         in collectionView: UICollectionView,
         inputs: ReaderPagedPagingInputs
     ) -> Bool {

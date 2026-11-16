@@ -1,16 +1,15 @@
 import Foundation
 
-enum PhysicalZone: Equatable { case left, center, right }
 enum NavigationStep: Int { case backward = -1, forward = 1 }
 struct SurfaceID: Hashable { let value: String }
 
 enum MangaInteractionIntent {
     case pan(translation: CGSize, velocity: CGSize)
-    case edge(MangaPagedImageSurfaceHorizontalEdge)
+    case pageTap(target: MangaPagedImageSurfaceHorizontalEdge, reveal: MangaPagedImageSurfaceHorizontalEdge?)
     case control(MangaPagedImageSurfaceHorizontalEdge)
     case doubleTap(CGPoint)
     case longPress(CGPoint)
-    case centerTap
+    case menuTap
 }
 
 enum MangaInteractionDecision: Equatable {
@@ -47,16 +46,17 @@ enum MangaInteractionPolicy {
         imageLoaded: Bool
     ) -> MangaInteractionDecision {
         switch intent {
-        case .centerTap:
+        case .menuTap:
             return .toggleChrome
         case let .longPress(point):
             return imageLoaded && !menuFrame.isEmpty && menuFrame.contains(point) ? .menu : .ignore
         case let .doubleTap(point):
             if configuration.chromeVisible { return .toggleChrome }
             return configuration.zoomEnabled && configuration.doubleTapZoomEnabled && imageLoaded ? .zoom(point) : .ignore
-        case let .edge(edge):
+        case let .pageTap(target, reveal):
             if configuration.chromeVisible { return .toggleChrome }
-            return imageLoaded && hiddenEdges.contains(edge) ? .reveal(edge) : .navigate(edge)
+            if let reveal, imageLoaded && hiddenEdges.contains(reveal) { return .reveal(reveal) }
+            return .navigate(target)
         case let .control(edge):
             return imageLoaded && hiddenEdges.contains(edge) ? .reveal(edge) : .navigate(edge)
         case let .pan(translation, velocity):

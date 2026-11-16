@@ -132,6 +132,7 @@ struct NovelReaderDisplaySection: View {
     let onBackgroundStyleChange: (ReaderBackgroundStyle) -> Void
     let onReadingModeChange: (ReaderReadingMode, ReaderPagedTurnStyle) -> Void
     let onPageTurnDirectionChange: (ReaderPageTurnDirection) -> Void
+    let onOpenGestureRegions: () -> Void
     let onImmersiveModeChange: (Bool) -> Void
 
     var body: some View {
@@ -159,6 +160,13 @@ struct NovelReaderDisplaySection: View {
                     selection: settings.pageTurnDirection,
                     palette: palette,
                     onSelect: onPageTurnDirectionChange
+                )
+                ReaderSettingsDivider(palette: palette)
+                ReaderSettingsNavigationRow(
+                    title: L10n.string("reader.gesture_regions.title"),
+                    palette: palette,
+                    value: settings.gestureRegionLayout.title,
+                    action: onOpenGestureRegions
                 )
                 ReaderSettingsDivider(palette: palette)
                 ReaderSettingsToggleRow(

@@ -1,14 +1,5 @@
 import Foundation
-
-extension PhysicalZone {
-    static func at(_ point: CGPoint, in bounds: CGRect) -> Self? {
-        guard bounds.width > 0, bounds.height > 0, bounds.contains(point) else { return nil }
-        let x = point.x - bounds.minX
-        if x < bounds.width / 3 { return .left }
-        if x > bounds.width * 2 / 3 { return .right }
-        return .center
-    }
-}
+import YamiboXCore
 
 enum MangaReadingDirection {
     case leftToRight, rightToLeft
@@ -25,29 +16,38 @@ enum MangaReadingDirection {
 struct MangaNavigationConfiguration: Equatable {
     let direction: MangaReadingDirection
     let surface: MangaInteractionConfiguration
+    var gestureRegionLayout: ReaderGestureRegionLayout = .classic
 
-    func allowsDoubleTap(in zone: PhysicalZone?) -> Bool {
-        guard let zone else { return false }
-        // Edge taps only wait for a second tap when double-tap zoom is enabled.
-        return zone == .center || (surface.zoomEnabled && surface.doubleTapZoomEnabled)
+    func allowsDoubleTap(at point: CGPoint, in bounds: CGRect) -> Bool {
+        guard let action = gestureRegionLayout.action(at: point, in: bounds) else { return false }
+        return action == .toggleChrome || (surface.zoomEnabled && surface.doubleTapZoomEnabled)
+    }
+
+    func tap(at point: CGPoint, in bounds: CGRect) -> MangaNavigationRequest? {
+        guard let action = gestureRegionLayout.action(at: point, in: bounds) else { return nil }
+        // A semantic next/previous tap must not change which physical edge gets revealed.
+        let x = point.x - bounds.minX
+        let third = bounds.width / 3
+        let revealEdge: MangaPagedImageSurfaceHorizontalEdge? = x < third ? .left :
+            (x > third * 2 ? .right : nil)
+        return .tap(action, revealEdge: revealEdge)
     }
 }
 
 enum MangaNavigationRequest {
-    case tap(PhysicalZone?)
-    case doubleTap(zone: PhysicalZone?, location: CGPoint)
+    case tap(ReaderGestureRegionAction, revealEdge: MangaPagedImageSurfaceHorizontalEdge?)
+    case doubleTap(CGPoint)
     case control(NavigationStep)
     case pan(translation: CGSize, velocity: CGSize)
 
-    func intent(direction: MangaReadingDirection) -> MangaInteractionIntent? {
+    func intent(direction: MangaReadingDirection) -> MangaInteractionIntent {
         switch self {
-        case .tap(.left): .edge(.left)
-        case .tap(.right): .edge(.right)
-        case .tap(.center): .centerTap
-        case let .doubleTap(.some, location): .doubleTap(location)
+        case .tap(.toggleChrome, _): .menuTap
+        case let .tap(action, revealEdge):
+            .pageTap(target: direction.edge(for: action == .previous ? .backward : .forward), reveal: revealEdge)
+        case let .doubleTap(location): .doubleTap(location)
         case let .control(step): .control(direction.edge(for: step))
         case let .pan(translation, velocity): .pan(translation: translation, velocity: velocity)
-        case .tap(nil), .doubleTap(nil, _): nil
         }
     }
 }

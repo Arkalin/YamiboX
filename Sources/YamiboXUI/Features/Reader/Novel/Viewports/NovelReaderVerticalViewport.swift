@@ -1343,6 +1343,7 @@ private struct NovelReaderVerticalViewportContentIdentity: Hashable {
         self.structureID = structureID
         self.settings = settings
         self.settings.isImmersiveModeEnabled = false
+        self.settings.gestureRegionLayout = .classic
     }
 }
 #endif

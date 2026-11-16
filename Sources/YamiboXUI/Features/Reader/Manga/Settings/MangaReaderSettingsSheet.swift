@@ -20,6 +20,7 @@ struct MangaReaderSettingsSheet: View {
     @State private var isSaving = false
     @State private var saveFailure: String?
     @State private var isPeripheralSettingsPresented = false
+    @State private var isGestureRegionPreviewPresented = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -65,7 +66,8 @@ struct MangaReaderSettingsSheet: View {
                         settings: $draftSettings,
                         palette: palette,
                         usesTwoPageSpread: usesTwoPageSpread,
-                        onOpenPeripheralSettings: { isPeripheralSettingsPresented = true }
+                        onOpenPeripheralSettings: { isPeripheralSettingsPresented = true },
+                        onOpenGestureRegions: { isGestureRegionPreviewPresented = true }
                     )
                 }
             }
@@ -90,6 +92,12 @@ struct MangaReaderSettingsSheet: View {
                 settingsTarget: settingsTarget,
                 peripheralInput: peripheralInput
             )
+        }
+        .fullScreenCover(isPresented: $isGestureRegionPreviewPresented) {
+            ReaderGestureRegionPreview(selection: draftSettings.gestureRegionLayout) {
+                draftSettings.gestureRegionLayout = $0
+            }
+            .tint(controlAccent)
         }
     }
 
