@@ -1375,7 +1375,7 @@
 "settings.board_reader.restore" = "還原";
 "settings.board_reader.restore_default" = "還原預設配置";
 "settings.board_reader.restore_default_message" = "這將移除所有自訂的板塊閱讀方式，還原為預設配置。";
-"settings.board_reader.smart_toggle" = "智慧漫畫模式";
+"settings.board_reader.smart_toggle" = "智慧";
 "settings.about_app_with_version" = "關於Yamibo X(%@)";
 "settings.section.appearance" = "外觀";
 "settings.section.favorite_sync_behavior" = "收藏同步偏好";
