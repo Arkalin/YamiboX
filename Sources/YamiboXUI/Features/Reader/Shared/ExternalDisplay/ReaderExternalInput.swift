@@ -398,6 +398,7 @@ struct ReaderDeviceTrackpad: View {
 
     private final class Pad: UIView, UIGestureRecognizerDelegate {
         private let input: ReaderExternalInput
+        private lazy var textSelectionFeedback = UIImpactFeedbackGenerator(style: .medium, view: self)
         private var last = CGPoint.zero
         private var origin = CGPoint.zero
         private var moved = false
@@ -446,6 +447,9 @@ struct ReaderDeviceTrackpad: View {
         @objc private func longPressed(_ recognizer: UILongPressGestureRecognizer) {
             guard recognizer.state == .began, let epoch, !blocked, !usedMultipleFingers, !moved else { return }
             held = input.hold(epoch: epoch)
+            if held && !input.kind.isManga {
+                textSelectionFeedback.impactOccurred()
+            }
         }
 
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -457,6 +461,9 @@ struct ReaderDeviceTrackpad: View {
                 held = false
                 blocked = false
                 epoch = input.begin()
+                if input.isEnabled && input.cursorStyle == .text {
+                    textSelectionFeedback.prepare()
+                }
             }
             points.append(contentsOf: touches)
             guard let epoch else { return }
