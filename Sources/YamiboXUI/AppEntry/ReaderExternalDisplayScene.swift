@@ -29,12 +29,14 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
         removeWindow()
     }
 
-    func show<Content: View>(_ content: Content) -> Bool {
+    func show<Content: View>(_ content: Content, interfaceStyle: UIUserInterfaceStyle) -> Bool {
         guard let scene else { return false }
         retirement?.cancel()
         if window != nil { removeWindow() }
         let window = UIWindow(windowScene: scene)
         window.backgroundColor = .black
+        // The noninteractive scene does not inherit the owner window's appearance.
+        window.overrideUserInterfaceStyle = interfaceStyle
         let controller = ReaderExternalDisplayContainer(host: UIHostingController(rootView: content))
         window.rootViewController = controller
         self.controller = controller

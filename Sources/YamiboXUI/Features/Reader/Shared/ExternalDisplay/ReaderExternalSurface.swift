@@ -53,7 +53,6 @@ struct ReaderExternalSurface: View {
         .ignoresSafeArea()
         .appTheme(.theme(for: appModel.appAppearanceSettings))
         .forumTheme(AppTheme.theme(for: appModel.appAppearanceSettings).forumTheme)
-        .preferredColorScheme(appModel.appAppearanceSettings.darkMode.preferredColorScheme)
         .environment(\.readerToolbarStyle, appModel.readerToolbarStyle.effectiveStyle)
         .environment(\.yamiboImagePipeline, appModel.imagePipeline)
         .environment(\.forumBlacklist, appModel.appContext.blacklistWorkflow)

@@ -5,9 +5,15 @@ import YamiboXCore
 struct ReaderSessionScreen: View {
     let session: ReaderSession
     let appModel: YamiboAppModel
+    @Environment(\.colorScheme) private var colorScheme
     @State private var navigator: ForumDestinationNavigator
     @State private var displayHost: ReaderExternalDisplayRegistrationHost.Host?
     @State private var presentedInteractionID: UUID?
+
+    private var interfaceStyle: UIUserInterfaceStyle {
+        let scheme = appModel.appAppearanceSettings.darkMode.preferredColorScheme ?? colorScheme
+        return scheme == .dark ? .dark : .light
+    }
 
     private var eligible: Bool {
         !session.isClosed && session.content.resumeRoute != nil &&
@@ -81,6 +87,7 @@ struct ReaderSessionScreen: View {
             synchronizeExternalOffer()
         }
         .onChange(of: eligible, initial: true) { _, _ in synchronizeExternalOffer() }
+        .onChange(of: interfaceStyle) { _, _ in synchronizeExternalOffer() }
         .onChange(of: navigator.path.isEmpty) { _, _ in synchronizeExternalOffer() }
         .onChange(of: session.deviceInteraction == nil) { _, available in
             if available { synchronizeExternalOffer() }
@@ -162,6 +169,7 @@ struct ReaderSessionScreen: View {
             return
         }
         appModel.externalReader?.offer(session: session, model: appModel, host: displayHost, navigator: navigator,
+            interfaceStyle: interfaceStyle,
             eligible: eligible || (owned && !session.isClosed && session.content.resumeRoute != nil && navigator.path.isEmpty))
     }
 }
