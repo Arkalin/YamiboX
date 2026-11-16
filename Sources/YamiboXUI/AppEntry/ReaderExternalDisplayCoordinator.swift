@@ -14,16 +14,18 @@ final class ReaderExternalDisplayCoordinator {
         weak var model: YamiboAppModel?
         weak var host: ReaderExternalDisplayRegistrationHost.Host?
         var navigator: ForumDestinationNavigator
+        var interfaceStyle: UIUserInterfaceStyle
         let contentID: UUID
         var lastUse: UInt64
         var deviceAdmissionWait: Task<Void, Never>?
 
         init(session: ReaderSession, model: YamiboAppModel, host: ReaderExternalDisplayRegistrationHost.Host?,
-             navigator: ForumDestinationNavigator, lastUse: UInt64) {
+             navigator: ForumDestinationNavigator, interfaceStyle: UIUserInterfaceStyle, lastUse: UInt64) {
             self.session = session
             self.model = model
             self.host = host
             self.navigator = navigator
+            self.interfaceStyle = interfaceStyle
             self.contentID = session.contentID
             self.lastUse = lastUse
         }
@@ -111,7 +113,7 @@ final class ReaderExternalDisplayCoordinator {
     }
 
     func offer(session: ReaderSession, model: YamiboAppModel, host: ReaderExternalDisplayRegistrationHost.Host?,
-               navigator: ForumDestinationNavigator, eligible: Bool) {
+               navigator: ForumDestinationNavigator, interfaceStyle: UIUserInterfaceStyle, eligible: Bool) {
         guard let id = model.windowID else { return }
         guard eligible, !session.isClosed, session.content.resumeRoute != nil else {
             withdraw(session: session, windowID: id, requireActivation: session.isClosed)
@@ -119,6 +121,12 @@ final class ReaderExternalDisplayCoordinator {
         }
         if let existing = candidates[id], existing.session === session, existing.contentID == session.contentID {
             if let host { existing.host = host }
+            if existing.interfaceStyle != interfaceStyle {
+                existing.interfaceStyle = interfaceStyle
+                if let lease, lease.owner === existing {
+                    lease.connection.window?.overrideUserInterfaceStyle = interfaceStyle
+                }
+            }
         } else {
             let previous = candidates[id]
             previous?.cancelDeviceAdmissionWait()
@@ -127,7 +135,7 @@ final class ReaderExternalDisplayCoordinator {
                 release(requireActivation: false)
                 reservedOwner = nil
             }
-            let candidate = Candidate(session: session, model: model, host: host, navigator: navigator,
+            let candidate = Candidate(session: session, model: model, host: host, navigator: navigator, interfaceStyle: interfaceStyle,
                 lastUse: previous?.session === session ? previous?.lastUse ?? 0 : 0)
             candidates[id] = candidate
             if shouldKeepOwner { reservedOwner = candidate }
@@ -444,7 +452,7 @@ final class ReaderExternalDisplayCoordinator {
         beginPreparing(lease)
         guard connection.show(ReaderExternalSurface(
             display: self, session: candidate.session, navigator: candidate.navigator, appModel: model, viewport: viewport
-        )) else {
+        ), interfaceStyle: candidate.interfaceStyle) else {
             fail(lease.generation)
             return nil
         }
