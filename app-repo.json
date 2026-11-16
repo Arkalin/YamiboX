@@ -13,6 +13,13 @@
       "iconURL": "https://raw.githubusercontent.com/Arkalin/YamiboX/main/YamiboX/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
       "versions": [
         {
+          "version": "1.1.0",
+          "date": "2026-11-16T08:18:26Z",
+          "localizedDescription": "【新增】\n- 适配论坛最新 WAF 策略\n- 小说和漫画支持在外接显示器上阅读，以当前设备作为触控板翻页、滚动、操作图片和选择文字\n- 支持 iPhone 横屏显示\n- 小说和漫画阅读器支持调整手势区域\n- 漫画阅读设置新增双击缩放动画开关，翻页时保留缩放状态\n\n【变更】\n- 小说正文图片改为双击打开大图\n- 小说和漫画阅读器手势区域不再跟随阅读方向，并移除了反转翻页手势区域设置\n\n【修复】\n- 修复漫画边缘缩放时可能出现的页面错位\n- 修复无法选择智能漫画的问题",
+          "downloadURL": "https://github.com/Arkalin/YamiboX/releases/download/v1.1.0/YamiboX_v1.1.0_unsigned.ipa",
+          "size": 21283714
+        },
+        {
           "version": "1.0.2",
           "date": "2026-10-30T06:01:21Z",
           "localizedDescription": "【新增】\n- 支持系统接力（Handoff）\n- 应用主题新增深色模式设置\n\n【修复】\n- 修复阅读漫画时可能出现重定向次数过多导致的图片加载失败问题\n- 修复原帖被删除、限制访问或正文失效后，已下载的小说和漫画无法打开的问题\n- 修复收藏更新时间和更新提醒不准确的问题\n- 修复漫画卷页模式跳页后进度可能不更新，平移翻页缩放可能出现的画面错位\n- 修复取消下载任务时下载列表可能闪退的问题",
