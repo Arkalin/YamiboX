@@ -28,6 +28,7 @@ struct MangaReaderBottomChrome: View {
 
     @State private var horizontalScrubState = ReaderProgressScrubState()
     @State private var activeVerticalProgressPreview: ReaderProgressScrubPreview?
+    @Environment(\.readerProgressPreviewViewport) private var progressPreviewViewport
 
     var body: some View {
         let capsuleCount = layout.baseStackedCapsuleCount + (annotationCapsule.isVisible ? 1 : 0)
@@ -40,9 +41,10 @@ struct MangaReaderBottomChrome: View {
         let staticControlVisibility = ReaderBottomActionRowPresentation(
             isScrubbing: horizontalScrubState.phase == .scrubbing || activeVerticalProgressPreview != nil
         )
-        let centerProgressPreview = progressChromePresentation.showsVerticalScrubber
+        let activeProgressPreview = progressChromePresentation.showsVerticalScrubber
             ? activeVerticalProgressPreview
             : horizontalScrubState.preview
+        let visibleProgressPreview = isVisible && summary != nil ? activeProgressPreview : nil
 
         VStack(spacing: 12) {
             HStack(alignment: .bottom, spacing: layout.verticalScrubberSideSpacing) {
@@ -132,7 +134,7 @@ struct MangaReaderBottomChrome: View {
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }, action: onHeightChange)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .overlay {
-            if isVisible, let preview = centerProgressPreview {
+            if progressPreviewViewport == nil, let preview = visibleProgressPreview {
                 MangaReaderProgressImagePreview(
                     preview: preview,
                     page: summary?.pagePreviewTargets[preview.targetIndex],
@@ -142,6 +144,12 @@ struct MangaReaderBottomChrome: View {
                 .accessibilityHidden(true)
             }
         }
+        .onChange(of: visibleProgressPreview) { _, preview in
+            progressPreviewViewport?.setDeviceMenuProgressPreview(preview.map {
+                .manga($0, page: summary?.pagePreviewTargets[$0.targetIndex], imageLoader: imageLoader)
+            })
+        }
+        .onDisappear { progressPreviewViewport?.setDeviceMenuProgressPreview(nil) }
     }
 }
 
@@ -190,6 +198,9 @@ private struct MangaReaderDirectoryProgressControl: View {
             },
             onEndScrub: {
                 commitHorizontalCapsuleScrub()
+            },
+            onCancelScrub: {
+                scrubState.reset()
             }
         )
         .onAppear(perform: prepareFeedbackGenerators)
@@ -272,7 +283,7 @@ private struct MangaReaderVerticalProgressControl: View {
     }
 }
 
-private struct MangaReaderProgressImagePreview: View {
+struct MangaReaderProgressImagePreview: View {
     static let previewSize = CGSize(width: 184, height: 228)
 
     let preview: ReaderProgressScrubPreview

@@ -174,7 +174,7 @@ final class ReaderExternalDisplayCoordinator {
             if phase == .external || phase == .deviceInteraction {
                 lease.connection.conceal(!showsReaderOnExternalDisplay)
             }
-            if !showsReaderOnExternalDisplay { isDeviceMenuPresented = false }
+            if !showsReaderOnExternalDisplay { hideDeviceMenu() }
             synchronizeInput()
         }
         if lease == nil { evaluate() }
@@ -214,14 +214,15 @@ final class ReaderExternalDisplayCoordinator {
         phase == .external && showsReaderOnExternalDisplay && !isDeviceMenuPresented
     }
 
-    func deviceMenu(for session: ReaderSession) -> ReaderViewportLifetime.DeviceMenu? {
+    func deviceMenuViewport(for session: ReaderSession) -> ReaderViewportLifetime? {
         guard let lease, lease.owner.session === session,
-              lease.owner.contentID == session.contentID, !session.isClosed else { return nil }
-        return lease.viewport.deviceMenu
+              lease.owner.contentID == session.contentID, !session.isClosed,
+              lease.viewport.deviceMenu != nil else { return nil }
+        return lease.viewport
     }
 
     func isShowingDeviceMenu(for session: ReaderSession) -> Bool {
-        isDeviceMenuPresented && deviceMenu(for: session) != nil
+        isDeviceMenuPresented && deviceMenuViewport(for: session) != nil
     }
 
     func showDeviceMenu(for session: ReaderSession, from viewport: ReaderViewportLifetime? = nil) {
@@ -236,8 +237,13 @@ final class ReaderExternalDisplayCoordinator {
 
     func dismissDeviceMenu(for session: ReaderSession) {
         guard isDeviceMenuPresented, lease?.owner.session === session else { return }
-        isDeviceMenuPresented = false
+        hideDeviceMenu()
         synchronizeInput(revealCursor: false)
+    }
+
+    private func hideDeviceMenu() {
+        isDeviceMenuPresented = false
+        lease?.viewport.setDeviceMenuProgressPreview(nil)
     }
 
     func scenePhaseChanged(_ value: ScenePhase, windowID: String) {
@@ -570,7 +576,7 @@ final class ReaderExternalDisplayCoordinator {
 
     private func setPhase(_ phase: Phase) {
         self.phase = phase
-        if phase != .external { isDeviceMenuPresented = false }
+        if phase != .external { hideDeviceMenu() }
         if !isWaitingForExternalFrame { deviceFrameDuringPreparation = nil }
         synchronizeInput()
         if phase == .local { pointer.reset() }

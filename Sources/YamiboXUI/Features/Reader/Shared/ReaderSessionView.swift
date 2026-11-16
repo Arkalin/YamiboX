@@ -42,11 +42,12 @@ struct ReaderSessionScreen: View {
                                              leftPageButtonIsPrevious: session.leftPageButtonIsPrevious) {
                             display.showDeviceMenu(for: session)
                         }
-                        if let menu = display.deviceMenu(for: session) {
+                        if let viewport = display.deviceMenuViewport(for: session), let menu = viewport.deviceMenu {
                             ReaderDeviceMenuOverlay(menu: menu, isVisible: isMenuVisible) {
                                 display.dismissDeviceMenu(for: session)
                             }
                             .id(session.contentID)
+                            .environment(\.readerProgressPreviewViewport, viewport)
                         }
                     }
                     .statusBarHidden(!isMenuVisible)
