@@ -247,8 +247,6 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var directoryCapsuleContentUsesAccentColor: Bool { true }
     public var bottomProgressSummaryUsesPageCenter: Bool { true }
     public var verticalProgressSummaryUsesLiquidGlass: Bool { true }
-    public var pagedProgressSummaryMovesBelowContentText: Bool { true }
-    public var verticalChapterTitleCapsuleWrapsContent: Bool { true }
     public var capsuleChapterTickRoundedEdgeInset: CGFloat { 6 }
 
     public init() {}

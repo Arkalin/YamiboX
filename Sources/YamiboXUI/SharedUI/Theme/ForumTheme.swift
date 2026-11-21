@@ -4,7 +4,7 @@ import YamiboXCore
 /// Semantic colors for native forum surfaces. The application theme selects a
 /// palette, while reader surfaces keep their own background and semantic
 /// comment colors.
-public struct ForumTheme: @unchecked Sendable {
+public struct ForumTheme: Sendable {
     public let id: String
     public let accent: Color
     public let accentText: Color

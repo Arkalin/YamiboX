@@ -6,7 +6,7 @@ public protocol YamiboOrdinaryImageCacheClearing: Sendable {
     func totalDiskUsageBytes() async -> Int
 }
 
-final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecked Sendable {
+final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing {
     static let defaultDataCacheLimitBytes = 512 * 1024 * 1024
     static let defaultDataCacheName = "com.arkalin.YamiboX.OrdinaryImageDataCache"
 

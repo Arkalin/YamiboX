@@ -285,7 +285,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         private var needsDeferredUpdate = false
         private var renderedColorScheme: ColorScheme
         private let controllers = NSHashTable<NovelReaderPagedPageCurlHostingController>.weakObjects()
-        private var lightingDisplayLink: CADisplayLink?
 
         private var renderingParent: NovelReaderPagedPageCurlViewport { transitionParent ?? parent }
         fileprivate var canOpenImage: Bool {
@@ -298,12 +297,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             renderedColorScheme = parent.colorScheme
             contentIdentity = parent.contentIdentity
             imagePipeline = parent.imagePipeline
-        }
-
-        deinit {
-            MainActor.assumeIsolated {
-                lightingDisplayLink?.invalidate()
-            }
         }
 
         func update(
@@ -362,7 +355,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             transitionParent = parent
-            startLightingRefresh(in: pageViewController)
         }
 
         func pageViewController(
@@ -525,7 +517,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
 
             if animated {
                 transitionParent = parent
-                startLightingRefresh(in: pageViewController)
             }
             pageViewController.setViewControllers(
                 controllers,
@@ -543,18 +534,7 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             }
             if !animated {
                 currentSelectionIndex = targetSelectionIndex
-            } else {
-                NovelReaderPageCurlLighting.apply(to: pageViewController.view.layer)
             }
-        }
-
-        private func startLightingRefresh(in pageViewController: UIPageViewController) {
-            NovelReaderPageCurlLighting.apply(to: pageViewController.view.layer)
-            guard lightingDisplayLink == nil else { return }
-            let target = NovelReaderPageCurlLighting(view: pageViewController.view)
-            let displayLink = CADisplayLink(target: target, selector: #selector(NovelReaderPageCurlLighting.refresh(_:)))
-            displayLink.add(to: .main, forMode: .common)
-            lightingDisplayLink = displayLink
         }
 
         private func controller(forLeafIndex leafIndex: Int) -> UIViewController? {
@@ -601,8 +581,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
         }
 
         private func finishTransition(in pageViewController: UIPageViewController) {
-            lightingDisplayLink?.invalidate()
-            lightingDisplayLink = nil
             let previousRequestedSelection = transitionParent?.selectionIndex
             transitionParent = nil
             if needsDeferredUpdate {
@@ -644,36 +622,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
             callbackScheduler.publish {
                 onScrollAnimationRequestConsumed(request)
             }
-        }
-    }
-}
-
-@MainActor
-private final class NovelReaderPageCurlLighting: NSObject {
-    private weak var view: UIView?
-
-    init(view: UIView) {
-        self.view = view
-    }
-
-    @objc func refresh(_ displayLink: CADisplayLink) {
-        guard let view else {
-            displayLink.invalidate()
-            return
-        }
-        Self.apply(to: view.layer)
-    }
-
-    static func apply(to layer: CALayer) {
-        for key in ["filters", "backgroundFilters"] {
-            for filter in layer.value(forKey: key) as? [NSObject] ?? []
-                where String(describing: filter) == "pageCurl" {
-                filter.setValue(UIColor.clear.cgColor, forKey: "inputBackColor0")
-                filter.setValue(UIColor.clear.cgColor, forKey: "inputBackColor1")
-            }
-        }
-        for sublayer in layer.sublayers ?? [] {
-            apply(to: sublayer)
         }
     }
 }
