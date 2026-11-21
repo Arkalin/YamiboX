@@ -30,32 +30,65 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     private var terminalFailureDetails: LoadFailureDetails?
 
     private var syncTask: Task<Void, Never>?
-    private var accountGeneration = UUID()
-    private var isStarting = false
-    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var startTask: Task<String?, Never>?
+    private var loadTask: Task<Void, Never>?
 #if canImport(UIKit)
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 #endif
 
-    private static var activeRunCancelHandlers: [String: () -> Void] = [:]
-    private static var activeRunWaitHandlers: [String: () async -> Void] = [:]
-    private static var activeRunLibraries: [String: FavoriteLibraryStore] = [:]
-    private static let instances = NSHashTable<FavoriteRemoteSyncSession>.weakObjects()
-
-    static func cancelForAccountChange(libraryStore: FavoriteLibraryStore) async {
-        let sessions = instances.allObjects.filter { $0.libraryStore === libraryStore }
-        for session in sessions { session.accountGeneration = UUID() }
-        let runs = activeRunLibraries.filter { $0.value === libraryStore }.map(\.key)
-        let waits = runs.compactMap { activeRunWaitHandlers[$0] }
-        for run in runs { activeRunCancelHandlers[run]?() }
-        for session in sessions where session.isStarting {
-            await withCheckedContinuation { session.startWaiters.append($0) }
-        }
-        for wait in waits { await wait() }
+    private final class StoreEntry {
+        weak var session: FavoriteRemoteSyncSession?
+        var isChangingAccount = false
     }
 
-    static func isRunActive(_ runID: String) -> Bool {
-        activeRunCancelHandlers[runID] != nil
+    private static var stores: [ObjectIdentifier: StoreEntry] = [:]
+
+    static func shared(for dependencies: LibraryDependencies) -> Self {
+        stores = stores.filter { $0.value.session != nil || $0.value.isChangingAccount }
+        let key = ObjectIdentifier(dependencies.localFavoriteLibraryStore)
+        let entry = stores[key] ?? StoreEntry()
+        if let session = entry.session { return session }
+        let session = Self(
+            libraryStore: dependencies.localFavoriteLibraryStore,
+            runStore: dependencies.favoriteSyncRunStore,
+            contentCoverStore: dependencies.contentCoverStore,
+            mangaDirectoryStore: dependencies.mangaDirectoryStore,
+            settingsStore: dependencies.settingsStore,
+            makeFavoriteRepository: dependencies.makeFavoriteRepository,
+            makeForumThreadReaderRepository: dependencies.makeForumThreadReaderRepository,
+            makeThreadRouteResolver: dependencies.makeThreadRouteResolver
+        )
+        entry.session = session
+        stores[key] = entry
+        return session
+    }
+
+    static func cancelForAccountChange(libraryStore: FavoriteLibraryStore) async {
+        let key = ObjectIdentifier(libraryStore)
+        let entry = stores[key] ?? StoreEntry()
+        entry.isChangingAccount = true
+        stores[key] = entry
+        guard let session = entry.session else { return }
+        let start = session.startTask
+        let run = session.syncTask
+        let load = session.loadTask
+        start?.cancel()
+        run?.cancel()
+        load?.cancel()
+        await load?.value
+        _ = await start?.value
+        await run?.value
+    }
+
+    static func finishAccountChange(libraryStore: FavoriteLibraryStore) {
+        let key = ObjectIdentifier(libraryStore)
+        guard let entry = stores[key] else { return }
+        entry.isChangingAccount = false
+        if entry.session == nil { stores[key] = nil }
+    }
+
+    private var isChangingAccount: Bool {
+        Self.stores[ObjectIdentifier(libraryStore)]?.isChangingAccount == true
     }
 
     init(
@@ -78,34 +111,45 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         self.makeForumThreadReaderRepository = makeForumThreadReaderRepository
         self.makeThreadRouteResolver = makeThreadRouteResolver
         self.runnerOverride = runnerOverride
-        Self.instances.add(self)
-    }
-
-    deinit {
-        syncTask?.cancel()
     }
 
     func load() async {
-        snapshot = await interruptedSnapshotIfNeeded(runStore.latestSnapshot())
+        guard !isChangingAccount, startTask == nil, syncTask == nil else { return }
+        if let loadTask {
+            await loadTask.value
+            return
+        }
+        let task = Task { @MainActor in
+            defer { loadTask = nil }
+            let persisted = await runStore.latestSnapshot()
+            guard !Task.isCancelled, !isChangingAccount else { return }
+            let latest = await interruptedSnapshotIfNeeded(persisted)
+            guard !Task.isCancelled, !isChangingAccount else { return }
+            snapshot = latest
+        }
+        loadTask = task
+        await task.value
     }
 
     @discardableResult
     func start(targetCategoryID: String) async -> String? {
-        guard !isStarting else { return snapshot?.runID }
-        if snapshot?.status == .running {
-            return snapshot?.runID
-        }
-        isStarting = true
-        let generation = accountGeneration
-        defer {
-            isStarting = false
-            let waiters = startWaiters
-            startWaiters.removeAll()
-            for waiter in waiters { waiter.resume() }
-        }
+        guard !isChangingAccount else { return nil }
+        if let startTask { return await startTask.value }
+        if syncTask != nil { return snapshot?.runID }
 
+        let task = Task { @MainActor in
+            defer { startTask = nil }
+            await loadTask?.value
+            return await beginRun(targetCategoryID: targetCategoryID)
+        }
+        startTask = task
+        return await task.value
+    }
+
+    private func beginRun(targetCategoryID: String) async -> String? {
+        guard !isChangingAccount, !Task.isCancelled else { return nil }
         let document = (try? await libraryStore.load()) ?? FavoriteLibraryDocument()
-        guard generation == accountGeneration, !Task.isCancelled else { return nil }
+        guard !isChangingAccount, !Task.isCancelled else { return nil }
         let categoryName = document.categories.first { $0.id == targetCategoryID }?.displayName
             ?? document.defaultCategory.displayName
         let now = Date()
@@ -127,29 +171,19 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         }
         snapshot = startedSnapshot
         await persistSnapshot(startedSnapshot)
-        guard generation == accountGeneration, !Task.isCancelled else {
-            snapshot = await interruptedSnapshotIfNeeded(startedSnapshot)
+        guard !isChangingAccount, !Task.isCancelled else {
+            snapshot = await interruptedSnapshotIfNeeded(
+                startedSnapshot,
+                reason: interruptionReasonBox.take() ?? .interrupted
+            )
             endBackgroundTask()
             return nil
         }
 
-        syncTask?.cancel()
         let runSnapshot = startedSnapshot
-        syncTask = Task { @MainActor [weak self] in
-            guard let self else {
-                Self.activeRunCancelHandlers[runSnapshot.runID] = nil
-                Self.activeRunWaitHandlers[runSnapshot.runID] = nil
-                Self.activeRunLibraries[runSnapshot.runID] = nil
-                return
-            }
-            await self.run(startSnapshot: runSnapshot)
+        syncTask = Task { @MainActor in
+            await run(startSnapshot: runSnapshot)
         }
-        Self.activeRunCancelHandlers[startedSnapshot.runID] = { [weak self] in
-            self?.syncTask?.cancel()
-        }
-        let running = syncTask
-        Self.activeRunWaitHandlers[startedSnapshot.runID] = { await running?.value }
-        Self.activeRunLibraries[startedSnapshot.runID] = libraryStore
         return startedSnapshot.runID
     }
 
@@ -160,8 +194,9 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     }
 
     func interrupt() async {
-        guard snapshot?.status == .running else { return }
+        guard startTask != nil || syncTask != nil else { return }
         interruptionReasonBox.set(.interruptedByUser)
+        startTask?.cancel()
         syncTask?.cancel()
     }
 
@@ -173,12 +208,9 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     }
 
     private func run(startSnapshot: FavoriteRemoteSyncSnapshot) async {
-        let runID = startSnapshot.runID
         defer {
             endBackgroundTask()
-            Self.activeRunCancelHandlers[runID] = nil
-            Self.activeRunWaitHandlers[runID] = nil
-            Self.activeRunLibraries[runID] = nil
+            syncTask = nil
         }
 
         let runner = runnerOverride ?? makeEngineRunner()
@@ -257,16 +289,18 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         terminalFailureDetails = details
     }
 
-    private func interruptedSnapshotIfNeeded(_ snapshot: FavoriteRemoteSyncSnapshot?) async -> FavoriteRemoteSyncSnapshot? {
+    private func interruptedSnapshotIfNeeded(
+        _ snapshot: FavoriteRemoteSyncSnapshot?,
+        reason: FavoriteRemoteSyncWarning = .taskLost
+    ) async -> FavoriteRemoteSyncSnapshot? {
         guard var snapshot else { return nil }
         guard snapshot.status == .running else { return snapshot }
-        guard !Self.isRunActive(snapshot.runID) else { return snapshot }
         snapshot.status = .interrupted
         snapshot.phase = .interrupted
         snapshot.finishedAt = snapshot.finishedAt ?? .now
         snapshot.updatedAt = .now
-        snapshot.warnings.append(.taskLost)
-        snapshot.logEntries.append(.taskLost)
+        snapshot.warnings.append(reason)
+        snapshot.logEntries.append(reason == .taskLost ? .taskLost : .interrupted)
         await persistSnapshot(snapshot)
         return snapshot
     }
@@ -309,8 +343,9 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         guard backgroundTaskID == .invalid else { return true }
         backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "FavoriteRemoteSync") { [weak self] in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.snapshot?.runID == runID else { return }
                 self.interruptionReasonBox.set(.backgroundExpired)
+                self.startTask?.cancel()
                 self.syncTask?.cancel()
                 self.endBackgroundTask()
             }

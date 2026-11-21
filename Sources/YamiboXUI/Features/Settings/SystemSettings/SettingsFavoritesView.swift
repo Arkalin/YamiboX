@@ -13,16 +13,7 @@ struct SettingsFavoritesView: View {
 
     init(dependencies: SettingsDependencies, viewModel: SettingsFavoritesViewModel) {
         self.viewModel = viewModel
-        _favoriteRemoteSync = StateObject(wrappedValue: FavoriteRemoteSyncSession(
-            libraryStore: dependencies.library.localFavoriteLibraryStore,
-            runStore: dependencies.library.favoriteSyncRunStore,
-            contentCoverStore: dependencies.library.contentCoverStore,
-            mangaDirectoryStore: dependencies.library.mangaDirectoryStore,
-            settingsStore: dependencies.library.settingsStore,
-            makeFavoriteRepository: dependencies.library.makeFavoriteRepository,
-            makeForumThreadReaderRepository: dependencies.library.makeForumThreadReaderRepository,
-            makeThreadRouteResolver: dependencies.library.makeThreadRouteResolver
-        ))
+        _favoriteRemoteSync = StateObject(wrappedValue: FavoriteRemoteSyncSession.shared(for: dependencies.library))
         _updateMonitor = StateObject(wrappedValue: FavoriteUpdateMonitor(
             updateStore: dependencies.library.favoriteUpdateStore,
             libraryStore: dependencies.library.localFavoriteLibraryStore,

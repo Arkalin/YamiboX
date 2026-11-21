@@ -43,16 +43,7 @@ struct LocalFavoritesRootView: View {
                 settingsStore: dependencies.settingsStore
             )
         ))
-        _remoteSync = StateObject(wrappedValue: FavoriteRemoteSyncSession(
-            libraryStore: dependencies.localFavoriteLibraryStore,
-            runStore: dependencies.favoriteSyncRunStore,
-            contentCoverStore: dependencies.contentCoverStore,
-            mangaDirectoryStore: dependencies.mangaDirectoryStore,
-            settingsStore: dependencies.settingsStore,
-            makeFavoriteRepository: dependencies.makeFavoriteRepository,
-            makeForumThreadReaderRepository: dependencies.makeForumThreadReaderRepository,
-            makeThreadRouteResolver: dependencies.makeThreadRouteResolver
-        ))
+        _remoteSync = StateObject(wrappedValue: FavoriteRemoteSyncSession.shared(for: dependencies))
         _updateMonitor = StateObject(wrappedValue: FavoriteUpdateMonitor.makeForLibrary(dependencies))
         openTargetResolver = LocalFavoriteOpenTargetResolver(
             libraryStore: dependencies.localFavoriteLibraryStore,

@@ -288,6 +288,7 @@ public final class YamiboWindowCoordinator {
                 ForumComposerDraftCoordinator.finishAccountChange(sessionStore: appContext.accountDependencies.sessionStore)
                 await webSessionCoordinator.finishAccountChange(session)
                 await IOSForumWebView.Coordinator.finishAccountChange(session, sessionStore: appContext.accountDependencies.sessionStore)
+                FavoriteRemoteSyncSession.finishAccountChange(libraryStore: appContext.localFavoriteLibraryStore)
                 FavoriteUpdateMonitor.finishAccountChange(updateStore: appContext.libraryDependencies.favoriteUpdateStore)
             },
             publish: { [weak self] in self?.publishAccountChange() }
