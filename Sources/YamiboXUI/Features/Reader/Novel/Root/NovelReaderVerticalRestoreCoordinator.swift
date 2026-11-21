@@ -10,7 +10,6 @@ final class NovelReaderVerticalRestoreCoordinator {
     private(set) var verticalRestoreController = ReaderVerticalRestoreController()
 
     @ObservationIgnored private var verticalScrollRequestCommandID: UInt64 = 0
-    @ObservationIgnored private var verticalRestoreRetryTask: Task<Void, Never>?
     @ObservationIgnored private var verticalViewportPositionUpdateTask: Task<Void, Never>?
     private let verticalViewportSampling = NovelReaderVerticalViewportSamplingBox()
     @ObservationIgnored private var lastVerticalPositioningFingerprint: NovelReaderVerticalPositioningFingerprint?
@@ -19,13 +18,11 @@ final class NovelReaderVerticalRestoreCoordinator {
 
     /// Normally detached synchronously before the session can move.
     deinit {
-        verticalRestoreRetryTask?.cancel()
         verticalViewportPositionUpdateTask?.cancel()
     }
 
 
     func cancelPendingRestoreWork() {
-        verticalRestoreRetryTask?.cancel()
         verticalViewportPositionUpdateTask?.cancel()
         verticalRestoreController.cancel()
         verticalScrollRequest = nil
@@ -49,13 +46,7 @@ final class NovelReaderVerticalRestoreCoordinator {
             return
         }
         verticalScrollRequest = nil
-        if request.textAnchor != nil {
-            verticalRestoreController.beginSettling(request, now: CACurrentMediaTime())
-            verticalRestoreRetryTask?.cancel()
-            verticalRestoreRetryTask = nil
-            return
-        }
-        tryAdvanceVerticalRestore(model: model, scrollCoordinator: scrollCoordinator)
+        verticalRestoreController.beginSettling(request, now: CACurrentMediaTime())
     }
 
     func handleSurfaceFramesChange(
@@ -168,7 +159,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         let request = makeVerticalScrollRequest(model: model)
         beginVerticalRestoreScrolling(for: request)
         verticalScrollRequest = request
-        scheduleVerticalRestoreRetry(for: request, model: model, scrollCoordinator: scrollCoordinator)
     }
 
     func updateVerticalViewportPosition(model: NovelReaderViewModel) {
@@ -209,61 +199,12 @@ final class NovelReaderVerticalRestoreCoordinator {
         }
     }
 
-    private func applyVerticalFineTune(
-        for request: NovelReaderVerticalScrollRequest,
-        model: NovelReaderViewModel,
-        scrollCoordinator: NovelReaderVerticalScrollCoordinator
-    ) {
-        guard admitsViewport() else { return }
-        guard verticalRestoreController.scrollingRequest == request else {
-            return
-        }
-        guard request.view == nil || request.view == model.visibleView else {
-            return
-        }
-        if request.textAnchor != nil {
-            return
-        }
-        guard let frame = currentVerticalSurfaceFrames(model: model)[request.surfaceIndex] else {
-            return
-        }
-        verticalRestoreController.beginFineTuning(request)
-        guard scrollCoordinator.restoreOffset(
-            to: frame,
-            intraSurfaceProgress: request.intraSurfaceProgress
-        ) else {
-            verticalRestoreController.beginScrolling(to: request)
-            return
-        }
-        verticalRestoreController.beginSettling(request, now: CACurrentMediaTime())
-        verticalRestoreRetryTask?.cancel()
-        verticalRestoreRetryTask = nil
-    }
-
     func tryAdvanceVerticalRestore(
         model: NovelReaderViewModel,
         scrollCoordinator: NovelReaderVerticalScrollCoordinator
     ) {
         guard admitsViewport() else { return }
         refreshVerticalRestorePhase()
-        guard let request = verticalRestoreController.scrollingRequest else { return }
-        guard request.view == nil || request.view == model.visibleView else {
-            return
-        }
-        guard scrollCoordinator.hasAttachedScrollView else {
-            return
-        }
-        let frames = currentVerticalSurfaceFrames(model: model)
-        guard let frame = frames[request.surfaceIndex] else {
-            return
-        }
-        guard frame.height > 0 else {
-            return
-        }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1))
-            self.applyVerticalFineTune(for: request, model: model, scrollCoordinator: scrollCoordinator)
-        }
     }
 
     func syncVerticalViewportBeforeSave(
@@ -282,12 +223,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         verticalRestoreController.beginScrolling(to: request)
     }
 
-    private func currentVerticalSurfaceFrames(model: NovelReaderViewModel) -> [Int: CGRect] {
-        verticalViewportSampling.surfaceFrames.compactMapValues { value in
-            value.documentView == model.visibleView ? value.frame : nil
-        }
-    }
-
     private func refreshVerticalRestorePhase(now: CFTimeInterval = CACurrentMediaTime()) {
         var refreshedController = verticalRestoreController
         refreshedController.refresh(now: now)
@@ -304,38 +239,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         guard verticalRestoreController.activeRequest != nil else { return }
         verticalRestoreController.cancel(now: CACurrentMediaTime())
         verticalScrollRequest = nil
-        verticalRestoreRetryTask?.cancel()
-        verticalRestoreRetryTask = nil
     }
 
-    private func reissueVerticalScrollRequest(_ request: NovelReaderVerticalScrollRequest) {
-        guard verticalRestoreController.scrollingRequest == request else { return }
-        verticalScrollRequest = nil
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1))
-            guard self.verticalRestoreController.scrollingRequest == request else { return }
-            self.verticalScrollRequest = request
-        }
-    }
-
-    private func scheduleVerticalRestoreRetry(
-        for request: NovelReaderVerticalScrollRequest,
-        model: NovelReaderViewModel,
-        scrollCoordinator: NovelReaderVerticalScrollCoordinator
-    ) {
-        verticalRestoreRetryTask?.cancel()
-        verticalRestoreRetryTask = Task {
-            for attempt in 1 ... 10 {
-                try? await Task.sleep(for: .milliseconds(80))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard self.verticalRestoreController.scrollingRequest == request else { return }
-                    self.tryAdvanceVerticalRestore(model: model, scrollCoordinator: scrollCoordinator)
-                    if self.verticalRestoreController.scrollingRequest == request, attempt == 3 || attempt == 6 || attempt == 9 {
-                        self.reissueVerticalScrollRequest(request)
-                    }
-                }
-            }
-        }
-    }
 }

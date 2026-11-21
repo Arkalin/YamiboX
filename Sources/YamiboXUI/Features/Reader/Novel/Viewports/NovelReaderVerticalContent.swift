@@ -32,6 +32,9 @@ struct NovelReaderVerticalContent: View {
             topInset: topInset,
             bottomInset: bottomInset,
             scrollRequest: verticalRestore.verticalScrollRequest,
+            admitsScrollRequest: { request in
+                viewport.acceptsGeometry && verticalRestore.verticalScrollRequest == request
+            },
             displayReferenceProvider: { surfaceIdentity in
                 model.novelTextViewportDisplayReference(for: surfaceIdentity)
             },

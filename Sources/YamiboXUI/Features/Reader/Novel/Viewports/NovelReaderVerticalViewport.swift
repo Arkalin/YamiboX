@@ -22,6 +22,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
     let topInset: CGFloat
     let bottomInset: CGFloat
     let scrollRequest: NovelReaderVerticalScrollRequest?
+    let admitsScrollRequest: (NovelReaderVerticalScrollRequest) -> Bool
     let displayReferenceProvider: @MainActor (NovelReaderSurfaceIdentity) -> NovelTextViewportDisplayReference?
     let selectionController: NovelTextSelectionController?
     let likeHighlightController: NovelLikeHighlightController?
@@ -124,6 +125,9 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         private var contentIdentity: NovelReaderVerticalViewportContentIdentity?
         private var imagePipeline: YamiboUIImagePipeline?
         private var handledScrollRequest: NovelReaderVerticalScrollRequest?
+        private var pendingScrollRequest: NovelReaderVerticalScrollRequest?
+        private var positionedScrollRequest: NovelReaderVerticalScrollRequest?
+        private var scrollPlacementScheduled = false
         private var lastPublishedSurfaceFrames: [Int: NovelReaderVerticalSurfaceFrameValue]?
         private var lastPublishedVisibleSurfaceIdentities: [NovelReaderSurfaceIdentity]?
         private var lastPublishedViewportSample: NovelReaderVerticalViewportSample?
@@ -258,6 +262,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                 cell.refreshLayoutForCurrentBounds(forceRedraw: true)
             }
             scheduleVisibleTextRedraw(in: collectionView, includeDelayedPass: false)
+            scheduleScrollPlacement(in: collectionView)
         }
 
         func collectionView(
@@ -293,6 +298,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         }
 
         func publishLayout(from collectionView: UICollectionView) {
+            scheduleScrollPlacement(in: collectionView)
             publishFrames(from: collectionView)
             let onViewportChange = parent.onViewportChange
             callbackScheduler.publish {
@@ -301,36 +307,42 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         }
 
         func handle(_ request: NovelReaderVerticalScrollRequest?, in collectionView: UICollectionView) {
-            guard let request else {
-                handledScrollRequest = nil
-                return
+            if pendingScrollRequest != request {
+                pendingScrollRequest = request
+                positionedScrollRequest = nil
             }
-            guard request.surfaceIndex >= 0, request.surfaceIndex < verticalSurfaceCount else {
-                handledScrollRequest = nil
-                return
+            scheduleScrollPlacement(in: collectionView)
+        }
+
+        private func scheduleScrollPlacement(in collectionView: UICollectionView) {
+            guard pendingScrollRequest != nil, !scrollPlacementScheduled else { return }
+            scrollPlacementScheduled = true
+            Task { @MainActor [weak self, weak collectionView] in
+                guard let self else { return }
+                self.scrollPlacementScheduled = false
+                guard let collectionView, collectionView.window != nil else { return }
+                self.placePendingScrollRequest(in: collectionView)
             }
-            guard collectionView.bounds.width > 0,
-                  collectionView.bounds.height > 0,
-                  collectionView.contentSize.height > 0 else {
-                handledScrollRequest = nil
-                return
+        }
+
+        private func placePendingScrollRequest(in collectionView: UICollectionView) {
+            guard let request = pendingScrollRequest, parent.admitsScrollRequest(request),
+                  handledScrollRequest != request, !collectionView.isTracking, !collectionView.isDragging,
+                  request.surfaceIndex >= 0, request.surfaceIndex < verticalSurfaceCount,
+                  collectionView.bounds.width > 0, collectionView.bounds.height > 0,
+                  collectionView.contentSize.height > 0 else { return }
+
+            if positionedScrollRequest != request {
+                positionedScrollRequest = request
+                collectionView.stopScrollingAndZooming()
+                collectionView.scrollToItem(at: IndexPath(item: request.surfaceIndex, section: 0), at: .top, animated: false)
             }
-            guard handledScrollRequest != request else { return }
+
+            guard restoreTextAnchorIfPossible(for: request, in: collectionView) else { return }
             handledScrollRequest = request
-            collectionView.scrollToItem(
-                at: IndexPath(item: request.surfaceIndex, section: 0),
-                at: .top,
-                animated: false
-            )
-            let didRestoreTextAnchor = restoreTextAnchorIfPossible(for: request, in: collectionView)
-            guard request.textAnchor == nil || didRestoreTextAnchor else {
-                handledScrollRequest = nil
-                return
-            }
+            pendingScrollRequest = nil
             let onScrollRequestHandled = parent.onScrollRequestHandled
-            callbackScheduler.publish {
-                onScrollRequestHandled(request)
-            }
+            callbackScheduler.publish { onScrollRequestHandled(request) }
             scheduleVisibleTextRedraw(in: collectionView, includeDelayedPass: true)
             publishScrollSettled(from: collectionView)
         }
@@ -537,12 +549,6 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             for request: NovelReaderVerticalScrollRequest,
             in collectionView: UICollectionView
         ) -> Bool {
-            guard let textAnchor = request.textAnchor,
-                  request.surfaceIndex >= 0,
-                  request.surfaceIndex < verticalSurfaceCount else {
-                return request.textAnchor == nil
-            }
-
             let targetIndexPath = IndexPath(item: request.surfaceIndex, section: 0)
             let visibleItems = collectionView.indexPathsForVisibleItems.map(\.item)
             let nearbyItems = ((request.surfaceIndex - 2)...(request.surfaceIndex + 2))
@@ -554,7 +560,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                     abs(lhs - request.surfaceIndex) < abs(rhs - request.surfaceIndex)
                 }
 
-            for item in candidateItems {
+            for item in request.textAnchor == nil ? [] : candidateItems {
                 let indexPath = IndexPath(item: item, section: 0)
                 guard let cell = collectionView.cellForItem(at: indexPath) as? NovelReaderVerticalViewportCell,
                       let attributes = collectionView.layoutAttributesForItem(at: indexPath) else {
@@ -564,7 +570,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
                     dx: -collectionView.contentOffset.x,
                     dy: -collectionView.contentOffset.y
                 )
-                guard let anchorY = cell.textViewportAnchorY(
+                guard let textAnchor = request.textAnchor, let anchorY = cell.textViewportAnchorY(
                     for: textAnchor,
                     surfaceFrame: visibleFrame
                 ) else {
@@ -639,6 +645,11 @@ private final class NovelReaderVerticalViewportCollectionView: UICollectionView 
     override func layoutSubviews() {
         super.layoutSubviews()
         onLayoutSubviews?()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { setNeedsLayout() }
     }
 }
 

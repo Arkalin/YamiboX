@@ -28,7 +28,6 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
     private var isViewportSyncScheduled = false
     private var suppressChromeToggleUntil = CACurrentMediaTime()
     private var lastMotionTime = CACurrentMediaTime()
-    private var isRestoringOffset = false
     private let motionSuppressionInterval: CFTimeInterval = 0.35
     private var controlScroll = ReaderVerticalScrollStep()
 
@@ -72,41 +71,8 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         }
 
         controlScroll.reset()
-        let offset = scrollView.contentOffset
-        scrollView.setContentOffset(offset, animated: false)
+        scrollView.stopScrollingAndZooming()
         lastMotionTime = CACurrentMediaTime()
-
-        if scrollView.isDecelerating {
-            scrollView.isScrollEnabled = false
-            scrollView.isScrollEnabled = true
-            scrollView.setContentOffset(offset, animated: false)
-        }
-
-        return true
-    }
-
-    func restoreOffset(to surfaceFrame: CGRect, intraSurfaceProgress: Double) -> Bool {
-        guard let scrollView else { return false }
-
-        let referenceLineY = referenceLineY
-        let desiredY = scrollView.contentOffset.y
-            + surfaceFrame.minY
-            + (surfaceFrame.height * min(max(intraSurfaceProgress, 0), 1))
-            - referenceLineY
-        let minOffsetY = -scrollView.adjustedContentInset.top
-        let maxOffsetY = max(
-            minOffsetY,
-            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
-        )
-        let targetOffsetY = min(max(desiredY, minOffsetY), maxOffsetY)
-        isRestoringOffset = true
-        controlScroll.reset()
-        scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: targetOffsetY), animated: false)
-        isRestoringOffset = false
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(1))
-            self?.scheduleViewportSync()
-        }
 
         return true
     }
@@ -142,7 +108,6 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard oldValue != newValue else { return }
-                guard !self.isRestoringOffset else { return }
                 self.lastMotionTime = CACurrentMediaTime()
                 self.scheduleViewportSync()
             }
