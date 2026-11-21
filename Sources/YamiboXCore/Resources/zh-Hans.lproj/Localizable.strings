@@ -40,6 +40,10 @@
 "app_update.up_to_date_title" = "无需更新";
 "app.home.favorites" = "收藏";
 "app.home.forum" = "论坛";
+"app.startup.database_error_title" = "本地数据库无法打开";
+"app.startup.database_unavailable" = "暂时无法打开或升级本地数据库。原数据未被清空，请重试。";
+"app.startup.database_newer" = "此数据库由较新版本的应用创建。请升级应用后重试。";
+"app.startup.database_recovery_failed" = "无法从已确认的数据库损坏中恢复。请保留原始数据并重试。";
 "app.startup.loading_session" = "正在读取登录状态…";
 "app.startup.loading_profile" = "正在读取账号资料…";
 "app.startup.loading_settings" = "正在读取应用设置…";
@@ -122,6 +126,7 @@
 "load_failure.copy_html" = "复制 HTML";
 "load_failure.copied" = "已复制";
 "common.save" = "保存";
+"settings.error.unreadable_snapshot" = "无法读取原有设置，未覆盖原数据。";
 "settings.chapter_comments.ratings" = "评分理由";
 "settings.chapter_comments.title" = "章节评论屏蔽";
 "reader.chapter_comments_filter_settings" = "屏蔽设置";
@@ -232,6 +237,7 @@
 "favorites.bulk_delete_mixed_message" = "删除所选内容？合集会解散，下载内容和阅读进度会保留。";
 "favorites.bulk_delete_scope_message" = "所选收藏中有项目位于多个位置。可只从当前位置移除，也可彻底删除。下载内容和阅读进度会保留。";
 "favorites.bulk_delete_skipped_smart_manga_message" = "已选中的智能漫画收藏未被删除，请前往其“查看归档收藏”页面删除。";
+"favorites.bulk_delete_selection_changed" = "所选收藏已变化，请重新确认删除。";
 "favorites.bulk_dissolve_collections_message" = "确定要解散已选中的合集吗？其中的收藏会返回根页，不会被删除。";
 "favorites.card.last_updated" = "最后更新 %@";
 "favorites.card.recent_read" = "最近阅读 %@";
@@ -1462,6 +1468,8 @@
 "webdav.download" = "下载";
 "webdav.error.account_mismatch" = "服务器账号与本机账号数据不一致。";
 "webdav.error.empty_payload" = "服务器同步文件为空。";
+"webdav.error.invalid_upload_envelope" = "无法为 WebDAV 上传文档写入同步版本。";
+"webdav.error.upload_revision_exhausted" = "WebDAV 同步版本号已用尽，无法继续上传。";
 "webdav.error.invalid_configuration" = "请填写有效的 WebDAV URL 和用户名。";
 "webdav.error.invalid_response" = "WebDAV 服务器响应异常。";
 "webdav.error.invalid_response_with_status" = "WebDAV 服务器响应异常（%d）。";

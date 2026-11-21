@@ -9,11 +9,21 @@ public struct FavoriteDeletionRequest: Sendable {
     public let favoriteIDs: Set<String>
     public let collectionIDs: Set<String>
     public let scope: Scope
+    let confirmedItems: Set<FavoriteItem>?
+    let confirmedCollections: Set<LocalFavoriteCollection>?
 
-    public init(favoriteIDs: Set<String>, collectionIDs: Set<String> = [], scope: Scope) {
+    public init(
+        favoriteIDs: Set<String>,
+        collectionIDs: Set<String> = [],
+        scope: Scope,
+        confirmedItems: Set<FavoriteItem>? = nil,
+        confirmedCollections: Set<LocalFavoriteCollection>? = nil
+    ) {
         self.favoriteIDs = favoriteIDs
         self.collectionIDs = collectionIDs
         self.scope = scope
+        self.confirmedItems = confirmedItems
+        self.confirmedCollections = confirmedCollections
     }
 }
 
@@ -25,6 +35,7 @@ extension FavoriteCommands {
     ) async throws -> FavoriteLibraryDocument {
         let snapshot = try await localFavoriteLibraryStore.load()
         let items = snapshot.items.filter { request.favoriteIDs.contains($0.id) }
+        try validateSelection(request, in: snapshot)
         return try await executeDeletion(
             request, items: items, requiringItemID: nil,
             localFavoriteLibraryStore: localFavoriteLibraryStore,
@@ -54,6 +65,20 @@ extension FavoriteCommands {
 
     private struct DeletedItemAbsent: Error {}
 
+    private static func validateSelection(
+        _ request: FavoriteDeletionRequest,
+        in document: FavoriteLibraryDocument
+    ) throws {
+        if let expected = request.confirmedItems,
+           Set(document.items.filter({ request.favoriteIDs.contains($0.id) })) != expected {
+            throw YamiboPersistenceError(context: L10n.string("favorites.bulk_delete_selection_changed"))
+        }
+        if let expected = request.confirmedCollections,
+           Set(document.collections.filter({ request.collectionIDs.contains($0.id) })) != expected {
+            throw YamiboPersistenceError(context: L10n.string("favorites.bulk_delete_selection_changed"))
+        }
+    }
+
     private static func executeDeletion(
         _ request: FavoriteDeletionRequest,
         items: [FavoriteItem],
@@ -67,6 +92,7 @@ extension FavoriteCommands {
         }
         try Task.checkCancellation()
         return try await localFavoriteLibraryStore.update { document in
+            try validateSelection(request, in: document)
             if let requiringItemID,
                !document.items.contains(where: { $0.id == requiringItemID }) {
                 throw DeletedItemAbsent()

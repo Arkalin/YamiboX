@@ -1,6 +1,20 @@
 import Foundation
 @preconcurrency import GRDB
 
+public enum YamiboDatabaseStartupError: LocalizedError, Sendable {
+    case unavailable
+    case newerSchema
+    case corruptionRecoveryFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .unavailable: L10n.string("app.startup.database_unavailable")
+        case .newerSchema: L10n.string("app.startup.database_newer")
+        case .corruptionRecoveryFailed: L10n.string("app.startup.database_recovery_failed")
+        }
+    }
+}
+
 enum YamiboDatabase {
     static let databaseFileName = "yamibox.sqlite"
     static let cacheDirectoryName = "yamibox-cache"
@@ -43,18 +57,28 @@ enum YamiboDatabase {
         fileManager: FileManager = .default
     ) throws -> DatabasePool {
         let root = rootDirectory ?? defaultRootDirectory(fileManager: fileManager)
-        if !fileManager.fileExists(atPath: root.path) {
-            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        }
         var configuration = Configuration()
         configuration.busyMode = .timeout(5)
         let databaseURL = databaseURL(rootDirectory: root, fileManager: fileManager)
         do {
+            if !fileManager.fileExists(atPath: root.path) {
+                try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            }
             return try openAndMigratePool(at: databaseURL, configuration: configuration)
+        } catch let error as YamiboDatabaseStartupError {
+            throw error
         } catch let error as DatabaseError where corruptionResultCodes.contains(error.resultCode) {
             YamiboLog.persistence.error("yamibox.sqlite is corrupt; quarantining it and recreating: \(error)")
-            try quarantineCorruptDatabase(at: databaseURL, fileManager: fileManager)
-            return try openAndMigratePool(at: databaseURL, configuration: configuration)
+            do {
+                try quarantineCorruptDatabase(at: databaseURL, fileManager: fileManager)
+                return try openAndMigratePool(at: databaseURL, configuration: configuration)
+            } catch {
+                YamiboLog.persistence.error("Could not recover the corrupt application database: \(error)")
+                throw YamiboDatabaseStartupError.corruptionRecoveryFailed
+            }
+        } catch {
+            YamiboLog.persistence.error("Could not open or migrate the application database: \(error)")
+            throw YamiboDatabaseStartupError.unavailable
         }
     }
 
@@ -67,12 +91,11 @@ enum YamiboDatabase {
     }
 
     private static func quarantineCorruptDatabase(at databaseURL: URL, fileManager: FileManager) throws {
-        let suffix = ".corrupt-\(Int(Date.now.timeIntervalSince1970))"
+        let suffix = ".corrupt-\(UUID().uuidString)"
         for sidecar in ["", "-wal", "-shm"] {
             let source = URL(fileURLWithPath: databaseURL.path + sidecar)
             guard fileManager.fileExists(atPath: source.path) else { continue }
             let destination = URL(fileURLWithPath: databaseURL.path + suffix + sidecar)
-            try? fileManager.removeItem(at: destination)
             try fileManager.moveItem(at: source, to: destination)
         }
     }
@@ -87,6 +110,9 @@ enum YamiboDatabase {
         DownloadNamingMigration.register(in: &migrator)
         ForumAttachmentDownloadSchema.register(in: &migrator)
         FavoriteUpdateDatabaseSchema.registerNotificationBadgeMigration(in: &migrator)
+        guard try !writer.read(migrator.hasBeenSuperseded) else {
+            throw YamiboDatabaseStartupError.newerSchema
+        }
         try migrator.migrate(writer)
     }
 

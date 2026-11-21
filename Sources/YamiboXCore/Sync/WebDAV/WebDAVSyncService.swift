@@ -560,12 +560,12 @@ public actor WebDAVSyncService {
                     condition = .absent
                 }
                 let stamp = max(updatedAt, uploadStamp(absorbing: remote?.info.updatedAt))
+                let revision = try nextUploadRevision(datasetID: participant.datasetID,
+                    settings: settings, absorbingRemoteRevision: remote?.info.revision)
                 let snapshot = try await participant.mergeAndExportSnapshot(
                     remoteData: remote?.data, updatedAt: stamp, accountUID: accountUID)
                 try await checkCurrent(run)
-                let revision = nextUploadRevision(datasetID: participant.datasetID,
-                    settings: settings, absorbingRemoteRevision: remote?.info.revision)
-                let data = WebDAVPayloadEnvelope.injectingSyncRevision(revision, into: snapshot.data)
+                let data = try WebDAVPayloadEnvelope.injectingSyncRevision(revision, into: snapshot.data)
                 do {
                     try await checkCurrent(run)
                     try Task.checkCancellation()
@@ -660,14 +660,15 @@ public actor WebDAVSyncService {
         datasetID: String,
         settings: WebDAVSyncSettings,
         absorbingRemoteRevision: UInt64?
-    ) -> UInt64 {
+    ) throws -> UInt64 {
         let highestKnown = [
             highestKnownLocalRevision(datasetID: datasetID, settings: settings),
             absorbingRemoteRevision,
         ]
         .compactMap(\.self)
         .max() ?? 0
-        return min(highestKnown, .max - 1) + 1
+        guard highestKnown < .max else { throw WebDAVSyncError.uploadRevisionExhausted }
+        return highestKnown + 1
     }
 
     private nonisolated func validateAccount(of remotePayloads: [String: WebDAVRemotePayload], localUID: String) throws {

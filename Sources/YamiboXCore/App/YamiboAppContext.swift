@@ -80,7 +80,7 @@ public final class YamiboAppContext: Sendable {
         ordinaryImageCache: (any YamiboOrdinaryImageCacheClearing)? = nil,
         downloadBackgroundDownloadTransport: DownloadBackgroundTransport? = nil,
         downloadRunObserver: (any DownloadQueueRunObserving)? = nil,
-        databasePool: DatabasePool? = nil,
+        databasePool: DatabasePool,
         grdbRootDirectory: URL? = nil,
         cachesRootDirectory: URL? = nil,
         uiDefaults: UserDefaults = .standard,
@@ -99,7 +99,7 @@ public final class YamiboAppContext: Sendable {
             ?? YamiboProfileStore(defaults: profileDefaults)
         let resolvedGRDBRootDirectory = grdbRootDirectory ?? YamiboDatabase.defaultRootDirectory()
         let resolvedCachesRootDirectory = cachesRootDirectory ?? YamiboDatabase.defaultCacheRootDirectory()
-        let resolvedGRDBDatabasePool = databasePool ?? Self.openGRDBDatabase(rootDirectory: resolvedGRDBRootDirectory)
+        let resolvedGRDBDatabasePool = databasePool
         self.databasePool = resolvedGRDBDatabasePool
         let diskCacheStore = DiskCacheStore(
             writer: resolvedGRDBDatabasePool,
@@ -734,14 +734,6 @@ public final class YamiboAppContext: Sendable {
 
     func resetApplicationData() async throws {
         try await dataResetWorkflow.run()
-    }
-
-    private static func openGRDBDatabase(rootDirectory: URL) -> DatabasePool {
-        do {
-            return try YamiboDatabase.openPool(rootDirectory: rootDirectory)
-        } catch {
-            fatalError("Failed to open Yamibo app database: \(error)")
-        }
     }
 
     private static func favoriteBackgroundDirectory(rootDirectory: URL) -> URL {

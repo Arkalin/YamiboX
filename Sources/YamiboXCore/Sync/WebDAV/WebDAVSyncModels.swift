@@ -209,6 +209,8 @@ public enum WebDAVSyncError: LocalizedError, Equatable, Sendable {
     case writeConflict
     case invalidResponse(Int?)
     case emptyPayload
+    case invalidUploadEnvelope
+    case uploadRevisionExhausted
     case accountMismatch(localUID: String, remoteUID: String)
     case underlying(String)
 
@@ -236,6 +238,10 @@ public enum WebDAVSyncError: LocalizedError, Equatable, Sendable {
             }
         case .emptyPayload:
             L10n.string("webdav.error.empty_payload")
+        case .invalidUploadEnvelope:
+            L10n.string("webdav.error.invalid_upload_envelope")
+        case .uploadRevisionExhausted:
+            L10n.string("webdav.error.upload_revision_exhausted")
         case .accountMismatch:
             L10n.string("webdav.error.account_mismatch")
         case let .underlying(message):

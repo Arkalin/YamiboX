@@ -66,7 +66,7 @@ struct LocalFavoriteSelectionActionBar: View {
         }
         if canDelete {
             actions.append(SelectionToolbarAction(id: "delete", title: L10n.string("common.delete"), systemImage: "trash", role: .destructive) {
-                routes.dialog = .deleteSelection
+                routes.dialog = .deleteSelection(organizer.makeSelectionDeletePlan())
             })
         }
         return actions

@@ -37,7 +37,7 @@ private final class YamiboAppStartup {
     var windows: YamiboWindowCoordinator?
     var initialTab: AppTab = .forum
     var failure: String?
-    var isStorageFailure = false
+    var storageFailure: YamiboDatabaseStartupError?
     @ObservationIgnored private var preparationTask: Task<Void, Never>?
     private var isPreparingStorage = false
     private var initialNavigation: AppNavigationTarget?
@@ -104,6 +104,9 @@ private final class YamiboAppStartup {
             }
             #endif
             return true
+        } catch let error as YamiboDatabaseStartupError {
+            setStorageFailure(error)
+            return false
         } catch {
             failure = L10n.string("test_forum.reset_failed") + "\n" + error.localizedDescription
             return false
@@ -121,18 +124,25 @@ private final class YamiboAppStartup {
             await DownloadContinuedProcessingCoordinator.cancelRestoredRequests()
             startRuntime(database: database)
             failure = nil
-            isStorageFailure = false
+            storageFailure = nil
         } catch {
-            isStorageFailure = true
-            failure = error.localizedDescription
+            setStorageFailure(error as? YamiboDatabaseStartupError ?? .unavailable)
         }
     }
 
-    func retryStorage() {
-        guard isStorageFailure, !isPreparingStorage else { return }
-        isStorageFailure = false
+    private func setStorageFailure(_ error: YamiboDatabaseStartupError) {
+        storageFailure = error
+        failure = error.localizedDescription
+    }
+
+    func retryStorage() async {
+        guard storageFailure != nil, !isPreparingStorage else { return }
+        await preparationTask?.value
+        guard storageFailure != nil, windows == nil else { return }
+        storageFailure = nil
         failure = nil
-        preparationTask = Task { await startRuntime() }
+        preparationTask = nil
+        await prepare()
     }
 
     private func startRuntime(database: GRDB.DatabasePool) {
@@ -379,14 +389,14 @@ private struct YamiboStartupWindow: View {
                 )
             } else if let failure = startup.failure {
                 ContentUnavailableView {
-                    Label(L10n.string(startup.isStorageFailure ? "download.migration_failed" : "test_forum.configuration_title"), systemImage: "exclamationmark.triangle")
+                    Label(L10n.string(startup.storageFailure != nil ? "app.startup.database_error_title" : "test_forum.configuration_title"), systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text(startup.isStorageFailure ? failure : failure + "\n\n" + L10n.string("test_forum.launch_instructions"))
+                    Text(startup.storageFailure != nil ? failure : failure + "\n\n" + L10n.string("test_forum.launch_instructions"))
                 } actions: {
-                    if startup.isStorageFailure {
+                    if startup.storageFailure != nil {
                         Button(L10n.string("common.retry")) {
                             launchScreenDeadline = ContinuousClock.now.advanced(by: .seconds(1.7))
-                            startup.retryStorage()
+                            Task { await startup.retryStorage() }
                         }
                     }
                 }
@@ -440,7 +450,11 @@ struct YamiboCheckInIntent: AppIntent {
             }
             let verifier = await WebKitSilentForumVerifier()
             let executor = ForumRequestExecutor(recovery: ForumWAFRecoveryCoordinator(verifier: verifier))
-            let outcome = await YamiboAppContext(sessionStore: sessionStore, requestExecutor: executor)
+            let database = try await Task.detached(priority: .userInitiated) {
+                try YamiboAppContext.prepareDownloadStorage()
+            }.value
+            let outcome = await YamiboAppContext(
+                sessionStore: sessionStore, databasePool: database, requestExecutor: executor)
                 .makeCheckInService().checkInWithDetails(force: false)
             if outcome.isCancelled { throw CancellationError() }
             if outcome.details?.isSilentForumFailure == true {

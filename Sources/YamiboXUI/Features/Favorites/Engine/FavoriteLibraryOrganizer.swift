@@ -7,10 +7,19 @@ enum LocalFavoriteDeleteScope: Equatable {
     case everywhere
 }
 
+struct LocalFavoriteSelectionDeletePlan: Equatable {
+    let items: Set<FavoriteItem>
+    let collections: Set<LocalFavoriteCollection>
+    let currentLocation: FavoriteLocation?
+    let skipsSmartManga: Bool
+
+    var isEmpty: Bool { items.isEmpty && collections.isEmpty }
+}
+
 struct LocalFavoriteRemoveRemotePrompt: Identifiable, Equatable {
     enum Subject: Equatable {
         case item(FavoriteItem)
-        case selection
+        case selection(LocalFavoriteSelectionDeletePlan)
     }
 
     let subject: Subject

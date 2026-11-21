@@ -639,15 +639,15 @@ struct LocalFavoritesOrganizationView: View {
             Button(L10n.string("favorites.delete_scope.everywhere"), role: .destructive) {
                 Task { await organizer.requestDeleteItem(item, scope: .everywhere) }
             }
-        case .deleteSelection:
+        case let .deleteSelection(plan):
             Button(L10n.string("common.cancel"), role: .cancel) {}
-            if organizer.selectedFavoritesCanRemoveCurrentLocation {
+            if plan.currentLocation != nil {
                 Button(L10n.string("favorites.delete_scope.current_location"), role: .destructive) {
-                    Task { await organizer.requestDeleteSelection(scope: .currentLocation) }
+                    Task { await organizer.requestDeleteSelection(plan, scope: .currentLocation) }
                 }
             }
             Button(L10n.string("favorites.delete_scope.everywhere"), role: .destructive) {
-                Task { await organizer.requestDeleteSelection(scope: .everywhere) }
+                Task { await organizer.requestDeleteSelection(plan, scope: .everywhere) }
             }
         case .dissolveSelectedCollections:
             Button(L10n.string("common.cancel"), role: .cancel) {}
@@ -668,18 +668,18 @@ struct LocalFavoritesOrganizationView: View {
             } else {
                 Text(deleteMessage(L10n.string("favorites.delete_favorite_message", item.resolvedDisplayTitle)))
             }
-        case .deleteSelection:
-            Text(deleteMessage(deleteSelectionMessage, includesFavorites: selection.selectedFavoriteCount > 0))
+        case let .deleteSelection(plan):
+            Text(deleteMessage(deleteSelectionMessage(plan), includesFavorites: !plan.items.isEmpty))
         case .dissolveSelectedCollections:
             Text(L10n.string("favorites.bulk_dissolve_collections_message"))
         }
     }
 
-    private var deleteSelectionMessage: String {
-        if selection.selectedCollectionCount > 0 {
+    private func deleteSelectionMessage(_ plan: LocalFavoriteSelectionDeletePlan) -> String {
+        if !plan.collections.isEmpty {
             return L10n.string("favorites.bulk_delete_mixed_message")
         }
-        if organizer.selectedFavoritesCanRemoveCurrentLocation {
+        if plan.currentLocation != nil {
             return L10n.string("favorites.bulk_delete_scope_message")
         }
         return L10n.string("favorites.bulk_delete_favorites_message")

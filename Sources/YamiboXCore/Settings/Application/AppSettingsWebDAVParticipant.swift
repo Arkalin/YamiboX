@@ -27,7 +27,7 @@ struct AppSettingsWebDAVParticipant: WebDAVSyncParticipant {
         let payload = AppSettingsWebDAVPayload(
             updatedAt: updatedAt,
             accountUID: accountUID,
-            appSettings: WebDAVSyncedAppSettings(settings: await store.load())
+            appSettings: WebDAVSyncedAppSettings(settings: try await store.loadForSync())
         )
         return WebDAVExportSnapshot(data: try encoder.encode(payload), fingerprint: try Self.fingerprint(payload.appSettings))
     }
@@ -41,7 +41,7 @@ struct AppSettingsWebDAVParticipant: WebDAVSyncParticipant {
     }
 
     func readLocalFingerprint() async throws -> String? {
-        try Self.fingerprint(WebDAVSyncedAppSettings(settings: await store.load()))
+        try Self.fingerprint(WebDAVSyncedAppSettings(settings: try await store.loadForSync()))
     }
 
     private static func fingerprint(_ snapshot: WebDAVSyncedAppSettings) throws -> String {

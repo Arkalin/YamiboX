@@ -22,13 +22,13 @@ public enum YamiboTestSiteBootstrap {
         }
         let origin = environment.baseURL.absoluteString
         guard previous?.origin != origin || previous?.resetPending != false else { return false }
+        let database = try await Task.detached(priority: .userInitiated) {
+            try YamiboDatabase.openPool()
+        }.value
         try manager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try PropertyListEncoder().encode(Binding(origin: previous?.origin, resetPending: true))
             .write(to: file, options: .atomic)
 
-        let database = try await Task.detached(priority: .userInitiated) {
-            try YamiboDatabase.openPool()
-        }.value
         let context = YamiboAppContext(
             databasePool: database,
             websiteDataClearer: websiteDataClearer

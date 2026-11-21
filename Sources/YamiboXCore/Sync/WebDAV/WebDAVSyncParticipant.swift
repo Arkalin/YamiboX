@@ -27,17 +27,16 @@ struct WebDAVRemotePayloadInfo: Sendable {
 enum WebDAVPayloadEnvelope {
     static let syncRevisionKey = "syncRevision"
 
-    static func injectingSyncRevision(_ revision: UInt64, into payloadData: Data) -> Data {
-        guard var object = (try? JSONSerialization.jsonObject(with: payloadData)) as? [String: Any] else {
-            YamiboLog.sync.warning("WebDAV payload is not a JSON object; uploading without syncRevision")
-            return payloadData
+    static func injectingSyncRevision(_ revision: UInt64, into payloadData: Data) throws -> Data {
+        do {
+            guard var object = try JSONSerialization.jsonObject(with: payloadData) as? [String: Any] else {
+                throw WebDAVSyncError.invalidUploadEnvelope
+            }
+            object[syncRevisionKey] = revision
+            return try JSONSerialization.data(withJSONObject: object)
+        } catch {
+            throw WebDAVSyncError.invalidUploadEnvelope
         }
-        object[syncRevisionKey] = revision
-        guard let stamped = try? JSONSerialization.data(withJSONObject: object) else {
-            YamiboLog.sync.warning("Failed to re-encode WebDAV payload with syncRevision; uploading without it")
-            return payloadData
-        }
-        return stamped
     }
 }
 

@@ -212,20 +212,38 @@ extension FavoriteLibraryOrganizer {
         selection.exitSelectionMode()
     }
 
-    func requestDeleteSelection(scope: LocalFavoriteDeleteScope) async {
+    func makeSelectionDeletePlan() -> LocalFavoriteSelectionDeletePlan {
+        let selectedIDs = selection.selectedFavoriteIDs
+        let deletableIDs = smartMangaBulkDeleteEnabled
+            ? expandedSelectionFavoriteIDs(selectedIDs)
+            : selectedIDs.filter { !isSmartCardFavoriteID($0) }
+
+        return LocalFavoriteSelectionDeletePlan(
+            items: Set(document.items.filter { deletableIDs.contains($0.id) }),
+            collections: Set(document.collections.filter { selection.selectedCollectionIDs.contains($0.id) }),
+            currentLocation: selectedFavoritesCanRemoveCurrentLocation ? selectionSourceLocation : nil,
+            skipsSmartManga: !smartMangaBulkDeleteEnabled && selectedIDs.contains(where: isSmartCardFavoriteID)
+        )
+    }
+
+    func requestDeleteSelection(_ plan: LocalFavoriteSelectionDeletePlan, scope: LocalFavoriteDeleteScope) async {
+        guard validateDeleteSelection(plan) else { return }
+        guard !plan.isEmpty else {
+            if plan.skipsSmartManga { showSkippedSmartManga() }
+            selection.exitSelectionMode()
+            return
+        }
         switch scope {
         case .currentLocation:
-            await deleteSelection(scope: .currentLocation, removeRemote: false)
+            await deleteSelection(plan, scope: .currentLocation, removeRemote: false)
         case .everywhere:
-            let deletableIDs = smartMangaBulkDeleteEnabled
-                ? expandedSelectionFavoriteIDs(selection.selectedFavoriteIDs)
-                : selection.selectedFavoriteIDs.filter { !isSmartCardFavoriteID($0) }
-            let candidates = document.items.filter { deletableIDs.contains($0.id) }
-            switch await resolveRemoveRemoteDecision(candidates: candidates) {
+            let decision = await resolveRemoveRemoteDecision(candidates: Array(plan.items))
+            guard validateDeleteSelection(plan) else { return }
+            switch decision {
             case .prompt:
-                removeRemotePrompt = LocalFavoriteRemoveRemotePrompt(subject: .selection)
+                removeRemotePrompt = LocalFavoriteRemoveRemotePrompt(subject: .selection(plan))
             case let .silent(removeRemote):
-                await deleteSelection(scope: .everywhere, removeRemote: removeRemote)
+                await deleteSelection(plan, scope: .everywhere, removeRemote: removeRemote)
             }
         }
     }
@@ -251,14 +269,17 @@ extension FavoriteLibraryOrganizer {
         remember: Bool
     ) async {
         removeRemotePrompt = nil
-        if remember {
-            await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
-        }
         switch prompt.subject {
         case let .item(item):
+            if remember {
+                await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
+            }
             await deleteItem(item, scope: .everywhere, removeRemote: removeRemote)
-        case .selection:
-            await deleteSelection(scope: .everywhere, removeRemote: removeRemote)
+        case let .selection(plan):
+            guard await deleteSelection(plan, scope: .everywhere, removeRemote: removeRemote) else { return }
+            if remember {
+                await FavoriteCommands.rememberRemoveRemoteChoice(removeRemote, settingsStore: settingsStore)
+            }
         }
     }
 
@@ -268,30 +289,42 @@ extension FavoriteLibraryOrganizer {
         return FavoriteRemoveRemoteDecision.resolve(settings: settings, canRemoveRemote: canRemoveRemote)
     }
 
-    func deleteSelection(scope: LocalFavoriteDeleteScope, removeRemote: Bool) async {
-        guard selection.selectedEntryCount > 0 else { return }
-        let allSelectedFavoriteIDs = selection.selectedFavoriteIDs
-        let favoriteIDs: Set<String>
-        if smartMangaBulkDeleteEnabled {
-            favoriteIDs = expandedSelectionFavoriteIDs(allSelectedFavoriteIDs)
-        } else {
-            let skippedSmartCardFavoriteIDs = allSelectedFavoriteIDs.filter(isSmartCardFavoriteID)
-            favoriteIDs = allSelectedFavoriteIDs.subtracting(skippedSmartCardFavoriteIDs)
-            if !skippedSmartCardFavoriteIDs.isEmpty {
-                transientFeedback = .failure(L10n.string("favorites.bulk_delete_skipped_smart_manga_message"))
-            }
+    private func validateDeleteSelection(_ plan: LocalFavoriteSelectionDeletePlan) -> Bool {
+        guard makeSelectionDeletePlan() == plan else {
+            transientFeedback = .failure(L10n.string("favorites.bulk_delete_selection_changed"))
+            return false
         }
-        let collectionIDs = selection.selectedCollectionIDs
-        guard !favoriteIDs.isEmpty || !collectionIDs.isEmpty else {
-            selection.exitSelectionMode()
-            return
+        return true
+    }
+
+    private func showSkippedSmartManga() {
+        transientFeedback = .failure(L10n.string("favorites.bulk_delete_skipped_smart_manga_message"))
+    }
+
+    @discardableResult
+    private func deleteSelection(
+        _ plan: LocalFavoriteSelectionDeletePlan,
+        scope: LocalFavoriteDeleteScope,
+        removeRemote: Bool
+    ) async -> Bool {
+        guard validateDeleteSelection(plan) else { return false }
+        let deletionScope: FavoriteDeletionRequest.Scope
+        switch scope {
+        case .currentLocation:
+            guard let location = plan.currentLocation else { return false }
+            deletionScope = .currentLocation(location)
+        case .everywhere:
+            deletionScope = .everywhere(removeRemote: removeRemote)
         }
+        if plan.skipsSmartManga { showSkippedSmartManga() }
         let committed = await deleteFavorites(FavoriteDeletionRequest(
-            favoriteIDs: favoriteIDs,
-            collectionIDs: collectionIDs,
-            scope: deletionScope(scope, removeRemote: removeRemote)
+            favoriteIDs: Set(plan.items.map(\.id)),
+            collectionIDs: Set(plan.collections.map(\.id)),
+            scope: deletionScope,
+            confirmedItems: plan.items,
+            confirmedCollections: plan.collections
         ))
-        guard committed else { return }
-        selection.exitSelectionMode()
+        if committed { selection.exitSelectionMode() }
+        return committed
     }
 }

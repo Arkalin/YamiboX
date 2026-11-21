@@ -22,7 +22,7 @@ struct LocalFavoriteCardActions {
         let deleteArchivedFavorites: ((FavoriteItem) -> Void)? = organizer.smartMangaBulkDeleteEnabled
             ? { item in
                 selection.toggleFavoriteSelection(id: organizer.selectionID(for: item))
-                routes.dialog = .deleteSelection
+                routes.dialog = .deleteSelection(organizer.makeSelectionDeletePlan())
             }
             : nil
         return LocalFavoriteCardActions(

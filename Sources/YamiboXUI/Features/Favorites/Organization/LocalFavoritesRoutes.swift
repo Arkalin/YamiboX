@@ -50,7 +50,7 @@ final class LocalFavoritesRoutes: ObservableObject {
     enum Dialog: Identifiable {
         case dissolveCollection(LocalFavoriteCollection)
         case deleteItem(FavoriteItem)
-        case deleteSelection
+        case deleteSelection(LocalFavoriteSelectionDeletePlan)
         case dissolveSelectedCollections
 
         var id: String {
