@@ -95,11 +95,14 @@ public final class NovelTextViewportDisplayReference {
         return runtimeOwner?.chapterTitle(for: segmentIdentity)
     }
 
-    func highlightRange(
-        from start: NovelResumePoint,
-        to end: NovelResumePoint
-    ) -> NovelTextSelectionRange? {
-        runtimeOwner?.documentSelectionRange(from: start, to: end)
+    func highlightRange(for anchor: NovelTextLikeAnchor, workKey: ReadingWorkKey) -> NovelTextSelectionRange? {
+        guard !isStale else { return nil }
+        return runtimeOwner?.documentSelectionRange(for: anchor, workKey: workKey)
+    }
+
+    func likeExcerptSnapshot(workKey: ReadingWorkKey) -> (@Sendable (NovelTextLikeAnchor) -> String?)? {
+        guard !isStale else { return nil }
+        return runtimeOwner?.likeExcerptSnapshot(generation: generation, workKey: workKey)
     }
 
     public func draw(in context: CGContext, bounds: CGRect) {

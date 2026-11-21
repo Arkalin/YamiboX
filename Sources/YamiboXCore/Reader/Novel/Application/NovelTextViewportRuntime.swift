@@ -661,23 +661,31 @@ package final class NovelTextViewportRuntimeOwner {
     }
 
     package func documentSelectionRange(
-        from start: NovelResumePoint,
-        to end: NovelResumePoint
+        for anchor: NovelTextLikeAnchor,
+        workKey: ReadingWorkKey
     ) -> NovelTextSelectionRange? {
-        guard let projection, let result else { return nil }
-        var start = start
-        var end = end
-        start.view = projection.view
-        end.view = projection.view
-        guard let startOffset = result.viewportContext.document.documentOffset(for: start, in: projection),
-              let endOffset = result.viewportContext.document.documentOffset(for: end, in: projection) else {
+        guard let projection, let document = result?.viewportContext.document,
+              let offsets = document.documentOffsets(for: anchor, workKey: workKey, projection: projection) else {
             return nil
         }
         return NovelTextSelectionRange(
-            generation: activeGeneration,
-            lowerBound: min(startOffset, endOffset),
-            upperBound: max(startOffset, endOffset)
+            generation: activeGeneration, lowerBound: offsets.lowerBound, upperBound: offsets.upperBound
         )
+    }
+
+    package func likeExcerptSnapshot(
+        generation: UInt64,
+        workKey: ReadingWorkKey
+    ) -> (@Sendable (NovelTextLikeAnchor) -> String?)? {
+        guard generation == activeGeneration, let projection, let document = result?.viewportContext.document else {
+            return nil
+        }
+        return { anchor in
+            guard let offsets = document.documentOffsets(for: anchor, workKey: workKey, projection: projection) else {
+                return nil
+            }
+            return document.coordinates.text(in: offsets.lowerBound.rawValue..<offsets.upperBound.rawValue)
+        }
     }
 
     package func drawBlockBackgrounds(

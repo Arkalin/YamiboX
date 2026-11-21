@@ -130,6 +130,27 @@ package extension NovelTextViewportDocument {
         return range.startOffset + offset.rawValue
     }
 
+    func documentOffset(for endpoint: NovelLikeTextEndpoint, in chapter: NovelChapterIdentity,
+                        projection: NovelReaderProjection) -> NovelDocumentUTF16Offset? {
+        let identity = NovelTextSegmentIdentity(rawValue: endpoint.segmentIdentity)
+        guard let segment = segmentIndexesByIdentity[identity],
+              projection.semantics(forSegmentIndex: segment)?.chapterIdentity == chapter,
+              let range = textRangesBySegment[segment],
+              let coordinates = segmentCoordinates[segment],
+              (0...coordinates.characterCount).contains(endpoint.offset) else { return nil }
+        return range.startOffset + coordinates.utf16Offset(forCharacterOffset: endpoint.offset)
+    }
+
+    func documentOffsets(for anchor: NovelTextLikeAnchor, workKey: ReadingWorkKey,
+                         projection: NovelReaderProjection) -> Range<NovelDocumentUTF16Offset>? {
+        guard workKey == .novel(threadID: projection.threadID),
+              anchor.view == projection.view || anchor.chapterIdentity.rawValue.hasPrefix("post:"),
+              let start = documentOffset(for: anchor.start, in: anchor.chapterIdentity, projection: projection),
+              let end = documentOffset(for: anchor.end, in: anchor.chapterIdentity, projection: projection),
+              start < end else { return nil }
+        return start..<end
+    }
+
     func documentOffset(forSurfaceRange range: NovelRenderedTextRange) -> NovelDocumentUTF16Offset? {
         documentOffsets(forSurfaceRange: range)?.lowerBound
     }

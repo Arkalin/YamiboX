@@ -213,7 +213,7 @@ final class NovelLikeHighlightController {
     }
 
     private func refreshIfNeeded(using displayReference: NovelTextViewportDisplayReference) {
-        guard let runtime = displayReference.runtimeIdentity, !displayReference.isStale else { return }
+        guard let workKey, let runtime = displayReference.runtimeIdentity, !displayReference.isStale else { return }
         let key = DocumentKey(runtime: runtime, generation: displayReference.generation)
         guard cachedDocument != key else { return }
         invalidateRanges()
@@ -221,10 +221,7 @@ final class NovelLikeHighlightController {
         rangesByItemID.removeAll()
         for item in itemsByID.values {
             guard case let .novelText(anchor) = item.anchor,
-                  let range = displayReference.highlightRange(
-                      from: resumePoint(for: anchor, endpoint: anchor.start),
-                      to: resumePoint(for: anchor, endpoint: anchor.end)
-                  ) else { continue }
+                  let range = displayReference.highlightRange(for: anchor, workKey: workKey) else { continue }
             rangesByItemID[item.id] = range
         }
         var maximumUpperBound: NovelDocumentUTF16Offset = 0
@@ -253,18 +250,6 @@ final class NovelLikeHighlightController {
         }
         guard !contexts.isEmpty else { return }
         Task { await likeStore.resolveExcerptContexts(contexts) }
-    }
-
-    private func resumePoint(for anchor: NovelTextLikeAnchor, endpoint: NovelLikeTextEndpoint) -> NovelResumePoint {
-        NovelResumePoint(
-            view: 1,
-            chapterIdentity: anchor.chapterIdentity,
-            textSegmentIdentity: NovelTextSegmentIdentity(rawValue: endpoint.segmentIdentity),
-            displayedTextOffset: endpoint.offset,
-            chapterOrdinal: 0,
-            segmentProgress: 0,
-            readingModeHint: .paged
-        )
     }
 
     private func reload() async {

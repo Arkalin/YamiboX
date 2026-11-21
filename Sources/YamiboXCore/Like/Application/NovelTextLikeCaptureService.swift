@@ -51,11 +51,6 @@ public struct NovelTextLikeCaptureService: Sendable {
     }
 
     @discardableResult
-    package func like(_ request: NovelTextLikeCaptureRequest, date: Date = .now) async throws -> LikeCaptureOutcome {
-        try await like(request, excerptTextForRange: { _ in request.excerptText }, date: date)
-    }
-
-    @discardableResult
     package func like(
         _ request: NovelTextLikeCaptureRequest,
         excerptTextForRange: @Sendable (_ anchor: NovelTextLikeAnchor) -> String?,
@@ -140,7 +135,8 @@ public struct NovelTextLikeCaptureService: Sendable {
             view: request.view,
             resolvedAuthorID: request.resolvedAuthorID
         )
-        guard let mergedExcerpt = excerptTextForRange(unionAnchor) else {
+        guard let mergedExcerpt = unionAnchor.start == requestAnchor.start && unionAnchor.end == requestAnchor.end
+                ? request.excerptText : excerptTextForRange(unionAnchor) else {
             throw YamiboError.underlying("Novel text like capture could not recapture the merged excerpt text.")
         }
 

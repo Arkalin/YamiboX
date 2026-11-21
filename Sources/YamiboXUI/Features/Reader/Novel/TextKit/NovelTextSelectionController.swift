@@ -33,6 +33,7 @@ final class NovelTextSelectionController {
     private var remoteDragID: UUID?
     private var selectionTextSnapshot: String?
     private var selectionEndpointsSnapshot: ResolvedEndpoints?
+    private var selectionExcerptSnapshot: (@Sendable (NovelTextLikeAnchor) -> String?)?
 
     var hasSelection: Bool {
         selectionRangeValue != nil
@@ -90,6 +91,7 @@ final class NovelTextSelectionController {
         stopDrag()
         selectionTextSnapshot = nil
         selectionEndpointsSnapshot = nil
+        selectionExcerptSnapshot = nil
         baseAnchor = anchor
         activeSurfaceIdentity = displayReference.surfaceIdentity
         selectionRangeValue = expandedRange
@@ -140,6 +142,7 @@ final class NovelTextSelectionController {
         stopDrag()
         selectionTextSnapshot = nil
         selectionEndpointsSnapshot = nil
+        selectionExcerptSnapshot = nil
         let fixedOffset = kind == .start ? selectionRangeValue.upperBound : selectionRangeValue.lowerBound
         baseAnchor = NovelTextSelectionAnchor(generation: generation, documentOffset: fixedOffset)
         return true
@@ -149,12 +152,14 @@ final class NovelTextSelectionController {
         stopDrag()
         selectionTextSnapshot = selectedText()
         selectionEndpointsSnapshot = resolvedSelectionEndpoints()
+        selectionExcerptSnapshot = likeWorkKey.flatMap { firstCurrentDisplayReference()?.likeExcerptSnapshot(workKey: $0) }
     }
 
     func clearSelection() {
         stopDrag()
         selectionTextSnapshot = nil
         selectionEndpointsSnapshot = nil
+        selectionExcerptSnapshot = nil
         onRemoteSelectionCleared?()
         guard selectionRangeValue != nil || baseAnchor != nil else { return }
         selectionRangeValue = nil
@@ -243,11 +248,12 @@ final class NovelTextSelectionController {
         if let style {
             ReaderHighlightStyleDefault.set(style)
         }
+        let excerptSnapshot = selectionExcerptSnapshot ?? firstCurrentDisplayReference()?.likeExcerptSnapshot(workKey: likeWorkKey)
         let onLikeCaptured = onLikeCaptured
         let onLikeFailure = onLikeFailure
         Task { [weak self] in
             let outcome: LikeCaptureOutcome
-            do { outcome = try await likeCaptureService.like(request) }
+            do { outcome = try await likeCaptureService.like(request, excerptTextForRange: { excerptSnapshot?($0) }) }
             catch {
                 onLikeFailure?(error)
                 return
