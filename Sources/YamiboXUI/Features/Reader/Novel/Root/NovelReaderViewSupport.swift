@@ -170,7 +170,7 @@ struct NovelReaderPresentationModifier: ViewModifier {
                     discussionWorkTIDs: [model.context.threadID]
                 )
             }
-            .fullScreenCover(item: $imageBrowserItem) { item in
+            .imageBrowserCover(item: $imageBrowserItem) { item in
                 ImageBrowserView(
                     items: [item],
                     initialItemID: item.id,

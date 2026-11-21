@@ -100,7 +100,7 @@ struct ForumFormPageView: View {
             }
             Button(L10n.string("common.cancel"), role: .cancel) {}
         }
-        .fullScreenCover(item: $imageRequest) { request in
+        .imageBrowserCover(item: $imageRequest) { request in
             ImageBrowserView(items: request.items, initialItemID: request.initialItemID, mode: .single) { imageRequest = nil }
         }
         .fileImporter(isPresented: $showsFileImporter, allowedContentTypes: [.item]) { result in

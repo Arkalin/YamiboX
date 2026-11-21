@@ -294,7 +294,7 @@ struct ReaderChapterCommentsSheet: View {
                     discussionWorkTIDs: discussionWorkTIDs
                 )
             }
-            .fullScreenCover(item: $imageBrowserRequest) { request in
+            .imageBrowserCover(item: $imageBrowserRequest) { request in
                 ImageBrowserView(
                     items: request.items,
                     initialItemID: request.initialItemID,

@@ -84,7 +84,7 @@ struct ImageBrowserView: View {
     var body: some View {
         switch presentation {
         case .fade:
-            core.modalTransitionStyle(.crossDissolve)
+            core
         case let .zoom(namespace):
             core.navigationTransition(.zoom(sourceID: selectedItemID, in: namespace))
         }

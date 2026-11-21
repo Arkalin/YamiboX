@@ -54,7 +54,7 @@ struct MangaReaderDeviceImageActions: View {
             createsNoteItem = false
             if item == nil { dismiss() }
         }
-        .fullScreenCover(isPresented: $showsImage) {
+        .imageBrowserCover(isPresented: $showsImage) {
             ImageBrowserView(items: [image], initialItemID: image.id, mode: .single) { showsImage = false }
         }
         .sheet(item: $noteItem) { item in

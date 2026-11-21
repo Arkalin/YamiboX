@@ -85,7 +85,7 @@ struct UserSpaceProfileHeaderView: View {
 
             UserSpaceInfoTableView(rows: profile.infoRows, onWebTap: onWebTap)
         }
-        .fullScreenCover(item: $avatarBrowserItem) { item in
+        .imageBrowserCover(item: $avatarBrowserItem) { item in
             ImageBrowserView(items: [item], initialItemID: item.id, mode: .single) {
                 avatarBrowserItem = nil
             }

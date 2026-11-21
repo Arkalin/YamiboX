@@ -87,7 +87,7 @@ private struct ForumAnnouncementRow: View {
                 }
             }
         }
-        .fullScreenCover(item: $imageRequest) { request in
+        .imageBrowserCover(item: $imageRequest) { request in
             ImageBrowserView(items: request.items, initialItemID: request.initialItemID, mode: .single) {
                 imageRequest = nil
             }
