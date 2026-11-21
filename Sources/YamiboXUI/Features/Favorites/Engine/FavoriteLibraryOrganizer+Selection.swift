@@ -268,7 +268,7 @@ extension FavoriteLibraryOrganizer {
         removeRemote: Bool,
         remember: Bool
     ) async {
-        removeRemotePrompt = nil
+        guard removeRemotePrompt == nil else { return }
         switch prompt.subject {
         case let .item(item):
             if remember {

@@ -33,6 +33,14 @@ private struct ExternalReaderProfile: Codable, Hashable, Sendable {
     }
 }
 
+private struct TolerantExternalReaderProfile: Decodable {
+    let value: ExternalReaderProfile?
+
+    init(from decoder: any Decoder) throws {
+        value = try? ExternalReaderProfile(from: decoder)
+    }
+}
+
 public struct AppSettings: Codable, Hashable, Sendable {
     public var novelReader: NovelReaderAppearanceSettings
     public var novelDownload: NovelDownloadSettings
@@ -109,7 +117,8 @@ public struct AppSettings: Codable, Hashable, Sendable {
             readingProgress: try container.decodeIfPresent(ReadingProgressSettings.self, forKey: .readingProgress) ?? .init(),
             readerToolbarStyle: try container.decodeIfPresent(ReaderToolbarStyle.self, forKey: .readerToolbarStyle) ?? .liquidGlass
         )
-        externalReaderProfiles = (try? container.decode([String: ExternalReaderProfile].self, forKey: .externalReaderProfiles)) ?? [:]
+        let profiles = try? container.decode([String: TolerantExternalReaderProfile].self, forKey: .externalReaderProfiles)
+        externalReaderProfiles = profiles?.compactMapValues(\.value) ?? [:]
     }
 
     public func novelSettings(for target: ReaderSettingsTarget) -> NovelReaderAppearanceSettings {
