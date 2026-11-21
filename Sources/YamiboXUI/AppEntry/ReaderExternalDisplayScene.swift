@@ -8,7 +8,7 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
     private(set) weak var scene: UIWindowScene?
     public var window: UIWindow?
     private var controller: ReaderExternalDisplayContainer?
-    private var retirement: Task<Void, Never>?
+    private var privacyFrame: ReaderExternalDisplayPrivacyFrame?
 
     public func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard session.role == .windowExternalDisplayNonInteractive, let scene = scene as? UIWindowScene else { return }
@@ -29,7 +29,6 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
 
     func show<Content: View>(_ content: Content, interfaceStyle: UIUserInterfaceStyle) -> Bool {
         guard let scene else { return false }
-        retirement?.cancel()
         if window != nil { removeWindow() }
         let window = UIWindow(windowScene: scene)
         window.backgroundColor = .black
@@ -52,16 +51,78 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
         window?.rootViewController = nil
         window = nil
         controller = nil
+        let pendingFrame = privacyFrame
+        privacyFrame = nil
+        pendingFrame?.finish()
+    }
+
+    func afterPrivacyFrame(_ action: @escaping () -> Void) {
+        conceal(true)
+        guard let scene, window != nil else {
+            action()
+            return
+        }
+        if let privacyFrame {
+            privacyFrame.append(action)
+            return
+        }
+        let frame = ReaderExternalDisplayPrivacyFrame()
+        privacyFrame = frame
+        frame.append { [weak self, weak frame] in
+            guard let self, privacyFrame === frame else { return }
+            privacyFrame = nil
+        }
+        frame.append(action)
+        frame.start(in: scene)
     }
 
     func retireWindow() {
-        conceal(true)
-        retirement?.cancel()
-        guard scene != nil, window != nil else { removeWindow(); return }
-        retirement = Task { [weak self] in
-            do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
-            self?.removeWindow()
+        guard let retiredWindow = window else { return }
+        afterPrivacyFrame { [weak self, weak retiredWindow] in
+            guard let self, let retiredWindow, window === retiredWindow else { return }
+            removeWindow()
         }
+    }
+}
+
+@MainActor
+private final class ReaderExternalDisplayPrivacyFrame: NSObject {
+    private var link: CADisplayLink?
+    private var fallback: Task<Void, Never>?
+    private var callbacks: [() -> Void] = []
+    private var frameTicks = 0
+
+    func append(_ callback: @escaping () -> Void) { callbacks.append(callback) }
+
+    func start(in scene: UIWindowScene) {
+        let selector = #selector(frameWillRefresh)
+        if #available(iOS 27, *) {
+            link = scene.displayLink(target: self, selector: selector)
+        } else {
+            link = scene.screen.displayLink(withTarget: self, selector: selector)
+        }
+        link?.add(to: .main, forMode: .common)
+        // A disconnected or paused display has no presentation callback.
+        fallback = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            self?.finish()
+        }
+    }
+
+    @objc private func frameWillRefresh() {
+        frameTicks += 1
+        // Display links fire before refresh; allow one tick to submit the cover.
+        if frameTicks >= 2 { finish() }
+    }
+
+    func finish() {
+        link?.invalidate()
+        link = nil
+        fallback?.cancel()
+        fallback = nil
+        let actions = callbacks
+        callbacks.removeAll()
+        for action in actions { action() }
     }
 }
 
@@ -144,7 +205,7 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
         private var unregister: ((Host) -> Void)?
         private var availability: (() -> Bool)?
         private var setEnabled: ((Bool) -> Void)?
-        private var deactivation: Task<Void, Never>?
+        private var deactivationID: UUID?
         private var updateTask: Task<Void, Never>?
         private(set) var sampledAvailability: Bool?
 
@@ -191,8 +252,7 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
 
         func start(id: UUID) {
             guard #available(iOS 27, *) else { return }
-            deactivation?.cancel()
-            deactivation = nil
+            deactivationID = nil
             if registrationID == id {
                 setEnabled?(true)
                 return
@@ -211,8 +271,7 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
         }
 
         func stop() {
-            deactivation?.cancel()
-            deactivation = nil
+            deactivationID = nil
             let stop = unregister
             unregister = nil
             availability = nil
@@ -222,14 +281,17 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
             stop?(self)
         }
 
-        func disableAfterPrivacyFrame() {
+        func disableAfterPrivacyFrame(in connection: ReaderExternalDisplaySceneDelegate?) {
             guard setEnabled != nil else { return }
-            deactivation?.cancel()
-            deactivation = Task { [weak self] in
-                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
-                self?.setEnabled?(false)
-                self?.deactivation = nil
+            let requestID = UUID()
+            deactivationID = requestID
+            let disable = { [weak self] in
+                guard let self, deactivationID == requestID else { return }
+                deactivationID = nil
+                setEnabled?(false)
             }
+            if let connection { connection.afterPrivacyFrame(disable) }
+            else { disable() }
         }
     }
 }

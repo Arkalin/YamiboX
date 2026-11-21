@@ -312,10 +312,9 @@ final class ReaderExternalDisplayCoordinator {
         lease.connection.conceal(true)
         lease.viewport.setSuspended(true)
         setPhase(.suspended)
-        Task { [weak self, weak session] in
-            try? await Task.sleep(for: .milliseconds(150))
-            if let session, session.contentID == contentID { session.close() }
+        lease.connection.afterPrivacyFrame { [weak self, weak session] in
             guard let self, closingSessionID == sessionID else { return }
+            if let session, session.contentID == contentID { session.close() }
             closingSessionID = nil
             evaluate()
         }
@@ -518,7 +517,12 @@ final class ReaderExternalDisplayCoordinator {
         elected = candidate
         registrationHost = host
         registrationID = nil
-        if previousHost !== host { previousHost?.disableAfterPrivacyFrame() }
+        if let previousHost, previousHost !== host {
+            let previousConnection = ReaderExternalDisplayScenes.shared.available.first {
+                $0.registrationID == previousHost.registrationID
+            }
+            previousHost.disableAfterPrivacyFrame(in: previousConnection)
+        }
         if #available(iOS 27, *), let host {
             let id = host.registrationID ?? UUID()
             registrationID = id
