@@ -351,6 +351,8 @@ final class ReaderExternalDisplayCoordinator {
 
     func displayConnected() { evaluate() }
 
+    func displayWindowRetired() { scheduleEvaluation() }
+
     func displayDisconnected(_ connection: ReaderExternalDisplaySceneDelegate) {
         if failedPresentation?.sceneID == connection.sceneIdentifier { failedPresentation = nil }
         guard lease?.connection === connection else {
@@ -407,7 +409,7 @@ final class ReaderExternalDisplayCoordinator {
         guard lease == nil, let candidate, let model = candidate.model else { return nil }
         let isRestoringDeviceInteraction = candidate === reservedOwner && candidate.session.deviceInteraction != nil
         guard let connection = ReaderExternalDisplayScenes.shared.available.first(where: {
-                  $0.scene != nil && $0.registrationID == registrationID &&
+                  $0.canShowWindow && $0.registrationID == registrationID &&
                   ($0.sceneIdentifier != failedPresentation?.sceneID || candidate.contentID != failedPresentation?.contentID)
               }) else {
             if #available(iOS 27, *), !candidate.session.permitsDeviceReader,

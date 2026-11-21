@@ -27,9 +27,10 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
         removeWindow()
     }
 
+    var canShowWindow: Bool { scene != nil && window == nil }
+
     func show<Content: View>(_ content: Content, interfaceStyle: UIUserInterfaceStyle) -> Bool {
-        guard let scene else { return false }
-        if window != nil { removeWindow() }
+        guard let scene, window == nil else { return false }
         let window = UIWindow(windowScene: scene)
         window.backgroundColor = .black
         window.overrideUserInterfaceStyle = interfaceStyle
@@ -81,6 +82,7 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
         afterPrivacyFrame { [weak self, weak retiredWindow] in
             guard let self, let retiredWindow, window === retiredWindow else { return }
             removeWindow()
+            if scene != nil { displayCoordinator?.displayWindowRetired() }
         }
     }
 }

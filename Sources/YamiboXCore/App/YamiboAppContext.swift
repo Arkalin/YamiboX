@@ -371,8 +371,11 @@ public final class YamiboAppContext: Sendable {
         let thread = ThreadIdentity(tid: threadID)
         let possibleTitles = (try? await browsingHistoryStore.positionEntries(threadID: threadID, directoryTargetID: nil)) ?? []
         for entry in possibleTitles where entry.target.threadID == threadID || entry.lastVisitedThreadID == threadID {
-            let title = entry.lastVisitedThreadID == threadID ? (entry.lastVisitedThreadTitle ?? entry.title) : entry.title
-            if let readable = title.nilIfBlank, readable != threadID { return readable }
+            let visitTitle = entry.lastVisitedThreadID == threadID ? entry.lastVisitedThreadTitle?.nilIfBlank : nil
+            let targetTitle = entry.target.threadID == threadID ? entry.title.nilIfBlank : nil
+            if let readable = [visitTitle, targetTitle].compactMap({ $0 }).first(where: { $0 != threadID }) {
+                return readable
+            }
         }
         var seen = Set<NovelPageRequest>()
         for (view, authorID) in [(1, nil)] + cachedPages {

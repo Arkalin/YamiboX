@@ -67,6 +67,7 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         collectionView.backgroundColor = .clear
         collectionView.dataSource = context.coordinator
         collectionView.delegate = context.coordinator
+        collectionView.panGestureRecognizer.addTarget(context.coordinator, action: #selector(Coordinator.handleInputEnd(_:)))
         collectionView.register(NovelReaderVerticalViewportCell.self, forCellWithReuseIdentifier: NovelReaderVerticalViewportCell.reuseIdentifier)
         let coordinator = context.coordinator
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
@@ -286,10 +287,12 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
 
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
             guard !decelerate else { return }
+            if let collectionView = scrollView as? UICollectionView { scheduleScrollPlacement(in: collectionView) }
             publishScrollSettled(from: scrollView)
         }
 
         func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            if let collectionView = scrollView as? UICollectionView { scheduleScrollPlacement(in: collectionView) }
             publishScrollSettled(from: scrollView)
         }
 
@@ -345,6 +348,17 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
             callbackScheduler.publish { onScrollRequestHandled(request) }
             scheduleVisibleTextRedraw(in: collectionView, includeDelayedPass: true)
             publishScrollSettled(from: collectionView)
+        }
+
+        @objc func handleInputEnd(_ recognizer: UIPanGestureRecognizer) {
+            switch recognizer.state {
+            case .ended, .cancelled, .failed:
+                if let collectionView = recognizer.view as? UICollectionView {
+                    scheduleScrollPlacement(in: collectionView)
+                }
+            default:
+                break
+            }
         }
 
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
