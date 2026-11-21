@@ -39,6 +39,11 @@ enum YamiboHTMLPageInspector {
         element.visibleText(including: isVisible)
     }
 
+    static func visibleBody(in document: Document) -> Element? {
+        guard let body = document.body(), isVisibleNotice(body) else { return nil }
+        return body
+    }
+
     private static func isVisible(_ element: Element) -> Bool {
         let style = element.attr("style").lowercased().filter { !$0.isWhitespace }
         return !invisibleTags.contains(element.tagName().lowercased())
@@ -47,6 +52,7 @@ enum YamiboHTMLPageInspector {
     }
 
     private static func needsAuthentication(_ document: Document) -> Bool {
+        if visibleBody(in: document)?.hasClass("pg_logging") == true { return true }
         if document.selectAll("#loginform, form[action*='action=login']")
             .contains(where: { isVisibleNotice($0) && $0.selectFirst("input[type='password']") != nil }) {
             return !document.selectAll(".threadlist_box, #postlist, .viewthread, #threadlist")
@@ -66,7 +72,7 @@ enum YamiboHTMLPageInspector {
         }
 
         let edges = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "。！!"))
-        let legacyText = document.body()?.ownText().trimmingCharacters(in: edges) ?? ""
+        let legacyText = visibleBody(in: document)?.ownText().trimmingCharacters(in: edges) ?? ""
         return markers.contains { legacyText.localizedCaseInsensitiveCompare($0) == .orderedSame }
     }
 

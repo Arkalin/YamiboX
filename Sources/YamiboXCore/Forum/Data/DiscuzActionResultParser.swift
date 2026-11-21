@@ -35,9 +35,10 @@ enum DiscuzActionResultParser {
         guard let document = try? KannaSoup.parse(body, baseURL: YamiboDomain.baseURL.absoluteString) else {
             throw ForumPageError.submissionUnconfirmed
         }
+        let visibleBody = YamiboHTMLPageInspector.visibleBody(in: document)
         let message = document.selectAll(messageContainers)
             .first(where: YamiboHTMLPageInspector.isVisibleNotice).map(YamiboHTMLPageInspector.visibleNoticeText)
-            ?? (payload == nil ? document.body()?.ownText() : document.body().map(YamiboHTMLPageInspector.visibleNoticeText))
+            ?? (payload == nil ? visibleBody?.ownText() : visibleBody.map(YamiboHTMLPageInspector.visibleNoticeText))
             ?? ""
         let notice = message.trimmingCharacters(in: .whitespacesAndNewlines)
 
