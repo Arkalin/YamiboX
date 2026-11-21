@@ -5,7 +5,8 @@ enum YamiboHTMLPageInspector {
     private static let noticeContainers = "#messagetext, .messagetext, .jump_c, .alert_error, .alert_info, .showmessage"
     private static let loginMarkers = [
         "请先登录", "請先登錄", "请登录后", "您需要先登录", "需要登录后才能",
-        "登录后才能继续", "登录后才能查看", "请输入用户名/Email/UID"
+        "登录后才能继续", "登录后才能查看", "请输入用户名/Email/UID",
+        "尚未登录，无法进行此操作", "尚未登入，無法進行此操作"
     ]
     private static let floodMarkers = [
         "防灌水", "灌水预防机制", "抱歉，指定的主题不存在或已被删除", "Sorry, no permission"
