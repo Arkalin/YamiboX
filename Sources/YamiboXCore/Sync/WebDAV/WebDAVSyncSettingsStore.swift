@@ -6,7 +6,7 @@ public actor WebDAVSyncSettingsStore {
 
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
+    public nonisolated func changes() -> AsyncStream<Void> { changeBroadcaster.changes() }
 
     private static let legacyCredentialReference = "legacy-password"
     private let storage: UserDefaultsJSONStorage<WebDAVSyncSettings>

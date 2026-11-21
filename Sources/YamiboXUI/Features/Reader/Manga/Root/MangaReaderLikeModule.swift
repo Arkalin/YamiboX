@@ -120,13 +120,9 @@ final class MangaReaderLikeModule {
     func observeLikeChangesIfNeeded() {
         guard likeChangeObservationTask == nil, let like = reading.makeLikeDependencies() else { return }
         let likeStore = like.likeStore
-        let changeID = likeStore.changeID
         likeChangeObservationTask = Task { [weak self] in
-            for await receivedChangeID in likeStore.changes() {
+            for await _ in likeStore.changes() {
                 guard !Task.isCancelled else { return }
-                guard receivedChangeID == changeID else {
-                    continue
-                }
                 await self?.refreshLikedPageIDs()
             }
         }

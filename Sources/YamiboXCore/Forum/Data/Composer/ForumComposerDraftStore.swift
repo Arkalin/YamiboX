@@ -5,7 +5,7 @@ public actor ForumComposerDraftStore: ForumComposerDraftPersisting {
     private let database: DatabasePool
     private let resourceDirectory: URL
     private nonisolated let broadcaster = StoreChangeBroadcaster()
-    public nonisolated func changes() -> AsyncStream<String> { broadcaster.changes() }
+    public nonisolated func changes() -> AsyncStream<Void> { broadcaster.changes() }
 
     public init(databasePool: DatabasePool? = nil, baseDirectory: URL? = nil) {
         database = databasePool ?? YamiboDatabasePoolResolver.openDefaultPool(storeName: "ForumComposerDraftStore")

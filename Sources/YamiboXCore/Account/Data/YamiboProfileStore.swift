@@ -4,7 +4,7 @@ public actor YamiboProfileStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     private nonisolated let accountStore: AccountStore?
     public nonisolated var changeID: String { accountStore?.broadcaster.changeID ?? changeBroadcaster.changeID }
-    public nonisolated func changes() -> AsyncStream<String> {
+    public nonisolated func changes() -> AsyncStream<Void> {
         accountStore?.broadcaster.changes() ?? changeBroadcaster.changes()
     }
 

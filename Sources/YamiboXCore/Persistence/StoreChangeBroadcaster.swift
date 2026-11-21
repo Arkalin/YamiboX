@@ -3,14 +3,14 @@ import Foundation
 struct StoreChangeBroadcaster: Sendable {
     let changeID = UUID().uuidString
 
-    private let subscriptions = StoreInvalidationBroadcaster<String>()
+    private let subscriptions = StoreInvalidationBroadcaster<Void>()
 
-    func changes() -> AsyncStream<String> {
+    func changes() -> AsyncStream<Void> {
         subscriptions.stream()
     }
 
     func post() {
-        subscriptions.post(changeID)
+        subscriptions.post(())
     }
 }
 

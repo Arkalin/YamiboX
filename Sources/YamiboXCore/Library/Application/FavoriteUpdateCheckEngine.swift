@@ -91,12 +91,9 @@ public final class FavoriteUpdateCheckEngine {
             Task { [weak self] in await self?.reloadEventState() }
         }
         storeUpdatesTask = Task { @MainActor [weak self, store = updateStore] in
-            for await changeID in store.changes() {
+            for await _ in store.changes() {
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
-                guard changeID == store.changeID else {
-                    continue
-                }
                 guard self.runRegistry.run(storeID: store.changeID) == nil else { continue }
                 await self.reloadFromExternalChange()
             }

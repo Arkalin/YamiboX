@@ -2,7 +2,7 @@ import Foundation
 
 public protocol FavoriteUpdateStatePersisting: Sendable {
     var changeID: String { get }
-    func changes() -> AsyncStream<String>
+    func changes() -> AsyncStream<Void>
     func loadState() async throws -> FavoriteUpdateStoreState
     func latestRun() async throws -> FavoriteUpdateRunSnapshot?
     func saveRun(_ snapshot: FavoriteUpdateRunSnapshot) async throws

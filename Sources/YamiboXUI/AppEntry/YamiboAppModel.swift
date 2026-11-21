@@ -390,9 +390,8 @@ public final class YamiboAppModel {
     private func observeAppAppearanceSettings() {
         let settingsStore = appContext.settingsStore
         settingsObservationTask = Task { [weak self] in
-            for await changeID in settingsStore.changes() {
+            for await _ in settingsStore.changes() {
                 guard !Task.isCancelled else { return }
-                guard changeID == settingsStore.changeID else { continue }
                 guard let self else { return }
                 await self.refreshAppAppearanceSettings()
             }

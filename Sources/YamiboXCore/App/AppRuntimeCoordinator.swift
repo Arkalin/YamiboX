@@ -9,8 +9,7 @@ package enum AppRuntimePhase: Sendable {
 @MainActor
 package final class AppRuntimeCoordinator {
     struct StoreObservation {
-        let changeID: String
-        let changes: @MainActor @Sendable () -> AsyncStream<String>
+        let changes: @MainActor @Sendable () -> AsyncStream<Void>
         let onChange: @MainActor @Sendable () -> Void
     }
 
@@ -50,9 +49,8 @@ package final class AppRuntimeCoordinator {
         for observation in observations {
             let stream = observation.changes()
             observationTasks.append(Task { [weak self] in
-                for await incoming in stream {
+                for await _ in stream {
                     guard !Task.isCancelled, self?.runID == id else { return }
-                    guard incoming == observation.changeID else { continue }
                     observation.onChange()
                 }
             })

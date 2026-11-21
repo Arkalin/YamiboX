@@ -4,9 +4,7 @@ import Foundation
 public actor ReadingProgressStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
-    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
+    public nonisolated func changes() -> AsyncStream<Void> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
 

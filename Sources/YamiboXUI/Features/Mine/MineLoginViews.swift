@@ -21,7 +21,7 @@ struct MineLoginSheet: View {
 @MainActor
 final class MineWebLoginSessionMonitor {
     private let sessionStore: SessionStore
-    private let changes: AsyncStream<String>
+    private let changes: AsyncStream<Void>
     private var baselineAuthenticationValue: String?
 
     init(sessionStore: SessionStore) {
@@ -35,9 +35,8 @@ final class MineWebLoginSessionMonitor {
             return true
         }
 
-        for await changeID in changes {
+        for await _ in changes {
             guard !Task.isCancelled else { return false }
-            guard changeID == sessionStore.changeID else { continue }
             if await isAuthenticatedAfterMonitoringStarted() {
                 return true
             }

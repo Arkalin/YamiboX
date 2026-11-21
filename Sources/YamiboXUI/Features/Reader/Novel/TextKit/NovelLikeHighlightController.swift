@@ -47,14 +47,10 @@ final class NovelLikeHighlightController {
         self.annotations = annotations
         self.onFailure = onFailure
         changeObserverTask?.cancel()
-        let expectedChangeID = likeStore.changeID
         changeObserverTask = Task { @MainActor [weak self] in
-            for await changeID in likeStore.changes() {
+            for await _ in likeStore.changes() {
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
-                guard changeID == expectedChangeID else {
-                    continue
-                }
                 await self.reload()
             }
         }

@@ -1,12 +1,5 @@
 import Foundation
 
-/// The store-changed subscription every view model repeats: consume a
-/// store's typed `changes()` stream, drop elements whose `changeID` doesn't
-/// match the observed store instance, and run a handler per surviving
-/// change. The stream is already per-instance, so the guard is normally a
-/// tautology — it is kept as the explicit, self-documenting instance-match
-/// contract. Protocol-typed stores must supply a stable identity and emit
-/// that identity through each subscriber's stream after committed changes.
 @MainActor
 enum StoreChangeObservation {
     /// Starts a long-lived observation task. Cancel it (typically in
@@ -17,17 +10,13 @@ enum StoreChangeObservation {
     /// while `onChange` is running; the handler must reload current state, not
     /// interpret each signal as one individual mutation.
     static func task(
-        changes: @escaping @Sendable () -> AsyncStream<String>,
-        changeID: @escaping @Sendable () -> String,
+        changes: @escaping @Sendable () -> AsyncStream<Void>,
         onChange: @escaping @MainActor () async -> Void
     ) -> Task<Void, Never> {
         let stream = changes()
         return Task { @MainActor in
-            for await incoming in stream {
+            for await _ in stream {
                 guard !Task.isCancelled else { return }
-                guard incoming == changeID() else {
-                    continue
-                }
                 await onChange()
             }
         }

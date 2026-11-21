@@ -658,42 +658,34 @@ public final class YamiboAppContext: Sendable {
         [
             .init(
                 participant: MangaDirectoryWebDAVParticipant(store: mangaDirectoryStore).applyingMangaIdentity(using: mangaDirectoryStore),
-                changeID: mangaDirectoryStore.changeID,
                 changes: { [mangaDirectoryStore] in mangaDirectoryStore.changes() }
             ),
             .init(
                 participant: FavoriteLibraryWebDAVParticipant(store: localFavoriteLibraryStore).applyingMangaIdentity(using: mangaDirectoryStore),
-                changeID: localFavoriteLibraryStore.changeID,
                 changes: { [localFavoriteLibraryStore] in localFavoriteLibraryStore.changes() }
             ),
             .init(
                 participant: ReadingProgressWebDAVParticipant(store: readingProgressStore).applyingMangaIdentity(using: mangaDirectoryStore),
-                changeID: readingProgressStore.changeID,
                 changes: { [readingProgressStore] in readingProgressStore.changes() }
             ),
             .init(
                 participant: AppSettingsWebDAVParticipant(store: settingsStore),
-                changeID: settingsStore.changeID,
                 changes: { [settingsStore] in settingsStore.changes() }
             ),
             .init(
                 participant: LikeLibraryWebDAVParticipant(store: likeStore).applyingMangaIdentity(using: mangaDirectoryStore),
-                changeID: likeStore.changeID,
                 changes: { [likeStore] in likeStore.changes() }
             ),
             .init(
                 participant: BookmarkLibraryWebDAVParticipant(store: bookmarkStore).applyingMangaIdentity(using: mangaDirectoryStore),
-                changeID: bookmarkStore.changeID,
                 changes: { [bookmarkStore] in bookmarkStore.changes() }
             ),
             .init(
                 participant: ContentCoverWebDAVParticipant(store: contentCoverStore).applyingMangaIdentity(using: mangaDirectoryStore),
-                changeID: contentCoverStore.changeID,
                 changes: { [contentCoverStore] in contentCoverStore.changes() }
             ),
             .init(
                 participant: BrowsingHistoryWebDAVParticipant(store: browsingHistoryStore).applyingMangaIdentity(using: mangaDirectoryStore),
-                changeID: browsingHistoryStore.changeID,
                 changes: { [browsingHistoryStore] in browsingHistoryStore.changes() }
             ),
         ]

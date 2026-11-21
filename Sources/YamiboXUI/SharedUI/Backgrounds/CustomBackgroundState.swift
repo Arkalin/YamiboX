@@ -24,7 +24,7 @@ public final class CustomBackgroundState {
         self.settingsStore = settingsStore
         self.imageStore = imageStore
         observationTask = StoreChangeObservation.task(
-            changes: { settingsStore.changes() }, changeID: { settingsStore.changeID }
+            changes: { settingsStore.changes() }
         ) { [weak self] in
             await self?.reload()
         }

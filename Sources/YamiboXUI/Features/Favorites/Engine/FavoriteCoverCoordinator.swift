@@ -31,7 +31,7 @@ final class FavoriteCoverCoordinator {
         self.store = store
         self.makeRepository = makeRepository
         observationTask = StoreChangeObservation.task(
-            changes: { store.changes() }, changeID: { store.changeID }
+            changes: { store.changes() }
         ) { [weak self] in
             // Coalesce bursts, not the whole backfill network lifetime. Manual
             // edits and completed covers remain visible while later books load.

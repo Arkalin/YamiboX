@@ -200,23 +200,20 @@ final class FavoriteLibraryOrganizer {
         self.makeFavoriteRepository = makeFavoriteRepository
         covers.onChange = { [weak self] in self?.refreshDerivedState() }
         libraryUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = libraryStore] in store.changes() },
-            changeID: { [store = libraryStore] in store.changeID }
+            changes: { [store = libraryStore] in store.changes() }
         ) { [weak self] in
             await self?.reload()
         }
         observeReadingProgressIfNeeded()
         settingsUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = settingsStore] in store.changes() },
-            changeID: { [store = settingsStore] in store.changeID }
+            changes: { [store = settingsStore] in store.changes() }
         ) { [weak self] in
             await self?.reloadBoardReaderSettings()
             await self?.reloadFavoriteSettingsSnapshots()
         }
         if let mangaDirectoryStore {
             mangaDirectoryUpdatesTask = StoreChangeObservation.task(
-                changes: { [store = mangaDirectoryStore] in store.changes() },
-                changeID: { [store = mangaDirectoryStore] in store.changeID }
+                changes: { [store = mangaDirectoryStore] in store.changes() }
             ) { [weak self] in
                 await self?.reloadMangaDirectories()
             }

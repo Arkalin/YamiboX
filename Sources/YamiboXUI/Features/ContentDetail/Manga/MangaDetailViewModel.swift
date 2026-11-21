@@ -62,22 +62,19 @@ final class MangaDetailViewModel {
         }
         self.workflowConfiguration = configuration
         readingProgressUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = dependencies.readingProgressStore] in store.changes() },
-            changeID: { [store = dependencies.readingProgressStore] in store.changeID }
+            changes: { [store = dependencies.readingProgressStore] in store.changes() }
         ) { [weak self] in
             guard let self else { return }
             await self.refreshReadingProgress()
         }
         contentCoverUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = dependencies.contentCoverStore] in store.changes() },
-            changeID: { [store = dependencies.contentCoverStore] in store.changeID }
+            changes: { [store = dependencies.contentCoverStore] in store.changes() }
         ) { [weak self] in
             guard let self else { return }
             contentCover = await self.loadContentCover()
         }
         mangaDirectoryUpdatesTask = StoreChangeObservation.task(
-            changes: { [store = dependencies.mangaDirectoryStore] in store.changes() },
-            changeID: { [store = dependencies.mangaDirectoryStore] in store.changeID }
+            changes: { [store = dependencies.mangaDirectoryStore] in store.changes() }
         ) { [weak self] in
             await self?.reloadDirectoryAfterExternalChange()
         }

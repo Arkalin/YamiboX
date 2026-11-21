@@ -14,7 +14,7 @@ public struct LikeTextUpsertResult: Hashable, Sendable {
 public actor LikeStore: ReaderLikeMutating {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
+    public nonisolated func changes() -> AsyncStream<Void> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
 

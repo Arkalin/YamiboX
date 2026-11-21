@@ -2,8 +2,7 @@ import Foundation
 
 struct AppWebDAVDataset: Sendable {
     let participant: any WebDAVSyncParticipant
-    let changeID: String
-    let changes: @Sendable () -> AsyncStream<String>
+    let changes: @Sendable () -> AsyncStream<Void>
 }
 
 extension YamiboAppContext {
@@ -12,7 +11,6 @@ extension YamiboAppContext {
         AppRuntimeCoordinator(
             observations: webDAVDatasets.map { dataset in
                 .init(
-                    changeID: dataset.changeID,
                     changes: dataset.changes,
                     onChange: { continuity.localDataChanged(datasetID: dataset.participant.datasetID) }
                 )

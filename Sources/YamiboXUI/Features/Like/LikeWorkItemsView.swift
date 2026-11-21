@@ -184,10 +184,7 @@ struct LikeWorkItemsView: View {
             await load()
         }
         .task(id: work) {
-            for await changeID in like.likeStore.changes() {
-                guard changeID == like.likeStore.changeID else {
-                    continue
-                }
+            for await _ in like.likeStore.changes() {
                 await load()
             }
         }

@@ -5,7 +5,7 @@ public protocol SessionStoring: Sendable {
     func load() async -> SessionState
     func snapshot() async throws -> AccountSessionSnapshot
     func isCurrentGeneration(_ expected: UUID) async -> Bool
-    func changes() -> AsyncStream<String>
+    func changes() -> AsyncStream<Void>
     func save(_ session: SessionState) async throws
     func updateWebSession(cookies: [YamiboCookie], userAgent: String) async throws
     func updateAccountUID(_ accountUID: String?) async throws
@@ -19,7 +19,7 @@ public actor SessionStore: SessionStoring {
     public nonisolated let accountStore: AccountStore?
     public nonisolated let accountOperations: AccountOperationGate
     public nonisolated var changeID: String { accountStore?.broadcaster.changeID ?? changeBroadcaster.changeID }
-    public nonisolated func changes() -> AsyncStream<String> {
+    public nonisolated func changes() -> AsyncStream<Void> {
         accountStore?.broadcaster.changes() ?? changeBroadcaster.changes()
     }
 

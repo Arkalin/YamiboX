@@ -299,12 +299,9 @@ public struct IOSForumWebView: UIViewRepresentable {
             guard sessionObservationTask == nil, !isChangingAccount else { return }
 
             sessionObservationTask = Task { @MainActor [weak self, sessionStore] in
-                for await changeID in sessionStore.changes() {
+                for await _ in sessionStore.changes() {
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
-                    guard changeID == sessionStore.changeID else {
-                        continue
-                    }
 
                     let sessionState = await sessionStore.load()
                     await synchronizeWebViewSession(sessionState, reloadIfNeeded: true)

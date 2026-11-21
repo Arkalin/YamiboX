@@ -14,7 +14,7 @@ public protocol BrowsingHistoryReconciling: Sendable {
 
 public protocol BrowsingHistorySettingsReading: Sendable {
     func loadBoardReaderSettings() async -> BoardReaderSettings
-    func changes() -> AsyncStream<String>
+    func changes() -> AsyncStream<Void>
 }
 
 public protocol BrowsingHistoryProgressReading: Sendable {

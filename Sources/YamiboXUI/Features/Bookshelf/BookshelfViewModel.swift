@@ -77,7 +77,7 @@ final class BookshelfViewModel {
         hasLoaded = true
     }
 
-    func observe(_ changes: AsyncStream<String>) async {
+    func observe(_ changes: AsyncStream<Void>) async {
         for await _ in changes {
             guard !Task.isCancelled else { return }
             await reload()

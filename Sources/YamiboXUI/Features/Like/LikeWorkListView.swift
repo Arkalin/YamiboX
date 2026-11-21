@@ -176,10 +176,7 @@ struct LikeWorkListView: View {
             }
         }
         .task {
-            for await changeID in likeDependencies.likeStore.changes() {
-                guard changeID == likeDependencies.likeStore.changeID else {
-                    continue
-                }
+            for await _ in likeDependencies.likeStore.changes() {
                 await load()
             }
         }

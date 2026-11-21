@@ -19,5 +19,5 @@ public protocol MangaDirectoryChangeObserving: Sendable {
     nonisolated var changeID: String { get }
     /// Register before returning so a subsequent commit cannot be missed.
     /// Implementations must explicitly provide observation, never a silent sink.
-    nonisolated func changes() -> AsyncStream<String>
+    nonisolated func changes() -> AsyncStream<Void>
 }

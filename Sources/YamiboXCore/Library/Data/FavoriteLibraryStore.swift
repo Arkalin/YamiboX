@@ -4,7 +4,7 @@ import Foundation
 public actor FavoriteLibraryStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
+    public nonisolated func changes() -> AsyncStream<Void> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
     private var decodedDocument: (json: String?, document: FavoriteLibraryDocument)?
