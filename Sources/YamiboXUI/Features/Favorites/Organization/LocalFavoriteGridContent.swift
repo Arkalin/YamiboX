@@ -8,7 +8,7 @@ struct LocalFavoriteGridContent: View {
     let routes: LocalFavoritesRoutes
     let isStaggered: Bool
     let derived: LocalFavoriteDerivedState
-    let isCollectionDetail: Bool
+    let scope: LocalFavoritePresentationScope
     let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
 
     private static let fixedGridBaseMinimumCardWidth: Double = 130
@@ -36,7 +36,7 @@ struct LocalFavoriteGridContent: View {
                         organizer: organizer,
                         routes: routes,
                         cardsCount: derived.cards.count,
-                        showsCategoryTabBar: !isCollectionDetail
+                        showsCategoryTabBar: scope.showsCategoryTabBar
                     )
                     if isStaggered {
                         LocalFavoriteStaggeredCards(

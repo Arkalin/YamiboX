@@ -1,6 +1,15 @@
 import SwiftUI
 import YamiboXCore
 
+enum LocalFavoriteCardDeletionTarget {
+    case item(FavoriteItem)
+    case projectionGroup(selectionID: String)
+
+    init(card: FavoriteCardProjection) {
+        self = card.isModeOnMangaThread ? .projectionGroup(selectionID: card.id) : .item(card.item)
+    }
+}
+
 struct LocalFavoriteCardActions {
     let open: (FavoriteCardProjection, FavoriteLaunchMode, BookOpeningTransition?) -> Void
     let select: (FavoriteItem) -> Void
@@ -10,7 +19,14 @@ struct LocalFavoriteCardActions {
     let syncToRemote: (FavoriteItem) -> Void
     let delete: (FavoriteCardProjection) -> Void
     let viewArchivedFavorites: (FavoriteCardProjection) -> Void
-    let deleteArchivedFavorites: ((FavoriteItem) -> Void)?
+    private let allowsProjectionGroupDeletion: Bool
+
+    func canDelete(_ card: FavoriteCardProjection) -> Bool {
+        switch LocalFavoriteCardDeletionTarget(card: card) {
+        case .item: true
+        case .projectionGroup: allowsProjectionGroupDeletion
+        }
+    }
 
     @MainActor
     static func standard(
@@ -19,13 +35,7 @@ struct LocalFavoriteCardActions {
         routes: LocalFavoritesRoutes,
         onOpen: @escaping (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
     ) -> LocalFavoriteCardActions {
-        let deleteArchivedFavorites: ((FavoriteItem) -> Void)? = organizer.smartMangaBulkDeleteEnabled
-            ? { item in
-                selection.toggleFavoriteSelection(id: organizer.selectionID(for: item))
-                routes.dialog = .deleteSelection(organizer.makeSelectionDeletePlan())
-            }
-            : nil
-        return LocalFavoriteCardActions(
+        LocalFavoriteCardActions(
             open: { card, mode, transition in
                 let mangaScope: FavoriteMangaReadingScope = card.isModeOnMangaThread ? .boardDefault : .singleThread
                 Task { await onOpen(card.item, mode, mangaScope, transition) }
@@ -47,12 +57,21 @@ struct LocalFavoriteCardActions {
                 Task { await organizer.pushItemToYamibo(item) }
             },
             delete: { card in
-                routes.dialog = .deleteItem(card.item)
+                switch LocalFavoriteCardDeletionTarget(card: card) {
+                case .item(let item):
+                    routes.dialog = .deleteItem(item)
+                case .projectionGroup(let selectionID):
+                    guard organizer.smartMangaBulkDeleteEnabled else { return }
+                    selection.clearSelection()
+                    selection.enterSelectionMode()
+                    selection.replaceFavoriteSelection(with: [selectionID])
+                    routes.dialog = .deleteSelection(organizer.makeSelectionDeletePlan())
+                }
             },
             viewArchivedFavorites: { card in
                 organizer.openMergedGroup(key: card.mangaGroupKey)
             },
-            deleteArchivedFavorites: deleteArchivedFavorites
+            allowsProjectionGroupDeletion: organizer.smartMangaBulkDeleteEnabled
         )
     }
 }
@@ -112,14 +131,8 @@ struct LocalFavoriteCardContextMenu: View {
             } label: {
                 Label(L10n.string("favorites.view_archived_favorites"), systemImage: "archivebox")
             }
-            if let deleteArchivedFavorites = actions.deleteArchivedFavorites {
-                Button(role: .destructive) {
-                    deleteArchivedFavorites(card.item)
-                } label: {
-                    Label(L10n.string("common.delete"), systemImage: "trash")
-                }
-            }
-        } else {
+        }
+        if actions.canDelete(card) {
             Button(role: .destructive) {
                 actions.delete(card)
             } label: {

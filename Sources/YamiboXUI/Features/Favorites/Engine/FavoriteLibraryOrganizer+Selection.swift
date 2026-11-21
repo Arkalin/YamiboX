@@ -14,6 +14,10 @@ extension FavoriteLibraryOrganizer {
 
     private func isSmartCardFavoriteID(_ id: String) -> Bool {
         guard selectedMergedGroupKey == nil else { return false }
+        if let card = derived.cards.first(where: { $0.id == id }) {
+            if case .projectionGroup = LocalFavoriteCardDeletionTarget(card: card) { return true }
+            return false
+        }
         if mangaDirectoriesByTID.values.contains(where: { $0.id.rawValue == id }) { return true }
         guard
               let item = document.items.first(where: { $0.id == id }) else { return false }

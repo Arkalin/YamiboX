@@ -7,7 +7,7 @@ struct LocalFavoriteListContent: View {
     let routes: LocalFavoritesRoutes
     let showsCover: Bool
     let derived: LocalFavoriteDerivedState
-    let isCollectionDetail: Bool
+    let scope: LocalFavoritePresentationScope
     let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
 
     var body: some View {
@@ -17,7 +17,7 @@ struct LocalFavoriteListContent: View {
                     organizer: organizer,
                     routes: routes,
                     cardsCount: derived.cards.count,
-                    showsCategoryTabBar: !isCollectionDetail
+                    showsCategoryTabBar: scope.showsCategoryTabBar
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)

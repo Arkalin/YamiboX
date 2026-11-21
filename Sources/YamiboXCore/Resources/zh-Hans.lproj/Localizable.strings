@@ -285,6 +285,7 @@
 "favorites.edit_tag" = "编辑标签";
 "favorites.edit_tags" = "编辑标签";
 "favorites.empty.collection" = "合集为空";
+"favorites.empty.manga_archive" = "漫画归档为空";
 "favorites.empty.favorites" = "暂无收藏";
 "favorites.empty.sync_hint" = "可从右上角菜单同步百合会收藏。";
 "favorites.empty.no_results" = "没有匹配结果";

@@ -32,14 +32,8 @@ struct LocalFavoriteItemRow: View {
                         Label(L10n.string("favorites.view_archived_favorites"), systemImage: "archivebox")
                     }
                     .tint(.orange)
-                    if let deleteArchivedFavorites = actions.deleteArchivedFavorites {
-                        Button(role: .destructive) {
-                            deleteArchivedFavorites(card.item)
-                        } label: {
-                            Label(L10n.string("common.delete"), systemImage: "trash")
-                        }
-                    }
-                } else {
+                }
+                if actions.canDelete(card) {
                     Button(role: .destructive) {
                         actions.delete(card)
                     } label: {

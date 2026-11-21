@@ -3,6 +3,14 @@ import UIKit
 import UniformTypeIdentifiers
 import YamiboXCore
 
+enum LocalFavoritePresentationScope: Equatable {
+    case libraryRoot
+    case collection
+    case mangaArchive
+
+    var showsCategoryTabBar: Bool { self == .libraryRoot }
+}
+
 struct LocalFavoritesOrganizationView: View {
     @Bindable var organizer: FavoriteLibraryOrganizer
     let navigator: ForumDestinationNavigator
@@ -61,8 +69,8 @@ struct LocalFavoritesOrganizationView: View {
     private var browseStack: some View {
         NavigationStack(path: LocalFavoritesNavigation(organizer: organizer, routes: routes, navigator: navigator).binding) {
             backgrounded {
-                content(derived: organizer.rootDerived, isCollectionDetail: false)
-                    .overlay { emptyStateOverlay(derived: organizer.rootDerived, isCollectionDetail: false) }
+                content(derived: organizer.rootDerived, scope: .libraryRoot)
+                    .overlay { emptyStateOverlay(derived: organizer.rootDerived, scope: .libraryRoot) }
             }
             .navigationTitle(browseNavigationTitle(usesSidebar: UIDevice.current.userInterfaceIdiom == .pad))
             .navigationBarTitleDisplayMode(.inline)
@@ -222,8 +230,8 @@ struct LocalFavoritesOrganizationView: View {
 
     private var collectionDetail: some View {
         backgrounded {
-            content(derived: organizer.derived, isCollectionDetail: true)
-                .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
+            content(derived: organizer.derived, scope: .collection)
+                .overlay { emptyStateOverlay(derived: organizer.derived, scope: .collection) }
         }
         .modifier(LocalFavoriteBrowseSearch(
             organizer: organizer,
@@ -308,8 +316,8 @@ struct LocalFavoritesOrganizationView: View {
 
     private var mergedGroupDetail: some View {
         backgrounded {
-            content(derived: organizer.derived, isCollectionDetail: true)
-                .overlay { emptyStateOverlay(derived: organizer.derived, isCollectionDetail: true) }
+            content(derived: organizer.derived, scope: .mangaArchive)
+                .overlay { emptyStateOverlay(derived: organizer.derived, scope: .mangaArchive) }
         }
         .modifier(LocalFavoriteBrowseSearch(
             organizer: organizer,
@@ -361,7 +369,7 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     @ViewBuilder
-    private func content(derived: LocalFavoriteDerivedState, isCollectionDetail: Bool) -> some View {
+    private func content(derived: LocalFavoriteDerivedState, scope: LocalFavoritePresentationScope) -> some View {
         switch organizer.display.layoutMode {
         case .rowCard:
             LocalFavoriteListContent(
@@ -370,7 +378,7 @@ struct LocalFavoritesOrganizationView: View {
                 routes: routes,
                 showsCover: true,
                 derived: derived,
-                isCollectionDetail: isCollectionDetail,
+                scope: scope,
                 onOpen: onOpen
             )
         case .rowCardText:
@@ -380,7 +388,7 @@ struct LocalFavoritesOrganizationView: View {
                 routes: routes,
                 showsCover: false,
                 derived: derived,
-                isCollectionDetail: isCollectionDetail,
+                scope: scope,
                 onOpen: onOpen
             )
         case .fixedGrid:
@@ -390,7 +398,7 @@ struct LocalFavoritesOrganizationView: View {
                 routes: routes,
                 isStaggered: false,
                 derived: derived,
-                isCollectionDetail: isCollectionDetail,
+                scope: scope,
                 onOpen: onOpen
             )
         case .staggered:
@@ -400,7 +408,7 @@ struct LocalFavoritesOrganizationView: View {
                 routes: routes,
                 isStaggered: true,
                 derived: derived,
-                isCollectionDetail: isCollectionDetail,
+                scope: scope,
                 onOpen: onOpen
             )
         }
@@ -738,17 +746,22 @@ struct LocalFavoritesOrganizationView: View {
     }
 
     @ViewBuilder
-    private func emptyStateOverlay(derived: LocalFavoriteDerivedState, isCollectionDetail: Bool) -> some View {
-        if derived.cards.isEmpty, isCollectionDetail || derived.visibleCollections.isEmpty {
+    private func emptyStateOverlay(derived: LocalFavoriteDerivedState, scope: LocalFavoritePresentationScope) -> some View {
+        if derived.cards.isEmpty, scope != .libraryRoot || derived.visibleCollections.isEmpty {
             if hasSubmittedSearch {
                 ContentUnavailableView(L10n.string("favorites.empty.no_results"), systemImage: "magnifyingglass")
-            } else if isCollectionDetail {
-                ContentUnavailableView(L10n.string("favorites.empty.collection"), systemImage: "folder")
             } else {
-                ContentUnavailableView {
-                    Label(L10n.string("favorites.empty.favorites"), systemImage: "books.vertical")
-                } description: {
-                    Text(L10n.string("favorites.empty.sync_hint"))
+                switch scope {
+                case .collection:
+                    ContentUnavailableView(L10n.string("favorites.empty.collection"), systemImage: "folder")
+                case .mangaArchive:
+                    ContentUnavailableView(L10n.string("favorites.empty.manga_archive"), systemImage: "archivebox")
+                case .libraryRoot:
+                    ContentUnavailableView {
+                        Label(L10n.string("favorites.empty.favorites"), systemImage: "books.vertical")
+                    } description: {
+                        Text(L10n.string("favorites.empty.sync_hint"))
+                    }
                 }
             }
         }
