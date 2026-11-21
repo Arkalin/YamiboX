@@ -49,7 +49,7 @@
 - `applyRemoteSnapshot`：在保留业务删除决策的前提下应用远端，返回本次事务的指纹和 `requiresUpload`。
 - `readLocalFingerprint`：读取真正参与同步的本地子集；`localFingerprintDependencies` 表达跨数据集影响。
 
-[`YamiboAppContext.webDAVDatasets`](../../Sources/YamiboXCore/App/YamiboAppContext.swift)通过 `AppWebDAVDataset` 把参与者、store 的 `changeID` 和 `changes()` 成对登记。[运行时装配](../../Sources/YamiboXCore/App/YamiboAppContext+Runtime.swift)与服务参与者数组都从同一注册表投影，避免“能手动上传但自动同步观察不到变化”的两份清单。
+[`YamiboAppContext.webDAVDatasets`](../../Sources/YamiboXCore/App/YamiboAppContext.swift)通过 `AppWebDAVDataset` 把参与者与对应 Store 实例的无负载失效流 `changes()` 成对登记。[运行时装配](../../Sources/YamiboXCore/App/YamiboAppContext+Runtime.swift)与服务参与者数组都从同一注册表投影，避免“能手动上传但自动同步观察不到变化”的两份清单。
 
 新增同步业务时，应先在业务模块实现 payload 与存储规则，再补齐同一注册项、内容选项与本地变更源。不得只在引擎中加入一个文件名或在 UI 中监听零散字段。
 

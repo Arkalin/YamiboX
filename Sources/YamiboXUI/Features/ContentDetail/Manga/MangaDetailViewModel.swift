@@ -485,8 +485,8 @@ final class MangaDetailViewModel {
     }
 
     private func reloadDirectoryAfterExternalChange() async {
-        guard directory != nil,
-              let refreshed = try? await dependencies.mangaDirectoryStore.directory(containingTID: context.thread.tid) else {
+        guard let directoryID = directory?.id,
+              let refreshed = try? await dependencies.mangaDirectoryStore.directory(id: directoryID) else {
             return
         }
         directory = refreshed

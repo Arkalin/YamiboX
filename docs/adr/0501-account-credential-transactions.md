@@ -6,6 +6,6 @@
 
 WebKit 快照不是账号切换指令，也不能无条件用更短寿命的通行 Cookie 覆盖当前值；保留 Cookie 路径、域和期限元数据可避免将已过期的持久 Cookie 恢复成会话 Cookie。恢复 Foundation Cookie 时，非 Secure 项省略 Secure 属性，不使用字符串 `"FALSE"` 表示关闭。[Cookie 模型](../../Sources/YamiboXCore/Account/Domain/YamiboCookie.swift)和 [会话状态](../../Sources/YamiboXCore/Account/Domain/SessionState.swift)实现这些约束。正式论坛认证 Cookie 用已知名称，本地 Discuz 的站点前缀由部署生成，不能借用正式名称判断；服务端域／端口匹配也不能靠系统 Cookie jar 单独保证，见[网络凭据设计](../architecture/networking-and-routing.md#cookie-与请求凭据)。
 
-Core 负责编排会话转换和清理，UI 注入 WebKit 的停止与数据清理能力，避免 Core 直接依赖 WebKit。普通登出清理论坛 Cookie 以免网页回退仍显示旧登录，重置则清整份站点数据；没有平台实现的 Core 调用仅完成 Foundation 侧清理。[转换工作流](../../Sources/YamiboXCore/Account/Application/AccountTransitionWorkflow.swift)保留该职责边界。[Store 多播通知](../architecture/account-lifecycle.md#作用域与迟到结果)的 `changeID` 标识发出通知的 Store 实例，不可用于推断账号、代次或提交版本。
+Core 负责编排会话转换和清理，UI 注入 WebKit 的停止与数据清理能力，避免 Core 直接依赖 WebKit。普通登出清理论坛 Cookie 以免网页回退仍显示旧登录，重置则清整份站点数据；没有平台实现的 Core 调用仅完成 Foundation 侧清理。[转换工作流](../../Sources/YamiboXCore/Account/Application/AccountTransitionWorkflow.swift)保留该职责边界。[Store 多播通知](../architecture/account-lifecycle.md#作用域与迟到结果)只报告该实例失效，不携带账号、代次或提交版本。
 
 [签到状态存储](../../Sources/YamiboXCore/Account/Data/YamiboCheckInStore.swift)的容量报告快照仅统计键值的 UTF-8 载荷：偏好文件由多个功能共用，不能将整个文件或按键推算的物理空间算作签到数据。

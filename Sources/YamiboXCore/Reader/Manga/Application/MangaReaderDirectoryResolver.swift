@@ -15,6 +15,12 @@ public enum MangaReaderDirectoryResolver {
         if let id = context.directoryID {
             return try await store.directory(id: id)?.id ?? id
         }
+        if context.originalThreadID != context.chapterTID {
+            let originalDirectoryIDs = try await store.directoryIDs(containingTID: context.originalThreadID)
+            guard originalDirectoryIDs.count <= 1 else {
+                throw MangaReaderDirectoryResolutionError.ambiguousOwnership
+            }
+        }
         let directoryIDs = try await store.directoryIDs(containingTID: context.chapterTID)
         guard directoryIDs.count <= 1 else {
             throw MangaReaderDirectoryResolutionError.ambiguousOwnership

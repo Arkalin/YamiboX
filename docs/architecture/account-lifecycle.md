@@ -83,7 +83,7 @@ UI 通过 `AccountTransitionLifecycle.configure` 注入 `preserveLocalEdits`、`
 
 AppContext 的客户端工厂捕获会话快照，在使用时校验快照代次，并显式传递凭据。不要只检查 `Task.isCancelled`：请求可能已完成，回调也可能已经入队；发布和写入边界仍要校验所属作用域。
 
-这些标识不能互相代替。Store 的 `changeID` 只标识订阅的 Store 实例，不是账号 UID、会话代次或数据版本。
+这些标识不能互相代替。Store 的 `changeID` 只用于标识 Store 实例，不是账号 UID、会话代次或数据版本。各 Store 的失效流不携带来源或会话标识。
 
 ## 凭据与本地数据的边界
 
