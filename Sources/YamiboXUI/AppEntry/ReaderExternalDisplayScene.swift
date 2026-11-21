@@ -91,28 +91,29 @@ private final class ReaderExternalDisplayPrivacyFrame: NSObject {
     private var fallback: Task<Void, Never>?
     private var callbacks: [() -> Void] = []
     private var frameTicks = 0
+    private let ticksToSubmitNeutralFrame = 2
+    private let pausedDisplayFallback: Duration = .milliseconds(250)
 
     func append(_ callback: @escaping () -> Void) { callbacks.append(callback) }
 
     func start(in scene: UIWindowScene) {
-        let selector = #selector(frameWillRefresh)
+        let selector = #selector(frameWillRefresh(_:))
         if #available(iOS 27, *) {
             link = scene.displayLink(target: self, selector: selector)
         } else {
             link = scene.screen.displayLink(withTarget: self, selector: selector)
         }
         link?.add(to: .main, forMode: .common)
-        // A disconnected or paused display has no presentation callback.
         fallback = Task { @MainActor [weak self] in
-            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            guard let deadline = self?.pausedDisplayFallback else { return }
+            do { try await Task.sleep(for: deadline) } catch { return }
             self?.finish()
         }
     }
 
-    @objc private func frameWillRefresh() {
+    @objc private func frameWillRefresh(_ link: CADisplayLink) {
         frameTicks += 1
-        // Display links fire before refresh; allow one tick to submit the cover.
-        if frameTicks >= 2 { finish() }
+        if frameTicks >= ticksToSubmitNeutralFrame { finish() }
     }
 
     func finish() {

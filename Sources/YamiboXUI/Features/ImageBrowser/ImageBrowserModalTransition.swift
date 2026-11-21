@@ -92,6 +92,13 @@ private struct ImageBrowserModalPresenter<Item: Identifiable, Content: View>: UI
                 if stopped { removeBrowser(animated: false) }
                 else { scheduleUpdate() }
             }
+            Task { @MainActor [weak self, weak browser] in
+                guard let self, let browser, presentedBrowser === browser,
+                      browser.presentingViewController == nil else { return }
+                presentedBrowser = nil
+                presentedID = nil
+                transitionInProgress = false
+            }
         }
 
         private func removeBrowser(animated: Bool) {
