@@ -67,7 +67,7 @@ extension UserSpaceHTMLParser {
     static func parseAddFriendResult(from html: String) throws -> String {
         try DiscuzActionResultParser.successMessage(
             from: html,
-            emptyPageContext: L10n.string("context.user_space_add_friend")
+            operation: .addFriend
         )
     }
 

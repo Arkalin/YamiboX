@@ -36,7 +36,7 @@ actor ForumBlacklistRepository: ForumBlacklistRemoteOperating {
             ("username", username), ("formhash", formHash), ("blacklistsubmit", "true")
         ])
         _ = try LoadDiagnosticError.parsing(html: html, context: "ForumBlacklistRepository.add") {
-            try DiscuzActionResultParser.successMessage(from: html, emptyPageContext: L10n.string("blacklist.title"))
+            try DiscuzActionResultParser.successMessage(from: html, operation: .blacklistAdd)
         }
     }
 
@@ -46,7 +46,7 @@ actor ForumBlacklistRepository: ForumBlacklistRemoteOperating {
         }
         let html = try await client.fetchHTML(for: .forumBlacklistDelete(url: entry.deleteURL), cachePolicy: .reloadIgnoringLocalCacheData)
         _ = try LoadDiagnosticError.parsing(html: html, context: "ForumBlacklistRepository.remove") {
-            try DiscuzActionResultParser.successMessage(from: html, emptyPageContext: L10n.string("blacklist.title"))
+            try DiscuzActionResultParser.successMessage(from: html, operation: .blacklistRemove)
         }
     }
 }

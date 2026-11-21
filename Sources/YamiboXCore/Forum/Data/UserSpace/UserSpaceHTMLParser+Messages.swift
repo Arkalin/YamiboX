@@ -78,7 +78,7 @@ extension UserSpaceHTMLParser {
     static func parsePrivateMessageSendResult(from html: String) throws -> String {
         try DiscuzActionResultParser.successMessage(
             from: html,
-            emptyPageContext: L10n.string("context.private_message")
+            operation: .privateMessage
         )
     }
 

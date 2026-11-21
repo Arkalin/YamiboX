@@ -55,6 +55,10 @@ class Element: Node {
         Self.normalizedText(renderedText())
     }
 
+    func visibleText(including: (Element) -> Bool) -> String {
+        Self.normalizedText(renderedText(including: including))
+    }
+
     func attr(_ name: String) -> String {
         rawNode[name] ?? ""
     }
@@ -176,7 +180,8 @@ class Element: Node {
         return path
     }
 
-    private func renderedText() -> String {
+    private func renderedText(including: (Element) -> Bool = { _ in true }) -> String {
+        guard including(self) else { return "" }
         let tag = tagName().lowercased()
         if tag == "br" {
             return "\n"
@@ -195,7 +200,7 @@ class Element: Node {
                 continue
             }
             let childTag = element.tagName().lowercased()
-            let childText = element.renderedText()
+            let childText = element.renderedText(including: including)
             guard !childText.isEmpty else { continue }
             if Self.blockTextTags.contains(childTag), !value.isEmpty, !value.last!.isWhitespace {
                 value += " "

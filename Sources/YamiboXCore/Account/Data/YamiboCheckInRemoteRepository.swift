@@ -68,38 +68,36 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
     }
 
     private static func isAlreadyCheckedIn(in html: String) -> Bool {
-        if let document = try? KannaSoup.parse(html) {
-            if let today = document.selectFirst("#tablebody .day.today"), today.hasClass("on") {
-                return true
-            }
-            if let button = document.selectFirst(".signbtn a.btna"),
-               button.normalizedText().contains("已打卡") {
-                return true
-            }
+        guard let document = try? KannaSoup.parse(html) else { return false }
+        if document.selectAll("#tablebody .day.today").contains(where: {
+            YamiboHTMLPageInspector.isVisibleNotice($0) && $0.hasClass("on")
+        }) {
+            return true
         }
-        return html.contains(#"class="btna">今日已打卡</a>"#)
+        if document.selectAll(".signbtn a.btna").contains(where: {
+            YamiboHTMLPageInspector.isVisibleNotice($0)
+                && ["今日已打卡", "已打卡", "今日已簽到", "今日已签到"].contains(YamiboHTMLPageInspector.visibleNoticeText($0))
+        }) {
+            return true
+        }
+        return document.selectAll("a.btna").contains {
+            YamiboHTMLPageInspector.isVisibleNotice($0) && YamiboHTMLPageInspector.visibleNoticeText($0) == "今日已打卡"
+        }
     }
 
     private static func extractCheckInURL(from html: String) -> URL? {
-        if let document = try? KannaSoup.parse(html),
-           let href = document.selectFirst(".signbtn a.btna[href*='sign=']")?.attrText("href"),
-           let url = HTMLTextExtractor.absoluteURL(from: href) {
+        guard let document = try? KannaSoup.parse(html) else { return nil }
+        let buttons = document.selectAll(".signbtn a.btna") + document.selectAll("a.btna")
+        for button in buttons where YamiboHTMLPageInspector.isVisibleNotice(button)
+            && ["点击打卡", "點擊打卡", "点击签到", "點擊簽到"].contains(YamiboHTMLPageInspector.visibleNoticeText(button)) {
+            guard let url = button.attrText("href").flatMap({ HTMLTextExtractor.absoluteURL(from: $0) }),
+                  YamiboDomain.isForumURL(url), url.path.hasSuffix("/plugin.php"),
+                  let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+                  items.contains(where: { $0.name == "id" && $0.value == "zqlj_sign" }),
+                  items.contains(where: { $0.name == "sign" && $0.value?.isEmpty == false })
+            else { continue }
             return url
         }
-        guard html.contains(#"class="btna">点击打卡</a>"#) else {
-            return nil
-        }
-
-        let pattern = #"href="(plugin\.php\?id=zqlj_sign(?:&amp;|&)sign=[^"]+)""#
-        guard
-            let regex = try? NSRegularExpression(pattern: pattern),
-            let match = regex.firstMatch(in: html, range: NSRange(location: 0, length: html.utf16.count)),
-            let range = Range(match.range(at: 1), in: html)
-        else {
-            return nil
-        }
-
-        let path = String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
-        return URL(string: path, relativeTo: YamiboDomain.baseURL)?.absoluteURL
+        return nil
     }
 }

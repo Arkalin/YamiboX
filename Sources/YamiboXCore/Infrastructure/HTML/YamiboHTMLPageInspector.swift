@@ -1,39 +1,73 @@
 import Foundation
 
 enum YamiboHTMLPageInspector {
+    private static let invisibleTags: Set<String> = ["script", "style", "template", "noscript", "textarea"]
+    private static let noticeContainers = "#messagetext, .messagetext, .jump_c, .alert_error, .alert_info, .showmessage"
+    private static let loginMarkers = [
+        "请先登录", "請先登錄", "请登录后", "您需要先登录", "需要登录后才能",
+        "登录后才能继续", "登录后才能查看", "请输入用户名/Email/UID"
+    ]
+    private static let floodMarkers = [
+        "防灌水", "灌水预防机制", "抱歉，指定的主题不存在或已被删除", "Sorry, no permission"
+    ]
+
     static func ensureReadable(_ html: String) throws {
-        if isNotAuthenticated(html) {
+        guard let document = try? KannaSoup.parse(html) else { return }
+        if needsAuthentication(document) {
             throw YamiboError.notAuthenticated
         }
-        if isFloodControlOrError(html) {
+        if containsNotice(in: document, markers: floodMarkers) {
             throw YamiboError.floodControl
         }
     }
 
     static func isNotAuthenticated(_ html: String) -> Bool {
-        let markers = [
-            "请先登录",
-            "请登录后",
-            "您需要先登录",
-            "需要登录后才能",
-            "登录后才能继续",
-            "登录后才能查看",
-            "pg_logging",
-            "id=\"loginform\"",
-            "请输入用户名/Email/UID"
-        ]
-        return markers.contains { html.localizedCaseInsensitiveContains($0) }
+        guard let document = try? KannaSoup.parse(html) else { return false }
+        return needsAuthentication(document)
     }
 
     static func isFloodControlOrError(_ html: String) -> Bool {
-        let markers = [
-            "防灌水",
-            "灌水预防机制",
-            "抱歉，指定的主题不存在或已被删除",
-            "您需要先登录才能继续本操作",
-            "Sorry, no permission"
-        ]
-        return markers.contains { html.localizedCaseInsensitiveContains($0) }
+        guard let document = try? KannaSoup.parse(html) else { return false }
+        return containsNotice(in: document, markers: floodMarkers)
+    }
+
+    static func isVisibleNotice(_ element: Element) -> Bool {
+        isVisible(element) && element.parents().allSatisfy(isVisible)
+    }
+
+    static func visibleNoticeText(_ element: Element) -> String {
+        element.visibleText(including: isVisible)
+    }
+
+    private static func isVisible(_ element: Element) -> Bool {
+        let style = element.attr("style").lowercased().filter { !$0.isWhitespace }
+        return !invisibleTags.contains(element.tagName().lowercased())
+            && !element.hasAttribute("hidden") && element.attr("aria-hidden").lowercased() != "true"
+            && !style.contains("display:none") && !style.contains("visibility:hidden")
+    }
+
+    private static func needsAuthentication(_ document: Document) -> Bool {
+        if document.selectAll("#loginform, form[action*='action=login']")
+            .contains(where: { isVisibleNotice($0) && $0.selectFirst("input[type='password']") != nil }) {
+            return !document.selectAll(".threadlist_box, #postlist, .viewthread, #threadlist")
+                .contains(where: isVisibleNotice) || containsNotice(in: document, markers: loginMarkers)
+        }
+        return containsNotice(in: document, markers: loginMarkers)
+    }
+
+    private static func containsNotice(in document: Document, markers: [String]) -> Bool {
+        let noticeTexts = document.selectAll(noticeContainers)
+            .filter(isVisibleNotice)
+            .map(visibleNoticeText)
+        if noticeTexts.contains(where: { notice in
+            markers.contains(where: notice.localizedCaseInsensitiveContains)
+        }) {
+            return true
+        }
+
+        let edges = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "。！!"))
+        let legacyText = document.body()?.ownText().trimmingCharacters(in: edges) ?? ""
+        return markers.contains { legacyText.localizedCaseInsensitiveCompare($0) == .orderedSame }
     }
 
     static func pageTitle(from html: String) -> String? {

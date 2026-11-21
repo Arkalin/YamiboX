@@ -58,8 +58,7 @@ enum ForumHTMLParser {
     static func parseBoardFavoriteResult(from html: String) throws -> String {
         try DiscuzActionResultParser.successMessage(
             from: html,
-            failureError: FavoriteActionError.forumBoardFavoriteFailed,
-            fallbackSuccessMessage: L10n.string("forum.board.favorite_success")
+            operation: .boardFavorite
         )
     }
 
