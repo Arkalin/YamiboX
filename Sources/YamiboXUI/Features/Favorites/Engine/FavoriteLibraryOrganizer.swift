@@ -882,7 +882,10 @@ final class FavoriteLibraryOrganizer {
     }
 
     private func presentCommitFailure(_ error: any Error) {
-        guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+        if !(error is FavoriteDeletionInterruption),
+           Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
+            return
+        }
         YamiboLog.persistence.error("Favorite library document commit failed: \(error.localizedDescription)")
         errorMessage = error.localizedDescription
         errorDetails = LoadFailureDetails(error: error)

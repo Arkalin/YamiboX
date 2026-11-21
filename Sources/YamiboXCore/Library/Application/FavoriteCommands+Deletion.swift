@@ -27,6 +27,21 @@ public struct FavoriteDeletionRequest: Sendable {
     }
 }
 
+public struct FavoriteDeletionInterruption: LocalizedError, Sendable {
+    public let confirmedRemoteRemovalCount: Int
+    public let hasUnconfirmedRemoteResult: Bool
+    public let underlying: any Error
+
+    public var errorDescription: String? {
+        if hasUnconfirmedRemoteResult {
+            return confirmedRemoteRemovalCount == 0
+                ? L10n.string("favorites.bulk_delete_remote_unconfirmed")
+                : L10n.string("favorites.bulk_delete_remote_partial_unconfirmed", confirmedRemoteRemovalCount)
+        }
+        return L10n.string("favorites.bulk_delete_remote_partial", confirmedRemoteRemovalCount)
+    }
+}
+
 extension FavoriteCommands {
     public static func deleteFavorites(
         _ request: FavoriteDeletionRequest,
@@ -86,34 +101,52 @@ extension FavoriteCommands {
         localFavoriteLibraryStore: FavoriteLibraryStore,
         makeRemoteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     ) async throws -> FavoriteLibraryDocument {
-        try Task.checkCancellation()
-        if case .everywhere(removeRemote: true) = request.scope {
-            try await deleteRemoteCounterparts(of: items, makeRemoteRepository: makeRemoteRepository) {
-                guard request.confirmedItems != nil || request.confirmedCollections != nil else { return }
-                try validateSelection(request, in: await localFavoriteLibraryStore.load())
+        var progress = RemoteDeletionProgress()
+        do {
+            try Task.checkCancellation()
+            if case .everywhere(removeRemote: true) = request.scope {
+                try await deleteRemoteCounterparts(
+                    of: items, makeRemoteRepository: makeRemoteRepository, progress: &progress
+                ) {
+                    guard request.confirmedItems != nil || request.confirmedCollections != nil else { return }
+                    try validateSelection(request, in: await localFavoriteLibraryStore.load())
+                }
             }
+            try Task.checkCancellation()
+            return try await localFavoriteLibraryStore.update { document in
+                try validateSelection(request, in: document)
+                if let requiringItemID,
+                   !document.items.contains(where: { $0.id == requiringItemID }) {
+                    throw DeletedItemAbsent()
+                }
+                switch request.scope {
+                case .currentLocation(let location):
+                    document.removeItems(ids: Set(items.map(\.id)), from: location)
+                case .everywhere:
+                    document.removeItems(targets: items.map(\.target))
+                    document.dissolveCollections(ids: Array(request.collectionIDs))
+                }
+                return document
+            }
+        } catch {
+            guard progress.confirmedCount > 0 || progress.hasUnconfirmedResult else { throw error }
+            throw FavoriteDeletionInterruption(
+                confirmedRemoteRemovalCount: progress.confirmedCount,
+                hasUnconfirmedRemoteResult: progress.hasUnconfirmedResult,
+                underlying: error
+            )
         }
-        try Task.checkCancellation()
-        return try await localFavoriteLibraryStore.update { document in
-            try validateSelection(request, in: document)
-            if let requiringItemID,
-               !document.items.contains(where: { $0.id == requiringItemID }) {
-                throw DeletedItemAbsent()
-            }
-            switch request.scope {
-            case .currentLocation(let location):
-                document.removeItems(ids: Set(items.map(\.id)), from: location)
-            case .everywhere:
-                document.removeItems(targets: items.map(\.target))
-                document.dissolveCollections(ids: Array(request.collectionIDs))
-            }
-            return document
-        }
+    }
+
+    private struct RemoteDeletionProgress {
+        var confirmedCount = 0
+        var hasUnconfirmedResult = false
     }
 
     private static func deleteRemoteCounterparts(
         of items: [FavoriteItem],
         makeRemoteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
+        progress: inout RemoteDeletionProgress,
         beforeDeleting: @Sendable () async throws -> Void
     ) async throws {
         let candidates = items.filter(\.hasYamiboRemoteCandidate)
@@ -131,7 +164,16 @@ extension FavoriteCommands {
         for id in resolvedIDs {
             try await beforeDeleting()
             try Task.checkCancellation()
-            try await repository.deleteFavorite(remoteFavoriteID: id)
+            progress.hasUnconfirmedResult = true
+            do {
+                try await repository.deleteFavorite(remoteFavoriteID: id)
+                progress.hasUnconfirmedResult = false
+                progress.confirmedCount += 1
+            } catch let error as FavoriteActionError
+                where error == .missingFavoriteDeleteID || error == .missingFavoriteDeleteToken {
+                progress.hasUnconfirmedResult = false
+                throw error
+            }
         }
     }
 

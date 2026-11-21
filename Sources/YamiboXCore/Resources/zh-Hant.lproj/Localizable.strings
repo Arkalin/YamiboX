@@ -239,6 +239,9 @@
 "favorites.bulk_delete_scope_message" = "所選收藏中有項目位於多個位置。可只從目前位置移除，也可徹底刪除。下載內容和閱讀進度會保留。";
 "favorites.bulk_delete_skipped_smart_manga_message" = "已選中的智慧漫畫收藏未被刪除，請前往其“查看歸檔收藏”頁面刪除。";
 "favorites.bulk_delete_selection_changed" = "所選收藏已變更，請重新確認刪除。";
+"favorites.bulk_delete_remote_partial" = "本機收藏未刪除，論壇已確認刪除 %lld 項。請先核對論壇收藏，再決定後續操作。";
+"favorites.bulk_delete_remote_partial_unconfirmed" = "本機收藏未刪除，論壇已確認刪除 %lld 項，另有一項結果無法確認。請先核對論壇收藏，再決定後續操作。";
+"favorites.bulk_delete_remote_unconfirmed" = "本機收藏未刪除，無法確認論壇是否已執行刪除。請先核對論壇收藏，再決定後續操作。";
 "favorites.bulk_dissolve_collections_message" = "確定要解散已選中的合集嗎？其中的收藏會返回根頁，不會被刪除。";
 "favorites.card.last_updated" = "最後更新 %@";
 "favorites.card.recent_read" = "最近閱讀 %@";
