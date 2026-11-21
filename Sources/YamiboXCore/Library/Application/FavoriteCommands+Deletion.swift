@@ -88,7 +88,10 @@ extension FavoriteCommands {
     ) async throws -> FavoriteLibraryDocument {
         try Task.checkCancellation()
         if case .everywhere(removeRemote: true) = request.scope {
-            try await deleteRemoteCounterparts(of: items, makeRemoteRepository: makeRemoteRepository)
+            try await deleteRemoteCounterparts(of: items, makeRemoteRepository: makeRemoteRepository) {
+                guard request.confirmedItems != nil || request.confirmedCollections != nil else { return }
+                try validateSelection(request, in: await localFavoriteLibraryStore.load())
+            }
         }
         try Task.checkCancellation()
         return try await localFavoriteLibraryStore.update { document in
@@ -110,7 +113,8 @@ extension FavoriteCommands {
 
     private static func deleteRemoteCounterparts(
         of items: [FavoriteItem],
-        makeRemoteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
+        makeRemoteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating,
+        beforeDeleting: @Sendable () async throws -> Void
     ) async throws {
         let candidates = items.filter(\.hasYamiboRemoteCandidate)
         guard !candidates.isEmpty else { return }
@@ -119,6 +123,7 @@ extension FavoriteCommands {
             try Task.checkCancellation()
             do {
                 let id = try await deletionRemoteID(for: item, repository: repository)
+                try await beforeDeleting()
                 try Task.checkCancellation()
                 try await repository.deleteFavorite(remoteFavoriteID: id)
             } catch FavoriteActionError.missingFavoriteDeleteID {
