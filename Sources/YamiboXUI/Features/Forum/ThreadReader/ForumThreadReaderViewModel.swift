@@ -488,23 +488,30 @@ final class ForumThreadReaderViewModel {
     }
 
     private func autoAttributionDirectoryTitle(localFavoriteLibraryStore: FavoriteLibraryStore) async -> String? {
-        guard let settingsStore = await settingsStoreProvider() else { return nil }
+        guard let settingsStore = await settingsStoreProvider(),
+              let mangaDirectoryStore = await mangaDirectoryStoreProvider() else { return nil }
+        let tid = context.thread.tid
         let settings = await settingsStore.load()
-        guard settings.isSmartComicModeEnabled(forumID: resolvedForumID) else { return nil }
-        guard let mangaDirectoryStore = await mangaDirectoryStoreProvider(),
-              let directory = try? await mangaDirectoryStore.directory(containingTID: context.thread.tid) else {
+        guard let document = try? await localFavoriteLibraryStore.load(),
+              let initialDirectories = try? await mangaDirectoryStore.directories(containingTIDs: [tid]),
+              let initialDirectory = initialDirectories[tid] else {
             return nil
         }
-        let siblingTIDs = Set(directory.chapters.map(\.tid))
-        guard let document = try? await localFavoriteLibraryStore.load() else { return nil }
-        let hasOtherFavoriteInDirectory = document.items.contains { item in
-            item.target.kind == .mangaThread
-                && item.target.threadID != context.thread.tid
-                && siblingTIDs.contains(item.target.threadID)
-                && settings.isSmartComicModeEnabled(forumID: item.forumID)
+        let chapterIDs = Set(initialDirectory.chapters.map(\.tid)).union([tid])
+        let candidates = document.items.filter { chapterIDs.contains($0.target.threadID) }
+        guard candidates.count > 1,
+              let directories = try? await mangaDirectoryStore.directories(
+                containingTIDs: Array(Set(candidates.map(\.target.threadID)))
+              ) else { return nil }
+        let group = LocalFavoriteLibraryProjection.mangaDirectoryGroups(
+            for: candidates,
+            mangaDirectoriesByTID: directories,
+            boardReaderSettings: settings.boardReader
+        ).first { group in
+            group.members.contains { $0.target.threadID == tid }
+                && group.members.contains { $0.target.threadID != tid }
         }
-        guard hasOtherFavoriteInDirectory else { return nil }
-        return directory.cleanBookName
+        return group?.directory.cleanBookName
     }
 
     func loadRatingResults(postID: String) async throws -> ForumThreadRatingResultsPage {
