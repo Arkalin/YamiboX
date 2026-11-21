@@ -7,8 +7,6 @@ struct ForumPageResponse: Sendable {
     var continuationURL: URL? = nil
 }
 
-/// Adapts native forum documents to the shared authenticated HTTP transport.
-/// Form encoding, attachment classification and action safety belong to Forum.
 struct ForumPageClient: Sendable {
     private static let maximumFileBytes = 50 * 1024 * 1024
     let transport: YamiboClient
@@ -56,8 +54,6 @@ struct ForumPageClient: Sendable {
         let secured = ForumWebPagePolicy.secureURL(url)
         guard ForumPagePurpose(url: secured) == .blogEditor,
               var components = URLComponents(url: secured, resolvingAgainstBaseURL: false) else { return secured }
-        // The touch blog form omits privacy controls and upload configuration.
-        // Ask for the complete form without changing the authenticated User-Agent.
         var items = components.queryItems ?? []
         items.removeAll { $0.name == "mobile" }
         items.append(.init(name: "mobile", value: "no"))
@@ -72,8 +68,6 @@ struct ForumPageClient: Sendable {
            let location = response.value(forHTTPHeaderField: "Location"),
            let url = URL(string: location, relativeTo: response.url)?.absoluteURL,
            ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.user == nil, url.password == nil {
-            // Blocked redirects become explicit links, not silent requests with
-            // credentials or automatic account actions.
             return ForumPageResponse(html: "", url: response.url ?? YamiboDomain.baseURL, continuationURL: url)
         }
         if Self.isFile(response: response, prefix: Data(data.prefix(512))) {
@@ -91,9 +85,6 @@ struct ForumPageClient: Sendable {
         let mime = response.mimeType?.lowercased() ?? "text/html"
         let prefix = String(decoding: data, as: UTF8.self).lowercased()
         let isHTML = mime.contains("html") || mime.contains("xml") || prefix.contains("<html") || prefix.contains("<!doctype html") || prefix.contains("<root")
-        // Text responses from upload endpoints are numeric IDs / JSON, not
-        // downloaded files. Attachments and plain-text documents carry a
-        // disposition or a file URL, while image/PDF/binary MIME types suffice.
         let isFile = response.value(forHTTPHeaderField: "Content-Disposition")?.lowercased().contains("attachment") == true
             || mime.hasPrefix("image/") || mime.hasPrefix("audio/") || mime.hasPrefix("video/")
             || ["application/pdf", "application/octet-stream", "application/zip", "application/epub+zip"].contains(mime)
@@ -114,8 +105,6 @@ private final class ForumPageRedirectDelegate: NSObject, URLSessionTaskDelegate,
 
     func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
         guard progress != nil else { return }
-        // WAF recovery creates a new task. Discard the previous attempt's
-        // observers and bytes rather than counting both responses as one file.
         stopObserving()
         lock.withLock { currentTask = ObjectIdentifier(task) }
         let received = task.observe(\.countOfBytesReceived) { [weak self] task, _ in

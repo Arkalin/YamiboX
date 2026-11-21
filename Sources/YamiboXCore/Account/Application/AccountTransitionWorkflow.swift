@@ -1,7 +1,5 @@
 import Foundation
 
-/// Owns the transition ordering and failure cleanup, not dependency assembly.
-/// Callers hold the account-operation lease before entering this workflow.
 struct AccountTransitionWorkflow: Sendable {
     enum WebDataCleanup: Sendable { case session, all, none }
 
@@ -53,7 +51,6 @@ struct AccountTransitionWorkflow: Sendable {
     }
 }
 
-/// Foundation cookies/cache and the injected platform web store share one policy.
 struct AccountWebDataCleaner: Sendable {
     let session: URLSession
     let httpCache: URLCache

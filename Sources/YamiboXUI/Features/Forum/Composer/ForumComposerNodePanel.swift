@@ -279,7 +279,6 @@ private struct ForumComposerNodeBody: View {
             }
         } else {
             Section(L10n.string("forum.composer.content")) {
-                // Type erasure terminates recursive nested-block panel types.
                 AnyView(ForumBBCodeEditor(text: $model.body, controller: model.bodyController, composerContext: context.nestedContent, compact: true))
             }
         }

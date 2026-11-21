@@ -205,16 +205,6 @@ public enum NovelTextLayout {
         return result
     }
 
-    /// Whether the segments we actually intend to display (post
-    /// author-reply and `loadsInlineImages` filtering) include
-    /// non-whitespace text. Deliberately checks `annotatedSegments`, not the
-    /// document's raw, unfiltered `segments` — a page whose only text is
-    /// hidden by a display setting has no displayable text at all, so a
-    /// resulting image-only (or empty) render is correct, not a TextKit
-    /// failure. Using the raw segments here previously made any page where
-    /// every text segment was filtered out (e.g. all author replies to
-    /// others) throw
-    /// `.textKitIndexing`, even though nothing was actually broken.
     private static func hasDisplayableText(in annotatedSegments: [NovelAnnotatedSegment]) -> Bool {
         annotatedSegments.contains { !$0.textContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
@@ -831,8 +821,6 @@ public enum NovelTextLayout {
         let titleEdges = titleRange.map { [$0.location, NSMaxRange($0)] } ?? []
         let boundaries = Set([0, source.utf16Count] + titleEdges
                              + ranges.flatMap { [$0.location, NSMaxRange($0)] }).sorted()
-        // Transform the complete segment so phrase-sensitive conversions cannot
-        // change meaning at an otherwise invisible formatting boundary.
         let output = NovelTextTransformer.transform(text, mode: mode)
         let coordinates = mode == .none ? source : NovelTextCoordinateIndex(output)
         let outputLength = output.utf16.count
@@ -840,16 +828,11 @@ public enum NovelTextLayout {
         if mode == .none {
             for boundary in boundaries { transformedOffsets[boundary] = boundary }
         } else if source.characterCount == coordinates.characterCount {
-            // Chinese script conversion normally replaces graphemes one for
-            // one. Map their ordinals directly, including UTF-16 width changes.
             for boundary in boundaries {
                 let character = source.characterOffset(forUTF16Offset: boundary)
                 transformedOffsets[boundary] = coordinates.utf16Offset(forCharacterOffset: character)
             }
         } else {
-            // Fall back to prefix lengths if conversion changes the grapheme
-            // count. They map positions only; the displayed text retains its
-            // full-phrase conversion above.
             var previousOffset = 0
             for boundary in boundaries {
                 let prefix = source.text(in: 0..<boundary) ?? ""

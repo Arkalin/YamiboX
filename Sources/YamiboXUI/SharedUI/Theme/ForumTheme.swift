@@ -4,9 +4,6 @@ import YamiboXCore
 /// Semantic colors for native forum surfaces. The application theme selects a
 /// palette, while reader surfaces keep their own background and semantic
 /// comment colors.
-// `Color` is immutable but is not declared Sendable by SwiftUI. A theme only
-// stores immutable values, so crossing the app's UI-bound settings boundary is
-// safe without forcing the entire theme-selection interface onto MainActor.
 public struct ForumTheme: @unchecked Sendable {
     public let id: String
     public let accent: Color
@@ -239,7 +236,6 @@ struct ForumThemePalette {
         let progressFill: UInt32
         let decorativeFill: UInt32
         let prominentSurface: UInt32
-        // Non-selected surface washes have their own tint seeds.
         let surfaceTint: UInt32
         let navigationTint: UInt32
         let pinnedBadgeTint: UInt32

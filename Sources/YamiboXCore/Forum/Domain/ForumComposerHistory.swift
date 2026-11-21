@@ -7,11 +7,7 @@ public struct ForumComposerHistory: Sendable {
     }
     private struct Entry: Sendable {
         var steps: [Step]
-        /// One source replacement for applying the group, while `steps` keep
-        /// the original edit order used to map bookmarks and selections.
         var application: Step
-        /// Only groups that splice the same stable text leaf throughout may
-        /// apply the composed replacement without changing identity semantics.
         var splicedNodeID: String?
         var before: ForumComposerSelection
         var after: ForumComposerSelection

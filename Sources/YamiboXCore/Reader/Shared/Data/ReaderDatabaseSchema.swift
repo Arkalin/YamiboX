@@ -1,8 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Schema for reader-owned persistence: reading progress (`ReadingProgressStore`),
-/// manga directories (`MangaDirectoryStore`), and the offline cache (`OfflineCacheStore`).
 enum ReaderDatabaseSchema: DatabaseSchemaModule {
     static func registerMigrations(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("reader.v1") { db in
@@ -28,7 +26,6 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
                 table.column("manga_page_count", .integer)
             }
             try db.create(index: "reading_progress_thread_idx", on: "reading_progress", columns: ["thread_id"])
-            // Serves the directory-rename retarget scan (MangaDirectoryStore).
             try db.create(index: "reading_progress_target_book_idx", on: "reading_progress", columns: ["target_kind", "clean_book_name"])
             try db.create(index: "reading_progress_manga_chapter_idx", on: "reading_progress", columns: ["manga_chapter_thread_id"])
 
@@ -120,9 +117,6 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
                 table.column("insertion_index", .integer).notNull()
                 table.column("created_at", .double).notNull()
                 table.column("updated_at", .double).notNull()
-                // No .replace conflict clause: REPLACE deletes the conflicting row, and the
-                // ON DELETE CASCADE on both image tables below would wipe the child rows that
-                // OfflineCacheStore.save diffs against on every progress update.
                 table.primaryKey(["reader_kind", "owner_name", "tid"])
             }
             try db.create(index: "offline_cache_works_work_id_idx", on: "offline_cache_works", columns: ["work_id"], unique: true)
@@ -162,9 +156,6 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
             }
         }
 
-        // Normal-thread reading progress (browsing-history decisions #6/#7):
-        // page + floor-level anchor for `.normalThread` rows, the first real
-        // writer that target kind has ever had.
         migrator.registerMigration("reader.v2.normal-thread-progress") { db in
             try db.alter(table: "reading_progress") { table in
                 table.add(column: "thread_last_page", .integer)
@@ -184,11 +175,6 @@ enum ReaderDatabaseSchema: DatabaseSchemaModule {
         }
     }
 
-    /// Every downloads table, ordered so child tables are wiped before the
-    /// parents their foreign keys reference. `DownloadStore.clearAll()` and
-    /// `erase(in:)` below previously each maintained this list by hand; a table
-    /// added to the schema but only to one of the two wipe paths would leave
-    /// stale rows behind, so both now share this single source of truth.
     static let downloadTableNamesInDeletionOrder: [String] = [
         "download_completed_images",
         "download_work_images",

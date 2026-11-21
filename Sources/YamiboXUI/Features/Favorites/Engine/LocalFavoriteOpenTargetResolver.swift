@@ -9,28 +9,6 @@ enum LocalFavoriteOpenTarget: Sendable {
     case nativeThread(url: URL, title: String)
 }
 
-/// Resolves a favorite using its latest stored metadata, settings and progress.
-/// Preferred card taps may open details; explicit resume/start always read.
-///
-/// Manga reading retains the existing resume policy. Per decision #15's 2026-07-08
-/// update, which progress record backs the resume position depends on
-/// whether the favorite's board currently has Smart Comic Mode on:
-/// - Mode on: resume via the directory-level `.mangaTitle` record. The
-///   `MangaDirectory` this thread belongs to is looked up by tid (a bare
-///   `.mangaThread(threadID:)` favorite doesn't itself carry a
-///   cleanBookName/mangaID); falls back to the directory's earliest chapter
-///   if the directory has no progress record yet, or to this thread's own
-///   `.mangaThread` progress if the directory has never even been resolved
-///   locally (e.g. a favorite synced in from another device that was never
-///   opened here — decision #12 never triggers resolution on its own).
-/// - Mode off: resume via this thread's own `.mangaThread` progress record
-///   directly — no directory lookup at all, exactly like a normal thread.
-///
-/// `mangaScope: .singleThread` forces that same mode-off path without
-/// consulting the board switch at all — the "查看归档收藏" archive page opens
-/// its members this way, matching how it renders them as ordinary non-smart
-/// cards (see `FavoriteMangaReadingScope`).
-///
 struct LocalFavoriteOpenTargetResolver {
     let libraryStore: FavoriteLibraryStore
     let readingProgressStore: ReadingProgressStore
@@ -59,9 +37,6 @@ struct LocalFavoriteOpenTargetResolver {
             return nil
         }
         guard let threadID = latestItem.target.threadID else { return nil }
-        // One settings snapshot backs both the effective-kind dispatch and
-        // the manga path's smart bit, so a concurrent configuration change
-        // can't make the two disagree within a single resolve.
         let settings = await settingsStore.load()
         let boardReader = settings.boardReader
         let opensDetails = mode == .preferred && settings.favorites.itemTapAction == .detail
@@ -92,10 +67,6 @@ struct LocalFavoriteOpenTargetResolver {
             let url = YamiboRoute.threadByID(tid: threadID, page: 1, authorID: nil, reverse: false).url
             return .nativeThread(url: url, title: latestItem.resolvedDisplayTitle)
         case .mangaThread:
-            // `.singleThread` scope short-circuits to the mode-off path
-            // below without consulting the board switch at all — the archive
-            // page's tapped member must open as exactly the thread its
-            // non-smart card shows, not re-enter the merged directory.
             let smartModeEnabled: Bool
             switch mangaScope {
             case .boardDefault:
@@ -140,16 +111,6 @@ struct LocalFavoriteOpenTargetResolver {
         }
     }
 
-    /// Re-derives an open target for a smart-manga update event, which only
-    /// ever carries a `cleanBookName` (no pointer to one specific favorite —
-    /// detection is per-directory, see `FavoriteUpdateTargetKey
-    /// .mangaDirectory`). Finds any favorited `.mangaThread` chapter whose
-    /// tid currently resolves into this directory and routes it through the
-    /// same mode-on resume path a merged smart-manga card's tap already
-    /// uses, rather than reimplementing directory-to-reader resolution here.
-    /// Returns nil (never throws for this specific case) when no such
-    /// favorite exists any more — the caller falls back to whatever it
-    /// already does for a deleted favorite.
     func openTarget(forMangaDirectoryID directoryID: MangaDirectoryID) async throws -> LocalFavoriteOpenTarget? {
         guard let directory = try await mangaDirectoryStore.directory(id: directoryID) else { return nil }
         let chapterTIDs = Set(directory.chapters.map(\.tid))
@@ -162,20 +123,6 @@ struct LocalFavoriteOpenTargetResolver {
         return try await openTarget(for: item, mode: .resume, mangaScope: .boardDefault)
     }
 
-    /// Which reader a favorite opens with follows the board's *current*
-    /// 阅读方式 configuration, not the kind stamped into the item at add
-    /// time (pluggable-reader-config R11): a board entry configured 小说
-    /// opens the novel reader, 漫画 opens the manga path (smart bit queried
-    /// live as before), and an explicit 普通 entry forces the plain thread
-    /// reader (R12 — switching a board back to 普通 writes a `.normal` entry
-    /// precisely so this dispatch can honor it). Only when the item's board
-    /// has NO entry — never-configured boards and items with no `forumID`
-    /// (older/unresolved metadata) — does the stored kind decide, preserving
-    /// content-type-derived kinds (a novel-TYPE favorite stays a novel even
-    /// on an unconfigured board) and the decided mode-off `.mangaThread`
-    /// behavior (still rendered by the manga reader, decision #2/#15).
-    /// Stored kinds themselves are never rewritten (decision #5) — this is
-    /// purely an open-time dispatch.
     private func effectiveOpenKind(
         for item: FavoriteItem,
         boardReader: BoardReaderSettings

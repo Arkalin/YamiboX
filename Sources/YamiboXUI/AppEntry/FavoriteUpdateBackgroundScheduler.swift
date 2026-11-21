@@ -29,9 +29,6 @@ public enum FavoriteUpdateBackgroundScheduler {
         }
     }
 
-    /// Submits the next refresh request based on the configured interval, or
-    /// cancels pending ones when automatic checking is off. Call when the app
-    /// enters the background.
     @MainActor
     public static func scheduleNextIfNeeded(appContext: YamiboAppContext) {
         guard YamiboForumEnvironment.current.supportsBackgroundRelaunch else { return }

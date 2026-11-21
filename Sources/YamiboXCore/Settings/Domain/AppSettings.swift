@@ -33,9 +33,6 @@ private struct ExternalReaderProfile: Codable, Hashable, Sendable {
     }
 }
 
-/// Thin aggregate over feature-owned settings. Each nested struct is defined
-/// by the feature that owns it and uses compiler-synthesized Codable.
-/// `SettingsStore` falls back to defaults when stored data fails to decode.
 public struct AppSettings: Codable, Hashable, Sendable {
     public var novelReader: NovelReaderAppearanceSettings
     public var novelDownload: NovelDownloadSettings
@@ -95,9 +92,6 @@ public struct AppSettings: Codable, Hashable, Sendable {
         case novelOfflineCache
     }
 
-    /// Fields added after the aggregate shipped are optional so legacy payloads
-    /// retain their other settings. Malformed original fields keep the
-    /// store's existing all-settings fallback behavior.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
@@ -143,7 +137,6 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public mutating func initializeReaderProfile(for resolution: ReaderSettingsTarget.Resolution) {
         let sensitivity = system.externalDisplay.trackpadSensitivity
         if let profile = externalReaderProfiles[resolution.key] {
-            // Older profiles already have independent reading preferences.
             if profile.trackpadSensitivity == nil {
                 externalReaderProfiles[resolution.key]?.trackpadSensitivity = sensitivity
             }
@@ -200,11 +193,6 @@ public struct AppSettings: Codable, Hashable, Sendable {
         return scoped
     }
 
-    /// Convenience so callers don't need to reach through `boardReader`
-    /// directly. `forumID` accepts `nil` so routing/launch-context call
-    /// sites that only sometimes have a known board can pass it straight
-    /// through without an extra unwrap — `nil` reports `false` like any
-    /// unconfigured board.
     public func isSmartComicModeEnabled(forumID: String?) -> Bool {
         boardReader.isSmartComicModeEnabled(forumID: forumID)
     }

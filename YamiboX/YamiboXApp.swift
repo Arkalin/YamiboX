@@ -43,8 +43,6 @@ private final class YamiboAppStartup {
     private var initialNavigation: AppNavigationTarget?
 
     init() {
-        // Visibility is cheap to read before the first SwiftUI frame. An async
-        // reload alone would briefly show the brand after the user hid it.
         launchBackground = CustomBackgroundState(
             settingsStore: settingsStore, imageStore: launchImageStore, scope: .launch,
             initialOverlayVisibility: SettingsStore.loadSync().appearance.launchShowsBrand
@@ -65,8 +63,6 @@ private final class YamiboAppStartup {
         #if canImport(BackgroundTasks)
         if case let .success(environment) = YamiboForumEnvironment.launchConfiguration,
            environment.supportsBackgroundRelaunch {
-            // Registration must still happen before launch finishes, but its
-            // handler waits for storage rather than opening it synchronously.
             FavoriteUpdateBackgroundScheduler.register {
                 await YamiboAppDelegate.prepareRuntime?()
                 return YamiboAppDelegate.appContext
@@ -119,8 +115,6 @@ private final class YamiboAppStartup {
         isPreparingStorage = true
         defer { isPreparingStorage = false }
         do {
-            // Directory verification/copying can take minutes. Keep it off the
-            // main actor, including on retry, and do not cancel it with a window's task.
             let database = try await Task.detached(priority: .userInitiated) {
                 try YamiboAppContext.prepareDownloadStorage()
             }.value
@@ -196,8 +190,6 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // Must be assigned before launch finishes so a notification tap that
-        // cold-starts the app still reaches `didReceive`.
         UNUserNotificationCenter.current().delegate = self
         return true
     }
@@ -214,11 +206,6 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
                 return configuration
             }
         }
-        // A custom scene delegate is required to observe Home Screen quick
-        // action taps (`windowScene(_:performActionFor:)`/`scene(_:willConnectTo:options:)`
-        // are scene-delegate callbacks, not app-delegate ones); it doesn't
-        // touch window setup, so SwiftUI's own `WindowGroup` hosting is
-        // unaffected.
         let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
         configuration.delegateClass = YamiboSceneDelegate.self
         return configuration
@@ -260,9 +247,6 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        // Foreground checks only run while the user is on the favorites
-        // surfaces, whose bell badge already shows the update — keep the
-        // icon badge in sync but skip the redundant banner.
         [.badge]
     }
 
@@ -281,14 +265,11 @@ private final class YamiboAppDelegate: NSObject, UIApplicationDelegate, UNUserNo
 private final class YamiboSceneDelegate: UIResponder, UIWindowSceneDelegate {
     static let searchShortcutType = "com.arkalin.YamiboX.search"
 
-    // Cold launch: the app wasn't running, so the shortcut item arrives via
-    // connection options instead of `performActionFor`.
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
         guard let shortcutItem = connectionOptions.shortcutItem else { return }
         Self.handle(shortcutItem, sceneIdentifier: session.persistentIdentifier)
     }
 
-    // Warm launch: the app was already running/suspended.
     func windowScene(
         _ windowScene: UIWindowScene,
         performActionFor shortcutItem: UIApplicationShortcutItem,

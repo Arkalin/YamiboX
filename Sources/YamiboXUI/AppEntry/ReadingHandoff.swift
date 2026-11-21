@@ -36,7 +36,6 @@ public struct ReadingHandoffRequest: Identifiable, Hashable, Sendable {
     public let payload: YamiboHandoffPayload
 }
 
-/// One publisher per window. Appearance order gives nested readers/threads precedence.
 @MainActor
 final class ReadingHandoffPublisher {
     private struct Surface {
@@ -67,8 +66,6 @@ final class ReadingHandoffPublisher {
     }
 
     func update(_ payload: YamiboHandoffPayload?, surface: UUID) {
-        // Account changes clear registrations; teardown callbacks from the old
-        // account must not resurrect their reading activities.
         guard let index = surfaces.firstIndex(where: { $0.id == surface }),
               surfaces[index].payload != payload else { return }
         let previous = surfaces[index].payload
@@ -120,7 +117,6 @@ final class ReadingHandoffPublisher {
         }
         guard let activity else { return }
         ReadingHandoffActivity.configure(activity, payload: payload, data: data, identifier: UUID())
-        // Include dictionary/key overhead in the system's 3 KB budget.
         guard let info = activity.userInfo,
               let encoded = try? PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0),
               encoded.count < 3_072 else {

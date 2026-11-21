@@ -22,11 +22,6 @@ struct NovelReaderParsedContent: Hashable, Sendable {
     }
 }
 
-// String.count walks all grapheme boundaries, so polling it once per appended character is O(n^2).
-// A single Character append changes the grapheme count by 0 (merges with the trailing cluster - can
-// happen after DOM-node/style-run splitting hands us a base letter and its combining mark as two
-// separate Characters) or 1 (starts a new cluster), never more, so this boundary-only check is
-// equivalent to recomputing String.count but O(1) instead of O(n).
 private func mergesWithPreviousGrapheme(of existing: String, appending next: Character) -> Bool {
     guard let last = existing.last else { return false }
     var probe = String(last)
@@ -147,17 +142,10 @@ public enum NovelReaderProjectionBuilder {
         for post: ForumThreadPost,
         hasCurrentContentBlocks: Bool
     ) -> Bool {
-        // Separate forum text blocks have trimmed edges, so joining them can
-        // erase paragraph breaks that the novel HTML parser preserves.
-        // Older cached blocks may also contain text from an outdated parser.
-        // The forum parser maps NBSP to an ideographic space, unlike the novel parser.
         guard hasCurrentContentBlocks, post.contentBlocks.count == 1, post.images.isEmpty,
               case let .text(textBlock) = post.contentBlocks[0].kind,
               !textBlock.text.contains("\u{3000}") else { return false }
 
-        // The forum block model intentionally simplifies some HTML structures.
-        // Keep the novel-specific parser for images, attachment cards, icons and
-        // quote markers so their rendering and reply filtering stay intact.
         return ["<img", "<i", "attach", "tattl", "<blockquote", "<table", "quote"].allSatisfy {
             post.contentHTML.range(of: $0, options: .caseInsensitive) == nil
         }
@@ -443,9 +431,6 @@ private enum NovelReaderPostHTMLProjectionParser {
                 let nextFormat = resolvedFormat(for: element, tagName: tagName, inherited: format)
                 let nextQuote = isQuote || isQuoteBlock(element, tagName: tagName)
                 if tagName == "ruby" {
-                    // Each direct rt labels the base nodes immediately before it.
-                    // One marker for the entire ruby element would misalign paired
-                    // rb/rt groups such as 漢/かん and 字/じ.
                     var baseNodes: [Node] = []
                     for child in element.getChildNodes() {
                         let childTag = (child as? Element)?.tagName().lowercased()
@@ -571,8 +556,6 @@ private enum NovelReaderPostHTMLProjectionParser {
             result.italic = fontStyle == "italic" || fontStyle == "oblique"
         }
         if let decoration = declarations["text-decoration"] ?? declarations["text-decoration-line"] {
-            // A descendant's decoration adds to the ancestor's painted line;
-            // `text-decoration: none` does not remove an outer <u> or <s>.
             result.underline = result.underline || decoration.contains("underline")
             result.strikethrough = result.strikethrough || decoration.contains("line-through")
         }
@@ -865,9 +848,6 @@ private enum NovelReaderPostHTMLProjectionParser {
 
 }
 
-/// Matches the original raw substrings, including references occurring outside
-/// image attributes. Character keys retain String.contains' canonical equality
-/// and grapheme boundaries; decoded/resolved URL or UTF-8 matching would not.
 private enum NovelHTMLImageReferenceMatcher {
     private struct Node {
         var transitions: [Character: Int] = [:]
@@ -917,8 +897,6 @@ private enum NovelHTMLImageReferenceMatcher {
             }
         }
 
-        // A reference needs only one hit. Compress consumed output chains so
-        // repeated/overlapping matches do not revisit every matching suffix.
         var consumed = Array(repeating: false, count: nodes.count)
         var nextOutput = nodes.map(\.output)
         func unmatchedOutput(from output: Int?) -> Int? {
@@ -1315,8 +1293,6 @@ private enum NovelPostContentProjector {
 
 private enum NovelReaderAttachmentFilter {
     static func removeFileAttachments(from body: Element) -> Set<URL> {
-        // Keep image attachment blocks (`.attm`); only file cards and their
-        // download metadata should disappear from the novel projection.
         let attachments = body.select(".post_attlist, .attach, dl.tattl:not(.attm)").array()
         let imageURLs = Set(attachments.flatMap { attachment in
             attachment.select("img").array().flatMap { image in
@@ -1330,8 +1306,6 @@ private enum NovelReaderAttachmentFilter {
         for attachment in attachments {
             attachment.remove()
         }
-        // The post's image list can contain absolute URLs while the HTML uses
-        // relative ones. Exclude by resolved URL so fallback cannot restore icons.
         return imageURLs
     }
 

@@ -11,7 +11,6 @@ extension View {
             .toolbarBackground(.hidden, for: .navigationBar)
     }
 
-    /// Marks an embedded sidebar selection without driving split-view navigation.
     @ViewBuilder
     func sidebarCategorySelection(isSelected: Bool?) -> some View {
         if let isSelected {

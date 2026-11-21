@@ -1,9 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Coordinates feature-owned rewrites within the existing database write/migration.
-/// Never opens a connection, starts a transaction, or catches a participant's error:
-/// the caller commits all changes together or rolls the entire operation back.
 enum MangaIdentityRemapping {
     static func normalizeReferences(snapshot: MangaDirectoryIdentitySnapshot, legacy: Bool, in db: Database) throws {
         try ReadingProgressIdentityRemapping.normalize(snapshot: snapshot, legacy: legacy, in: db)

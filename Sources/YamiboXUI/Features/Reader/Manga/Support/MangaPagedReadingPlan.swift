@@ -84,7 +84,6 @@ struct MangaPagedReadingPlan: Hashable, Sendable {
         } ?? Self.clampedIndex(nil, pageCount: spreads.count)
     }
 
-    /// Reuse the window's static spreads when only the selected page changes.
     func selectingPage(at index: Int?) -> Self {
         Self(base: self, currentPageIndex: index)
     }
@@ -380,7 +379,6 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
                 leafGroups: pageLeaves,
                 pageTurnDirection: plan.pageTurnDirection
             ).ifEmpty(Self.emptySingleLeaves)
-            // With a right-hand spine the back precedes the visible front physically.
             let orientedLeaves = plan.pageTurnDirection == .rightToLeft
                 ? stride(from: 0, to: orderedLeaves.count, by: 2).flatMap { [orderedLeaves[$0 + 1], orderedLeaves[$0]] }
                 : orderedLeaves
@@ -401,8 +399,6 @@ struct MangaPagedPageCurlSequence: Equatable, Sendable {
 
     func leafIndexes(forSelectionIndex selectionIndex: Int) -> [Int] {
         let clampedSelection = clampedSelectionIndex(selectionIndex)
-        // Both modes create exactly two physical leaves per selection, even
-        // for an empty book or the blank side of a chapter's final spread.
         let physicalSelection = plan.pageTurnDirection == .rightToLeft
             ? pageCount - clampedSelection - 1 : clampedSelection
         let first = physicalSelection * 2

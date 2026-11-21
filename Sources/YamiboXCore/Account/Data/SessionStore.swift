@@ -21,8 +21,6 @@ public actor SessionStore: SessionStoring {
     public nonisolated let accountStore: AccountStore?
     public nonisolated let accountOperations: AccountOperationGate
     public nonisolated var changeID: String { accountStore?.broadcaster.changeID ?? changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> {
         accountStore?.broadcaster.changes() ?? changeBroadcaster.changes()
     }
@@ -83,7 +81,6 @@ public actor SessionStore: SessionStoring {
         postChangeNotification()
     }
 
-    /// Updates clearance atomically without copying a WebKit account identity.
     public func mergeWAFCookies(_ cookies: [YamiboCookie], expectedGeneration: UUID, replacingCurrent: Bool = false) async throws {
         try Task.checkCancellation()
         if let accountStore {

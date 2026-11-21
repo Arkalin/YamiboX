@@ -1,14 +1,5 @@
 import Foundation
 
-/// Failure vocabulary for favorite operations (adding/deleting a thread
-/// favorite, favoriting a forum board).
-///
-/// These cases used to live in `YamiboError`, which made the central
-/// transport-layer enum a shotgun-surgery magnet: every favorites feature
-/// change rippled into the networking module. They were extracted here so the
-/// favorites domain owns its own error type; case names and the user-visible
-/// `errorDescription` copy are migrated verbatim from the original
-/// `YamiboError` cases.
 public enum FavoriteActionError: LocalizedError, Equatable, Sendable {
     case missingFavoriteDeleteToken
     case missingFavoriteDeleteID

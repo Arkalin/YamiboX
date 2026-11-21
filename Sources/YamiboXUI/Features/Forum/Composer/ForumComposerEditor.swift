@@ -232,7 +232,6 @@ final class ForumEditorController {
     func pauseEditing() {
         if usesBBCodeDocument { bbcodeSession.commitComposition(resign: true); return }
         guard let view else { return }
-        // Commit IME composition before bookmarking the final UTF-16 cursor.
         view.unmarkText()
         view.resignFirstResponder()
         savedSelection = view.selectedRange
@@ -393,8 +392,6 @@ struct ForumTextEditor: UIViewRepresentable {
             editabilityRevision += 1
             guard view.isEditable != isEnabled else { return }
             let revision = editabilityRevision
-            // setEditable can resign first responder and reenter SwiftUI's graph.
-            // Defer that UIKit work, but reject input immediately through the delegate.
             DispatchQueue.main.async { [weak self, weak view] in
                 guard let self, let view, self.editabilityRevision == revision,
                       self.controller.view === view, view.isEditable != self.isEditingEnabled else { return }
@@ -419,8 +416,6 @@ struct ForumTextEditor: UIViewRepresentable {
                 if length >= 0, NSMaxRange(range) <= text.length,
                    text.substring(to: range.location) == edit.source.substring(to: edit.range.location),
                    text.substring(from: NSMaxRange(range)) == edit.source.substring(from: NSMaxRange(edit.range)) {
-                    // TextKit preserves fonts but drops custom attributes while
-                    // typing. Restore only source metadata after IME commits.
                     ForumRichTextCodec.restoreTypingMetadata(in: textView.textStorage, range: range, attributes: edit.attributes)
                 }
             }

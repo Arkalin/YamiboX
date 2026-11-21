@@ -18,9 +18,6 @@ public struct FavoriteDeletionRequest: Sendable {
 }
 
 extension FavoriteCommands {
-    /// Organizer deletion tolerates missing remote favorites and parsing failures.
-    /// Other remote errors abort the local batch, but cannot undo earlier remote
-    /// deletions. Only the local mutations form an atomic transaction.
     public static func deleteFavorites(
         _ request: FavoriteDeletionRequest,
         localFavoriteLibraryStore: FavoriteLibraryStore,
@@ -35,8 +32,6 @@ extension FavoriteCommands {
         )
     }
 
-    /// Uses the organizer's deletion policy, not the stricter quick remove policy.
-    /// A missing item returns nil without writing or posting a store change.
     public static func deleteFavorite(
         id: String,
         scope: FavoriteDeletionRequest.Scope,
@@ -71,8 +66,6 @@ extension FavoriteCommands {
             try await deleteRemoteCounterparts(of: items, makeRemoteRepository: makeRemoteRepository)
         }
         try Task.checkCancellation()
-        // Only the selected identities cross the network wait. All edits are
-        // applied to the latest document inside the store's transaction.
         return try await localFavoriteLibraryStore.update { document in
             if let requiringItemID,
                !document.items.contains(where: { $0.id == requiringItemID }) {

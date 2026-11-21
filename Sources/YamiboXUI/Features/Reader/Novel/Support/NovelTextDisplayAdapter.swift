@@ -85,31 +85,18 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
 
     private var lastDrawBounds: CGRect = .zero
     private lazy var editMenuInteraction = UIEditMenuInteraction(delegate: self)
-    /// Kept separate from `editMenuInteraction` rather than told apart by
-    /// configuration identifier: this one presents with no text selection,
-    /// which is the exact condition under which the selection menu declines to
-    /// build itself.
     private lazy var annotationMenuInteraction = UIEditMenuInteraction(delegate: self)
 
-    /// The annotation an annotation menu is being presented for, held across
-    /// `presentEditMenu` because the menu is not built until the delegate is
-    /// called back.
     private struct PendingAnnotationMenu {
         let item: LikeItem
         let anchorRect: CGRect
-        /// Weak for the same reason this view's own reference is: the
-        /// controller registers the view, so a strong hop back would close the
-        /// loop.
         weak var controller: NovelLikeHighlightController?
     }
 
     private var pendingAnnotationMenu: PendingAnnotationMenu?
 
-    /// The style row is presented as its own edit menu rather than nested under
-    /// 「喜欢」, because only a root menu renders as the horizontal bar.
     private lazy var styleRowInteraction = UIEditMenuInteraction(delegate: self)
 
-    /// What picking a swatch should do.
     private var pendingStyleRow: ((LikeStyle) -> Void)?
     private var styleRowAnchorRect: CGRect = .zero
     private lazy var likeHighlightTapRecognizer = UITapGestureRecognizer(
@@ -118,11 +105,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     )
     private var startHandleView: NovelSelectionHandleUIView?
     private var endHandleView: NovelSelectionHandleUIView?
-    /// Ring views for note badges, keyed by item id. Subviews rather than
-    /// strokes in `draw(_:)` because a view's drawn content physically cannot
-    /// exceed its backing store — a badge straddling the first character of a
-    /// line (or the first line of a surface) reaches outside the bounds, and
-    /// only subview rendering survives out there (`clipsToBounds` stays false).
     private var noteBadgeViewsByItemID: [String: NovelLikeNoteBadgeUIView] = [:]
     private static let selectionHandleKnobDiameter: CGFloat = 14
 
@@ -182,8 +164,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             in: context
         )
         displayReference.drawText(in: context, bounds: self.bounds)
-        // After the glyphs on purpose: `drawText` paints last, so a badge drawn
-        // in the highlight pass would end up underneath the text.
         drawLikeNoteBadges(highlights: likeHighlights, in: context)
     }
 
@@ -258,15 +238,11 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             return styleRowAnchorRect
         }
         if interaction === annotationMenuInteraction {
-            // The annotation's own rect, so the system places the menu clear of
-            // the text being acted on rather than over it.
             return pendingAnnotationMenu?.anchorRect ?? bounds
         }
         return selectionController?.menuTargetRect(in: self) ?? bounds
     }
 
-    /// Reopens at the same anchor as the menu that asked for it, so the row
-    /// lands where the menu the user just tapped was.
     private func presentStyleRow(_ context: @escaping (LikeStyle) -> Void, anchorRect: CGRect) {
         pendingStyleRow = context
         styleRowAnchorRect = anchorRect
@@ -301,10 +277,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         setNeedsDisplay()
     }
 
-    /// The menu is presented above this view rather than inside it, so nothing
-    /// takes it down when the reader is dismissed, a page is recycled, or this
-    /// surface is otherwise detached — it would be left floating over whatever
-    /// screen came next.
     override func willMove(toWindow newWindow: UIWindow?) {
         super.willMove(toWindow: newWindow)
         guard newWindow == nil else { return }
@@ -333,9 +305,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         addGestureRecognizer(likeHighlightTapRecognizer)
     }
 
-    // Only recognized when the tap actually lands on a highlight rect; every
-    // other single tap fails immediately and falls through untouched to the
-    // viewport-level tap gesture (chrome toggle, page turn, etc.).
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard gestureRecognizer === likeHighlightTapRecognizer else { return true }
         return likeHighlightController?.item(at: touch.location(in: self), in: self) != nil
@@ -362,9 +331,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
             anchorRect: anchorRect,
             controller: controller
         )
-        // An edit menu only presents from the first responder, and the tap that
-        // opens this one does not go through the selection path that would
-        // otherwise have claimed it.
         becomeFirstResponder()
         annotationMenuInteraction.presentEditMenu(
             with: UIEditMenuConfiguration(
@@ -420,24 +386,10 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         context.restoreGState()
     }
 
-    /// A note is otherwise invisible — an annotated highlight looks identical
-    /// to a bare one. The badge is an indicator only: the whole highlight stays
-    /// a single hit target, so there is nothing to mis-tap.
-    ///
-    /// Split across two layers on purpose. The paper-coloured centre is punched
-    /// out of THIS view's content with a `.clear` blend — the surface is
-    /// transparent over the themed page background, so erasing IS the paper
-    /// colour on all six themes, with no colour plumbed in. The ring is a
-    /// subview, because the punch (like any `draw(_:)` output) stops at the
-    /// view bounds and a badge on a line's first character straddles them —
-    /// outside the bounds there is nothing drawn to erase anyway, so the two
-    /// halves meet seamlessly.
     private func drawLikeNoteBadges(
         highlights: [NovelLikeHighlightController.ResolvedHighlight],
         in context: CGContext
     ) {
-        // `startRect` is nil when the annotation began on another surface,
-        // which is exactly when this page must not claim to show its beginning.
         let annotated = highlights
             .filter { $0.item.hasNote && $0.startRect != nil }
         pruneNoteBadgeViews(keeping: Set(annotated.map(\.item.id)))
@@ -469,9 +421,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         }
     }
 
-    /// Views for items that lost their note (or left this surface) are removed
-    /// rather than merely hidden, so the pool tracks the annotation set instead
-    /// of growing with everything ever shown.
     private func pruneNoteBadgeViews(keeping itemIDs: Set<String>) {
         for (id, view) in noteBadgeViewsByItemID where !itemIDs.contains(id) {
             view.removeFromSuperview()
@@ -589,13 +538,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
         handle.isHidden = false
     }
 
-    /// Finds this specific character's on-screen rect the same way
-    /// `selectionRects(for:)` finds every character's rect for the highlight
-    /// fill above — a synthetic one-character range through the same
-    /// windowed, per-surface query. Returns nil when the true global
-    /// endpoint isn't hosted by this surface (e.g. an adjacent, still-
-    /// registered page in vertical mode), so a handle never appears at a
-    /// merely-local edge of a selection that spans multiple surfaces.
     private func selectionEndpointRect(
         displayReference: NovelTextViewportDisplayReference,
         range: NovelTextSelectionRange,
@@ -667,9 +609,6 @@ final class NovelTextViewportReferenceUIView: UIView, @preconcurrency UIEditMenu
     }
 }
 
-/// The ring half of a note badge (see `drawLikeNoteBadges` for the split).
-/// Draws only the stroke; its transparent centre shows the hole the text
-/// surface punched — or, outside the surface's bounds, the page itself.
 @MainActor
 final class NovelLikeNoteBadgeUIView: UIView {
     var ringColor: UIColor = .label {
@@ -684,8 +623,6 @@ final class NovelLikeNoteBadgeUIView: UIView {
         backgroundColor = .clear
         isOpaque = false
         contentMode = .redraw
-        // Indicator only: the whole highlight is the hit target, and VoiceOver
-        // learns about the note from the annotation itself.
         isUserInteractionEnabled = false
         isAccessibilityElement = false
     }

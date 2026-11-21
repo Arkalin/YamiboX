@@ -1,8 +1,5 @@
 import Foundation
 
-/// Positions only: full bookmark display data is fetched for the winning ID.
-/// Entries arrive in the store's original book order, so duplicates and nearby
-/// novel positions still choose the same first row as the uncached query.
 struct BookmarkPositionIndex: Sendable {
     let workKey: ReadingWorkKey
     let revision: String
@@ -60,9 +57,6 @@ struct BookmarkPositionIndex: Sendable {
             let upperBound = upper.overflow ? Int.max : upper.partialValue
             var offset = lower.overflow ? Int.min : lower.partialValue
             var first: Candidate?
-            // At most 81 integer offsets, regardless of the work's bookmark
-            // count. Hashable preserves Swift's Unicode string equality and
-            // optional-identity equality used by marksSamePlace.
             while offset <= upperBound {
                 if let candidate = positions[offset], first == nil || candidate.order < first!.order {
                     first = candidate

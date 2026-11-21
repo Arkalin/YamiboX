@@ -2,8 +2,6 @@ import Foundation
 import YamiboXCore
 
 extension AppSourceVersion {
-    /// Alert body shared by the launch prompt and the About page's manual
-    /// check: version line, then package size, then release notes.
     var updateAvailableAlertMessage: String {
         var parts = [
             L10n.string("app_update.available_message", version)
@@ -26,10 +24,6 @@ struct AppUpdateLaunchPrompt: Equatable {
     var downloadURL: URL { version.downloadURL }
 }
 
-/// Launch-time update prompt: checks the app source once per launch and
-/// surfaces an alert only when it advertises a version newer than the
-/// running app. Failures and up-to-date results stay silent — the About
-/// page's manual check is the surface that reports those.
 @MainActor
 @Observable
 final class AppUpdateLaunchPrompter {
@@ -63,8 +57,6 @@ final class AppUpdateLaunchPrompter {
         prompt = AppUpdateLaunchPrompt(version: version)
     }
 
-    /// Suppresses future launch prompts for exactly the prompted version;
-    /// a later release prompts again.
     func skipPromptedVersion() {
         if let prompt {
             defaults.set(prompt.version.version, forKey: YamiboAppStorageKey.appUpdateSkippedVersion)

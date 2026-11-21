@@ -1,7 +1,5 @@
 import Foundation
 
-/// One instance per destination. Serializes file + settings commits across windows,
-/// so pruning cannot remove an image another in-flight editor just committed.
 public actor CustomBackgroundPersistence {
     private let settingsStore: SettingsStore
     private let imageStore: CustomBackgroundImageStore
@@ -39,7 +37,6 @@ public actor CustomBackgroundPersistence {
                 try? await imageStore.delete(imageID: imageID)
                 throw error
             }
-            // Cleanup failure must not roll back a successfully committed setting.
             do { try await imageStore.prune(keeping: imageID) }
             catch { YamiboLog.persistence.warning("Failed to prune custom background images: \(error)") }
             return updated

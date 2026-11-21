@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Filter sheet behind the toolbar filter button: multi-select source groups
-/// (Android's forum filter) and tags in one place.
 struct LocalFavoriteFilterSheet: View {
     let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes

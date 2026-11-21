@@ -37,8 +37,6 @@ actor DownloadStore {
         cache.countLimit = 128
         return cache
     }()
-    // A missing asset is only a hint: the writer validates its current
-    // chapter reference and absence before skipping a completeness check.
     nonisolated(unsafe) let missingMangaImageCache: NSCache<NSString, MangaMissingImageCacheEntry> = {
         let cache = NSCache<NSString, MangaMissingImageCacheEntry>()
         cache.countLimit = 32
@@ -371,8 +369,6 @@ actor DownloadStore {
         }
     }
 
-    /// The panel needs chapter state, not queue image projections. Read only this
-    /// owner's metadata and reuse validated files until their directory changes.
     func mangaDownloadStates(ownerName: String) async -> [String: MangaDownloadState] {
         await ensureQueueRecoveredBestEffort()
         guard let ownerName = ownerName.nilIfBlank else { return [:] }
@@ -390,8 +386,6 @@ actor DownloadStore {
                 let works = try Row.fetchAll(db, sql: "SELECT tid FROM download_works WHERE reader_kind = ? AND owner_name = ? ORDER BY tid", arguments: [DownloadReaderKind.manga.rawValue, canonicalOwner])
                 let imageStamp = (try? fileManager.attributesOfItem(atPath: imagesDirectory.path)[.modificationDate]) as? Date
                 let sourceStamp = (try? fileManager.attributesOfItem(atPath: mangaSourcePagesDirectory.path)[.modificationDate]) as? Date
-                // Row descriptions contain every persisted entry field, including
-                // schema/fingerprint. No source HTML or per-image queries here.
                 let signature = [canonicalOwner] + entries.map { String(describing: $0) }
                     + images.map { String(describing: $0) } + works.map { String(describing: $0) }
                 if let previous, previous.signature == signature,
@@ -492,29 +486,10 @@ actor DownloadStore {
         }
     }
 
-    // Every store entry point must run the one-time post-restart queue
-    // recovery before touching queue state. The two wrappers below replace the
-    // per-method `try`/`try?` prefix boilerplate so that "does this operation
-    // tolerate a failed recovery?" is a visible, named decision at each call
-    // site instead of a one-character difference. Concurrent callers await the
-    // same recovery. Only a successful recovery is remembered, allowing a later
-    // explicit refresh to retry after a transient persistence failure.
-    //
-    // They are internal rather than private only because the call sites live
-    // in this actor's sibling extension files; the actor itself is internal,
-    // so nothing is added to the package's public surface.
-
-    /// For operations whose contract is to throw on persistence problems
-    /// (queue mutations, saves, removals): a failed recovery aborts the
-    /// operation before it can act on unrecovered queue state, and the error
-    /// propagates to the caller exactly as the previous inline
-    /// `try await recoverQueueStateAfterRestart()` did.
     func ensureQueueRecovered() async throws {
         try await recoverQueueStateAfterRestart()
     }
 
-    /// Best-effort variant for regenerable download accessors without an error
-    /// channel. Queue and management queries must use the throwing variant.
     func ensureQueueRecoveredBestEffort() async {
         try? await recoverQueueStateAfterRestart()
     }
@@ -541,11 +516,6 @@ actor DownloadStore {
         }
     }
 
-    /// `clearAll()` deletes the whole base directory, so every path that
-    /// recreates it must restore the backup exclusion or fresh downloads would
-    /// silently re-enter iCloud/iTunes backups until the next launch. A failed
-    /// marker write is logged instead of thrown: it must not fail the download
-    /// that triggered the directory creation.
     static func createBackupExcludedDirectory(at directory: URL, fileManager: FileManager) throws {
         if !fileManager.fileExists(atPath: directory.path) {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -654,10 +624,6 @@ actor DownloadStore {
         }
     }
 
-    // Diffs against what's already stored instead of DELETE-then-reinsert-everything, since
-    // callers (e.g. per-image progress updates) invoke this repeatedly for the same
-    // (owner, tid) with a list that mostly repeats its previous contents; a full rewrite
-    // each time is O(n) per call and O(n^2) across a whole chapter's download.
     static func replaceImageList(
         table: String,
         readerKind: String,
@@ -700,8 +666,6 @@ actor DownloadStore {
         }
     }
 
-    /// A scoped image lookup does not need to hydrate the chapter's image list.
-    /// Keep the source-page validity gate used by full membership reads.
     static func mangaOfflineImageFileName(
         imageURLString: String,
         ownerName: String,
@@ -961,9 +925,6 @@ actor DownloadStore {
             return nil
         }
 
-        // Keying on (tid, fileName, fingerprint, byteCount) means a legitimately replaced
-        // source page file (different content -> different fingerprint/byteCount) naturally
-        // misses the download without any explicit invalidation.
         let cacheKey = sourcePageCacheKey(tid: tid, fileName: fileName, fingerprint: fingerprint, byteCount: byteCount) as NSString
         if let cached = sourcePageCache.object(forKey: cacheKey) {
             return cached.sourcePage
@@ -1043,9 +1004,6 @@ actor DownloadStore {
         }
     }
 
-    /// Global max keeps per-kind enqueue order (a new work sorts after every
-    /// existing one) while `download_works_insertion_idx` answers it in
-    /// O(log n) — a per-kind MAX would scan that kind's rows.
     static func nextQueueInsertionIndex(in db: Database) throws -> Int {
         (try Int.fetchOne(
             db,

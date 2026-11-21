@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Circular remote avatar with the person-glyph fallback. `placeholderFont`
-/// scales the fallback glyph for larger avatar sizes; nil inherits the
-/// ambient font like the original inline implementations did.
 struct ForumAvatarView: View {
     @Environment(\.forumTheme) private var theme
     let url: URL?

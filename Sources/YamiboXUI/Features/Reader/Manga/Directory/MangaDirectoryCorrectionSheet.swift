@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Shared correction form for a manga directory's identity (clean book name +
-/// search keywords). Presented from both the reader's directory sheet and the
-/// forum manga detail page.
 struct MangaDirectoryCorrectionSheet: View {
     /// Preferred detents for presenters: medium fits the form at standard
     /// type sizes; large keeps every field reachable (the form scrolls) when

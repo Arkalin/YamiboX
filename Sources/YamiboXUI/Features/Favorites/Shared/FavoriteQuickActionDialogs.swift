@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Confirmation presentations for the favorite quick actions: "sync to Yamibo?" on
-/// add and "also delete from Yamibo?" on remove, each with a remember-choice
-/// toggle. Shared by the thread reader and the detail pages.
 struct FavoriteQuickActionDialogs: ViewModifier {
     @Binding var addPromptPresented: Bool
     @Binding var removePrompt: FavoriteRemovePrompt?
@@ -14,7 +11,6 @@ struct FavoriteQuickActionDialogs: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $addPromptPresented, onDismiss: {
-                // Finish dismissal before the action can present a failure alert.
                 guard let choice = pendingAddChoice else { return }
                 pendingAddChoice = nil
                 onConfirmAdd(choice.syncToRemote, choice.remember)
@@ -126,7 +122,6 @@ private struct FavoriteRemovePromptDialog<Prompt: Identifiable>: ViewModifier {
 
     func body(content: Content) -> some View {
         content.sheet(item: $prompt, onDismiss: {
-            // Keep the confirmed subject after dismissal clears the binding.
             guard let choice = pendingChoice else { return }
             pendingChoice = nil
             onConfirm(choice.prompt, choice.removeRemote, choice.remember)
@@ -142,7 +137,6 @@ private struct FavoriteRemovePromptDialog<Prompt: Identifiable>: ViewModifier {
 }
 
 extension View {
-    /// Shared removal sheet with remote/local actions and a remember-choice toggle.
     func favoriteRemovePromptDialog<Prompt: Identifiable>(
         prompt: Binding<Prompt?>,
         onConfirm: @escaping (_ prompt: Prompt, _ removeRemote: Bool, _ remember: Bool) -> Void

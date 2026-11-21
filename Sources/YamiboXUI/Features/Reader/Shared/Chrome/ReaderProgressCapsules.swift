@@ -289,10 +289,6 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
     let ticks: [ReaderChromeProgressTick]
     let previewSize: CGSize
     let showsPreview: Bool
-    /// How many capsules the chrome is stacking above the action row right
-    /// now, so this scrubber can span exactly that stack. Varies at runtime
-    /// because the 书签与喜欢 capsule only appears once the work has
-    /// annotations.
     let stackedCapsuleCount: Int
     let onPreviewChange: (ReaderProgressScrubPreview?) -> Void
     let onBeginScrub: () -> Void
@@ -365,8 +361,6 @@ struct ReaderVerticalProgressCapsule<PreviewContent: View>: View {
                     .updating($isDragging) { _, dragging, _ in dragging = true }
                     .onChanged { value in
                         if dragStartProgressFraction == nil {
-                            // Touch-down: spin the Taptic Engine up before the
-                            // first haptic of this scrub fires.
                             prepareFeedbackGenerators()
                             dragStartProgressFraction = displayedProgressFraction
                         }
@@ -577,7 +571,6 @@ private struct ReaderVerticalProgressChapterTickOverlay: View {
         booksPalette: ReaderBooksProgressPalette
     ) -> Color {
         if toolbarStyle.effectiveStyle == .books {
-            // Match each segment's text color instead of using the glass accent.
             return booksPalette.chapterTickColor(
                 isCurrent: tick.isCurrent,
                 isRead: tick.positionFraction <= progressFraction,
@@ -609,8 +602,6 @@ struct ReaderVerticalProgressPreviewCapsule: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(toolbarStyle.effectiveStyle == .books ? toolbarInk.opacity(0.7) : Color.secondary)
                 .lineLimit(1)
-                // Digits roll instead of hard-swapping as the scrub sweeps
-                // through pages.
                 .contentTransition(.numericText())
                 .animation(.snappy(duration: 0.18), value: preview.pageNumber)
         }

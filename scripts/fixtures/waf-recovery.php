@@ -1,5 +1,4 @@
 <?php
-// Local-only fixture. Install temporarily; never deploy with a forum release.
 if (getenv('YAMIBO_LOCAL_RUNTIME') !== '1' ||
     !in_array(isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '', array('127.0.0.1:8088', '127.0.0.1:8087'), true)) {
     http_response_code(404);
@@ -46,7 +45,6 @@ if ($mode !== 'counts') {
         . ($isImage ? 'image-' . max(1, min(9, (int)(isset($_GET['n']) ? $_GET['n'] : 1))) . ':' : '') . $mode;
     if ($variant !== '') { $key .= ':' . $variant; }
     $state[$key] = isset($state[$key]) ? $state[$key] + 1 : 1;
-    // Record presence only, never the credential or request body.
     $state['received_forum_auth'] = preg_match('/(?:^|;\s*)[^=;]*_2132_auth=/', isset($_SERVER['HTTP_COOKIE']) ? $_SERVER['HTTP_COOKIE'] : '') === 1;
     $state['auth_seen_by_mode'][$key] = !empty($state['auth_seen_by_mode'][$key]) || $state['received_forum_auth'];
     rewind($file);
@@ -99,8 +97,6 @@ if ($mode === 'off' || $mode === 'single' || ($cleared && $mode !== 'permanent')
         imagestring($image, 5, 80, 450, 'LOCAL WAF FIXTURE ' . $n, imagecolorallocate($image, 255, 255, 255));
         $slow = isset($config['image_slow_ms']) ? max(0, min(2000, (int)$config['image_slow_ms'])) : 0;
         if ($slow > 0) {
-            // Uncompressed PNG is still a real image, large enough to observe
-            // incremental progress and cancel without inventing invalid bytes.
             ob_start(); imagepng($image, null, 0); $png = ob_get_clean();
             header('Content-Length: ' . strlen($png));
             for ($offset = 0; $offset < strlen($png); $offset += 65536) {
@@ -121,8 +117,6 @@ if ($mode === 'self') {
     header('Location: ' . $_SERVER['REQUEST_URI'], true, 302);
     exit;
 }
-// Hold only a blocked response so another real request can commit clearance
-// first. The replay returns through the success branch above without a delay.
 $responseDelay = isset($_GET['fixture_response_delay_ms']) ? max(0, min(8000, (int)$_GET['fixture_response_delay_ms'])) : 0;
 if ($responseDelay > 0) { usleep($responseDelay * 1000); }
 http_response_code(405);

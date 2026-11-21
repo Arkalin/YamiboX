@@ -1,10 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Board-favorite management page, pushed from the favorites screen's
-/// overflow menu. Purely remote: the list mirrors the forum account's
-/// favorited boards and deletes go straight to the forum, with no local
-/// bookkeeping.
 struct FavoriteBoardListView: View {
     @State private var model: FavoriteBoardListViewModel
     @State private var pendingDeletion: BoardFavorite?

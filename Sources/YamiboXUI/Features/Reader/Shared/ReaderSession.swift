@@ -66,7 +66,6 @@ struct ReaderSessionLifecycle {
     var makeMangaReader: @MainActor (MangaLaunchContext, MangaReaderProjection?, @escaping ReaderResumeRouteChangeHandler) -> MangaReaderSessionState
 }
 
-/// One navigation entry, with independently resumable reading modes.
 @MainActor
 @Observable
 final class ReaderSession: Identifiable {
@@ -154,8 +153,6 @@ final class ReaderSession: Identifiable {
                  savingPreviousPosition: Bool = true) {
         guard !isClosed else { return }
         let previousRoute = resumeRoute
-        // Transfer this session out of the navigation column, including its
-        // cached thread model and independently resumable reading modes.
         if presentation == .embeddedThread, content.resumeRoute != nil {
             cancelSwitch()
             lifecycle.didRequestFullScreen(self, content, mangaProjection)
@@ -237,8 +234,6 @@ final class ReaderSession: Identifiable {
     func permitDeviceReader() {
         guard !permitsDeviceReader, externalViewport == nil, !isClosed else { return }
         permitsDeviceReader = true
-        // A new session hasn't mounted a model yet. A returning reader uses
-        // the same transaction as the external side, but with device geometry.
         guard novelReader != nil || mangaReader != nil else { return }
         let viewport = self.viewport
         if novelReader != nil {
@@ -418,7 +413,6 @@ final class ReaderSession: Identifiable {
     }
 
     func updateResumeRoute(_ route: ReaderResumeRoute, contentID: UUID) {
-        // Teardown saves from the previous mode must not replace the new route.
         guard !isClosed, !isPreview, self.contentID == contentID, acceptsResumeRoute(route) else { return }
         remember(route)
         resumeRoute = route
@@ -497,8 +491,6 @@ final class ReaderSession: Identifiable {
             forumID = context.forumID
         }
         await transition(title: L10n.string("reader.switching_to_thread")) {
-            // An exit save must finish even when the user cancels the lookup.
-            // It runs alongside resolution, before committing the new mode.
             let saveTask = Task { await saveProgress() }
             if let cached = self.cachedOriginalPost(url: url) {
                 let savedRoute = await saveTask.value
@@ -612,8 +604,6 @@ final class ReaderSession: Identifiable {
 
     private func transition(title: String = L10n.string("reader.switching"), _ resolve: @escaping @MainActor () async throws -> ReaderSessionPreparedContent) async {
         guard !isSwitching, !isClosed else { return }
-        // Dismissing a cover need not trigger the retained column's onAppear.
-        // An explicit mode switch restores its ownership before resolving.
         if presentation == .embeddedThread { activate() }
         isSwitching = true
         switchingTitle = title
@@ -636,8 +626,6 @@ final class ReaderSession: Identifiable {
                     self.threadModel(for: context, dependencies: self.dependencies.forum)
                         .prepareForOriginalPost(context: context, preloadedPage: prepared.threadPage)
                 }
-                // The original-post transition already flushes the captured
-                // reading position before it can commit its new mode.
                 self.present(next, mangaProjection: mangaProjection, savingPreviousPosition: next.resumeRoute != nil)
             } catch {
                 guard let self, !Task.isCancelled, !self.isClosed, self.contentID == expectedID else { return }

@@ -89,8 +89,6 @@ struct YamiboMangaDirectoryRepository: MangaDirectoryRepository {
                     )
                     try MangaReaderDataSupport.validateReadableMangaHTML(html)
                     if let current = MangaHTMLParser.directoryCurrentPage(from: html), current != page { break }
-                    // Check unfiltered rows: a valid intermediate page can consist
-                    // entirely of threads from a different forum.
                     let pageIDs = MangaHTMLParser.parseTagThreadListHTML(html).map(\.tid).sorted()
                     guard !pageIDs.isEmpty, seenPages.insert(pageIDs).inserted else { break }
                     let pageChapters = MangaHTMLParser.parseTagThreadListHTML(

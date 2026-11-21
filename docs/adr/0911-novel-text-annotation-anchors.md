@@ -1,0 +1,9 @@
+# Keep novel annotation positions independent of rendered surfaces
+
+[NovelTextSelectionController](../../Sources/YamiboXUI/Features/Reader/Novel/TextKit/NovelTextSelectionController.swift) obtains half-open semantic endpoints from the shared document. Store each endpoint's own segment and advance the upper endpoint past the final selected character. This preserves selections that cross an illustration or a visual page boundary; the rectangles clipped to one surface cannot reliably locate both endpoints.
+
+Derive forum page and author metadata from the selection's own viewport sample, not the reader chrome's current page. Multiple surfaces can coexist in one generation, so prefer the exact surface where selection began before asking a surface-local question. Hide capture when there is no semantic anchor; when the endpoints have anchors but cross a chapter boundary, keep the action visible and disabled with an explanation rather than silently hiding it.
+
+[NovelLikeHighlightController](../../Sources/YamiboXUI/Features/Reader/Novel/TextKit/NovelLikeHighlightController.swift) resolves the endpoints against the active projection and uses the live selection geometry for both drawing and hit testing. A prefix maximum in the sorted range index keeps an annotation that started earlier eligible when it overlaps the currently drawn surface. Document order and the item-ID tie breaker make overlapping styles deterministic. Pin the note badge to the annotation's actual start, not the first rectangle on each visible surface. Store changes invalidate this geometry even when the layout generation is unchanged.
+
+Capture bounded excerpt context while the chapter text is already laid out, rather than loading text in each annotation-list row. Older or synced records without context can be backfilled when the relevant projection is laid out; no-op writes must not trigger another observer cycle.

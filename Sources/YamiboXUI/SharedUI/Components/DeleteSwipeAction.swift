@@ -2,9 +2,6 @@ import SwiftUI
 import YamiboXCore
 
 extension View {
-    /// Trailing swipe-to-delete with the standard trash label. `isVisible`
-    /// lets rows drop the action situationally (e.g. while multi-selecting)
-    /// without giving up the shared shape.
     func deleteSwipeAction(
         allowsFullSwipe: Bool = true,
         isVisible: Bool = true,

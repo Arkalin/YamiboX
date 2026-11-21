@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Per-forum and per-category toggles controlling which favorites are checked
-/// for updates.
 struct FavoriteUpdateFilterSheet: View {
     let fidFilters: [FavoriteUpdateFidFilter]
     let categoryFilters: [FavoriteUpdateCategoryFilter]

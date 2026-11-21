@@ -2,21 +2,7 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// Re-lights the colors forum authors write into their posts so they stay
-/// readable on the app's own surfaces.
-///
-/// Post markup carries fixed sRGB values, and the reader paints them onto
-/// surfaces their authors never saw. Applied verbatim `color="black"` measures
-/// 1.24:1 on the dark card, `color="white"` measures 1.07:1 on the cream one,
-/// and a `[backcolor]` highlight leaves the theme's scheme-adaptive body ink on
-/// the author's own background at 1.14:1 — all far under the 4.5:1 floor for
-/// body text. So each foreground is relit per scheme, and only in the scheme
-/// that needs it: no single color clears both surfaces, and the one where the
-/// author's choice already works is left exactly alone. A run carrying its own
-/// background instead takes an ink derived from that background, which cannot
-/// be scheme-adaptive when the background it has to sit on is not.
 enum ForumThreadAuthorColorAdapter {
-    /// The colors one style run contributes; `nil` means "inherit the theme".
     struct RunColors {
         var foreground: Color?
         var background: Color?
@@ -38,18 +24,10 @@ enum ForumThreadAuthorColorAdapter {
                 background: Color(background)
             )
         }
-        // An authored background is one fixed color in both schemes, so the
-        // text on it has to be fixed too — the scheme-adaptive body ink
-        // resolves to near-white and vanishes on a light highlight. An
-        // authored foreground was already chosen against this background, so
-        // it stays verbatim; otherwise whichever theme ink reads better on the
-        // background wins.
         let foreground = RGBColor(forumThreadHex: style.foregroundHex) ?? ink(on: background, theme: theme)
         return RunColors(foreground: Color(foreground), background: Color(background))
     }
 
-    /// Link color for a link sitting inside a run with an authored background.
-    /// Without such a background the scheme-adaptive theme color is right.
     static func linkColor(onBackgroundHex hex: String?, theme: ForumTheme = .classic) -> Color {
         guard let background = RGBColor(forumThreadHex: hex) else {
             return theme.actionText
@@ -68,17 +46,13 @@ enum ForumThreadAuthorColorAdapter {
         return Color(readable)
     }
 
-    /// WCAG AA for body text.
     private static let minimumContrast: Double = 4.5
-    /// Below this saturation an authored color carries no hue worth keeping:
-    /// someone writing `#333333` meant "the normal text color", not a grey.
     private static let achromaticSaturation: Double = 0.10
     private static let nearBlackLightness: Double = 0.25
     private static let nearWhiteLightness: Double = 0.75
 
     private static func adaptedForeground(hex: String?, theme: ForumTheme) -> Color? {
         guard let authored = RGBColor(forumThreadHex: hex) else { return nil }
-        // Alpha is authored content, not a theme contrast preference.
         if authored.alpha < 1 { return Color(authored) }
         let lightSurface = resolved(theme.pageBackground, style: .light)
         let darkSurface = resolved(theme.surface, style: .dark)
@@ -90,32 +64,19 @@ enum ForumThreadAuthorColorAdapter {
         )
     }
 
-    /// Moves an authored color away from `surface` until it clears the floor.
-    /// Which way it moves follows the surface: text on the dark card gets
-    /// lighter, text on the cream page gets darker.
     private static func relit(
         _ color: RGBColor,
         on surface: RGBColor,
         fallbackInk: RGBColor
     ) -> RGBColor {
         guard RGBColor.contrast(color, surface) < minimumContrast else { return color }
-        // Move away from the surface, towards whichever extreme it sits
-        // further from: white for the dark card, black for the cream page.
-        // The near end has no room — nothing is readably darker than #17110D.
         let towardsLight = RGBColor.contrast(.white, surface) >= RGBColor.contrast(.black, surface)
         var hsl = color.hsl
-        // An achromatic color at the far end from the surface is the author
-        // saying "the normal text color" rather than naming a grey, so it
-        // reads as body text instead of washing out to a flat grey.
         if hsl.saturation <= achromaticSaturation {
             if towardsLight ? hsl.lightness <= nearBlackLightness : hsl.lightness >= nearWhiteLightness {
                 return fallbackInk
             }
         }
-        // Hue and saturation are the author's expression, so only lightness
-        // moves, and only far enough to clear the floor. Contrast against a
-        // fixed surface is monotonic in lightness on either side of it, so
-        // bisecting converges on the least invasive value.
         var unreadable = hsl.lightness
         var readable = towardsLight ? 1.0 : 0.0
         for _ in 0 ..< 20 {
@@ -146,7 +107,6 @@ enum ForumThreadAuthorColorAdapter {
 }
 
 private struct HSLColor {
-    /// Degrees, `0 ..< 360`.
     var hue: Double
     var saturation: Double
     var lightness: Double
@@ -179,7 +139,6 @@ private struct RGBColor {
         self.alpha = Double(alpha)
     }
 
-    /// Parses normalized #RRGGBB / #RRGGBBAA without losing authored opacity.
     init?(forumThreadHex hex: String?) {
         guard let hex else { return nil }
         let normalized = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
@@ -239,7 +198,6 @@ private struct RGBColor {
         )
     }
 
-    /// WCAG 2.1 relative luminance.
     var relativeLuminance: Double {
         func channel(_ value: Double) -> Double {
             value <= 0.03928 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)

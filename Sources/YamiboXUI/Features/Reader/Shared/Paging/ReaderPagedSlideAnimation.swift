@@ -1,8 +1,6 @@
 #if os(iOS)
 import UIKit
 
-/// Updates the real scroll position so cells and page-turn shading stay in sync.
-/// Unlike UIScrollView's animated offset, a new touch cannot pause this clock.
 @MainActor
 final class ReaderPagedSlideAnimation {
     private weak var collectionView: UICollectionView?

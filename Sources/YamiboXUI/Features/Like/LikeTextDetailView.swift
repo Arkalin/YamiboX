@@ -2,10 +2,6 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// Full-screen read view for one liked text excerpt. Tapping a text card in
-/// `LikeWorkItemsView` opens this instead of jumping straight to the
-/// original reading position — the jump only happens if the user picks
-/// "跳转原文" from this view's menu.
 struct LikeTextDetailView: View {
     let chapterInfo: String?
     let onSaveNote: (String?) -> Void

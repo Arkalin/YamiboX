@@ -6,15 +6,11 @@ public actor WebDAVSyncSettingsStore {
 
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private static let legacyCredentialReference = "legacy-password"
     private let storage: UserDefaultsJSONStorage<WebDAVSyncSettings>
     private let credentialPersistence: any WebDAVSyncCredentialPersisting
-    /// A read failure must not turn an empty password in the settings screen
-    /// into an instruction to delete the only copy of the secret.
     private var unreadableCredentialReferences: Set<String> = []
 
     public init(defaults: UserDefaults = .standard, key: String = defaultKey) {
@@ -40,10 +36,6 @@ public actor WebDAVSyncSettingsStore {
         loadHydratedSettings()
     }
 
-    /// Publishes a complete settings value behind the same barrier used for a
-    /// destination edit. This is intentionally not used by ordinary receipt
-    /// updates: a sync round must be able to make its small bookkeeping writes
-    /// without cancelling itself.
     public func save(_ settings: WebDAVSyncSettings) async throws {
         _ = try await withConnectionBoundary {
             let current = loadHydratedSettings()
@@ -51,24 +43,17 @@ public actor WebDAVSyncSettingsStore {
         }
     }
 
-    /// Direct reset acquires the same barrier as a connection edit.
     public func reset() async throws {
         try await withConnectionBoundary {
             try resetWithinAccountTransition()
         }
     }
 
-    /// Only the application reset workflow calls this while it already owns
-    /// the account-transition barrier. Never infer ownership from a busy flag.
     func resetWithinAccountTransition() throws {
         let current = loadHydratedSettings()
         _ = try persist(settings: WebDAVSyncSettings(), replacing: current, removingCredential: true)
     }
 
-    /// A URL, username, or password edit is a synchronization boundary. The
-    /// coordinator cancels and joins old/queued runs before this method writes
-    /// the new non-secret settings, so no later run can retain the old target
-    /// merely because it was queued first.
     public func saveConnection(
         baseURLString: String,
         username: String,
@@ -86,10 +71,6 @@ public actor WebDAVSyncSettingsStore {
         }
     }
 
-    /// Establishes the scope for receipt dictionaries before a run fetches or
-    /// admits any remote payload. Account transitions reuse the same settings
-    /// record, so the account UID is part of the scope in addition to the
-    /// destination identity.
     func prepareReceiptScope(
         for settings: WebDAVSyncSettings,
         accountUID: String
@@ -137,9 +118,6 @@ public actor WebDAVSyncSettingsStore {
     func update(_ transform: @Sendable (inout WebDAVSyncSettings) -> Void) throws -> WebDAVSyncSettings {
         var settings = loadHydratedSettings()
         guard !hasUnmigratedPlaintextCredential(settings) else {
-            // `encode(to:)` omits the legacy password. Refuse a bookkeeping
-            // write until the secure migration succeeds rather than silently
-            // deleting the only recoverable copy.
             throw YamiboPersistenceError(context: "WebDAV credential migration is unavailable")
         }
         transform(&settings)
@@ -148,10 +126,6 @@ public actor WebDAVSyncSettingsStore {
         return settings
     }
 
-    /// Executes a synchronous persistence mutation while the coordinator
-    /// barrier is held. Keeping the body synchronous is important: the store
-    /// actor must not call back into the coordinator while the coordinator is
-    /// awaiting the store, which would deadlock an account transition.
     private func withConnectionBoundary<T: Sendable>(
         _ body: () throws -> T
     ) async throws -> T {
@@ -167,10 +141,6 @@ public actor WebDAVSyncSettingsStore {
         }
     }
 
-    /// Reads the non-secret document and hydrates its Keychain reference. An
-    /// old password field is migrated only after the secure write succeeds;
-    /// if either that write or the preference rewrite fails, the old blob is
-    /// deliberately left untouched and remains retryable.
     private func loadHydratedSettings() -> WebDAVSyncSettings {
         var settings = retryPendingCredentialDeletions(storage.load(default: WebDAVSyncSettings()))
 
@@ -198,8 +168,6 @@ public actor WebDAVSyncSettingsStore {
             settings = migrated
             settings.password = legacyPassword
         } catch {
-            // Do not clear or rewrite the old JSON blob on failure. A later
-            // load can retry the secure migration with the plaintext intact.
             YamiboLog.sync.error("Unable to migrate WebDAV credential to Keychain: \(error)")
         }
         return settings
@@ -209,10 +177,6 @@ public actor WebDAVSyncSettingsStore {
         settings.credentialReference == nil && !settings.password.isEmpty
     }
 
-    /// Writes the secret first (when one is needed), then writes only the
-    /// non-secret settings document. A new reference makes the two stores
-    /// recoverable if the preference write fails: the old reference still
-    /// serves the old document, and the new item can be removed as an orphan.
     private func persist(
         settings requested: WebDAVSyncSettings,
         replacing current: WebDAVSyncSettings,
@@ -223,8 +187,6 @@ public actor WebDAVSyncSettingsStore {
         let oldReference = current.credentialReference
         if !removingCredential, requested.password.isEmpty,
            let oldReference, unreadableCredentialReferences.contains(oldReference) {
-            // A failed hydration is not an explicit request to erase a secret,
-            // even when another connection field was edited in the meantime.
             throw YamiboPersistenceError(context: "WebDAV credential is temporarily unavailable")
         }
         let passwordUnchanged = requested.password == current.password
@@ -256,16 +218,11 @@ public actor WebDAVSyncSettingsStore {
 
         var removedOldReference = false
         if targetReference == nil, let oldReference {
-            // Do not remove the only secure copy until the new connection
-            // value is ready to be published. If the defaults write fails,
-            // the catch block restores this reference from the old settings.
             try credentialPersistence.remove(reference: oldReference)
             removedOldReference = true
         }
 
         if let oldReference, oldReference != targetReference, !removedOldReference {
-            // Persist cleanup intent with the replacement reference so a
-            // transient Keychain deletion failure remains retryable on launch.
             next.pendingCredentialDeletionReferences.insert(oldReference)
         }
 
@@ -304,7 +261,6 @@ public actor WebDAVSyncSettingsStore {
             try storage.save(updated)
             return updated
         } catch {
-            // Deletion is idempotent; retaining the intent is safe to retry.
             YamiboLog.sync.warning("Unable to save WebDAV credential cleanup state: \(error)")
             return settings
         }

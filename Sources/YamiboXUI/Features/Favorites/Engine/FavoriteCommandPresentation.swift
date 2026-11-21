@@ -1,6 +1,5 @@
 import YamiboXCore
 
-/// Pending remote-deletion question, owned by the presenting interface.
 struct FavoriteRemovePrompt: Identifiable, Equatable, Sendable {
     let favorite: Favorite
     var id: String { favorite.threadID }

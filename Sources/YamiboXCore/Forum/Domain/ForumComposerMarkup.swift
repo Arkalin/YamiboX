@@ -13,7 +13,6 @@ public struct ForumComposerWrapper: Equatable, Sendable {
     public let link: URL?
     public let isQuote: Bool
 
-    /// Equivalent tags share toolbar behavior without rewriting their source.
     public var formattingName: String {
         switch name {
         case "strong": "b"
@@ -57,8 +56,6 @@ public struct ForumComposerRun: Sendable {
     }
 }
 
-/// The editing model keeps original delimiters alongside native text runs.
-/// Unknown markup stays literal instead of disappearing in a lossy conversion.
 public enum ForumComposerMarkup {
     public static func serialize(_ runs: [ForumComposerRun], format: ForumComposerFormat) -> String {
         var source = ""

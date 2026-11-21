@@ -3,12 +3,6 @@ import Foundation
 public enum ForumNavigationSource: String, Codable, Hashable, Sendable {
     case external
     case readerOrigin
-    /// A novel/manga reader's "查看原帖"-style jump into its own thread.
-    /// Same native-thread-reader routing as `.readerOrigin`, but the opened
-    /// reader is a discussion companion view for the work's tid, so it must
-    /// not produce its own browsing-history row (browsing-history decision
-    /// #14) — unlike `.readerOrigin` opens from favorites/history, which are
-    /// real visits and do record.
     case readerDiscussion
 }
 
@@ -188,12 +182,10 @@ public enum ForumRouteResolver {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         let items = components.queryItems ?? []
         guard let uid = items.value(named: "touid")?.nilIfBlank else { return nil }
-        // Touch-template form: home.php?mod=space&do=pm&subop=view&touid=…
         if items.value(named: "mod") == "space",
            items.value(named: "do") == "pm" {
             return uid
         }
-        // Legacy desktop form: home.php?mod=spacecp&ac=pm&op=showmsg&touid=…
         if items.value(named: "mod") == "spacecp",
            items.value(named: "ac") == "pm",
            items.value(named: "op") == "showmsg" {

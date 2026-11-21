@@ -17,9 +17,6 @@ public struct NovelLaunchContext: Codable, Hashable, Identifiable, Sendable {
     public var initialView: Int?
     public var authorID: String?
     public var initialResumePoint: NovelResumePoint?
-    /// When true, this reader session must not persist reading progress,
-    /// resume route, or Favorite Library recency. See Reader Preview Mode in
-    /// docs/contexts/reader-navigation/CONTEXT.md.
     public var isPreview: Bool
 
     public var id: String { threadID }

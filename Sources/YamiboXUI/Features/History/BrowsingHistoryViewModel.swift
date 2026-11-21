@@ -2,14 +2,12 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// Timeline and work-level favorite membership share one canonical snapshot.
 @MainActor
 @Observable
 final class BrowsingHistoryViewModel {
     let showsPreviousReading: Bool
     var entries: [BrowsingHistoryEntry] = []
     var selectedCategory: BrowsingHistoryCategory?
-    /// The configuration snapshot used to canonicalize the displayed rows.
     private(set) var boardReaderSettings = BoardReaderSettings()
     private(set) var showsNormalThreadProgress = false
     var searchText = ""
@@ -46,13 +44,9 @@ final class BrowsingHistoryViewModel {
     @ObservationIgnored private let settingsStore: SettingsStore
     @ObservationIgnored private let makeFavoriteRepository: @Sendable () async -> any ForumThreadFavoriteRemoteOperating
     @ObservationIgnored private let openTargetResolver: BrowsingHistoryOpenTargetResolver
-    /// Debounces the reload storms this page is exposed to: store change
-    /// signals fire every ~350ms while a reader opened from here keeps
-    /// saving positions. Search has a separate in-memory filter debounce.
     @ObservationIgnored private var pendingReloadTask: Task<Void, Never>?
     @ObservationIgnored private var pendingFilterTask: Task<Void, Never>?
     @ObservationIgnored private var unfilteredEntries: [BrowsingHistoryEntry] = []
-    /// Drops stale reload results when a newer reload has since started.
     @ObservationIgnored private var reloadGeneration = 0
 
     init(dependencies: BrowsingHistoryDependencies, showsPreviousReading: Bool = false) {
@@ -141,8 +135,6 @@ final class BrowsingHistoryViewModel {
         entry.category(boardReader: boardReaderSettings)
     }
 
-    /// Coalesces reload triggers behind a short debounce; `reload()` itself
-    /// stays available for the initial load and explicit user actions.
     func scheduleReload() {
         pendingReloadTask?.cancel()
         pendingReloadTask = Task { [weak self] in
@@ -152,11 +144,6 @@ final class BrowsingHistoryViewModel {
         }
     }
 
-    /// Follows history-store changes (recording readers, deletes from this
-    /// page) and favorite-library changes (heart state) for the lifetime of
-    /// the page. No changeID guards in these three observers, as before:
-    /// every change through the instances this page holds should refresh it,
-    /// its own writes included.
     func observeHistoryChanges() async {
         for await _ in browsingHistoryStore.changes() {
             guard !Task.isCancelled else { return }
@@ -171,8 +158,6 @@ final class BrowsingHistoryViewModel {
         }
     }
 
-    /// Reload through the workflow so configuration, identity and position
-    /// change together, including when the page stays in the navigation stack.
     func observeSettingsChanges() async {
         for await _ in settingsStore.changes() {
             guard !Task.isCancelled else { return }
@@ -222,7 +207,6 @@ final class BrowsingHistoryViewModel {
         }
     }
 
-    // MARK: - Favorite actions
 
     func favoriteThreadID(for entry: BrowsingHistoryEntry) -> String? {
         entry.target.threadID ?? entry.chapterThreadID ?? entry.lastVisitedThreadID
@@ -307,9 +291,6 @@ final class BrowsingHistoryViewModel {
 }
 
 extension BrowsingHistoryCategory {
-    /// Favorite target kind a row of this (effective) category stamps when
-    /// hearted — the display/open category and the favorited identity must
-    /// never disagree.
     var favoriteTargetKind: FavoriteItemTargetKind {
         switch self {
         case .normal:

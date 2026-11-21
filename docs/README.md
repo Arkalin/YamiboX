@@ -18,6 +18,8 @@
 | [贡献指南](../CONTRIBUTING.md) | 如何反馈问题、准备贡献、验证改动与提交 PR |
 | [本地开发入门](development/local-development.md) | 如何准备依赖、构建、安装和排查本地环境 |
 | [架构总览](architecture.md) | 模块与业务目录如何划分，依赖如何约束 |
+| [架构决策记录](adr/) | 代码中不显而易见的取舍、约束及其背景 |
+| [Swift 注释减量](development/comment-ratchet.md) | 如何检查、盘点和逐步清理存量注释 |
 | [平台集成与资源维护](development/platform-and-resources.md) | 系统能力、平台实现、本地化、主题与资源如何接入 |
 | [CI 与版本发布维护](development/release.md) | CI、版本身份、发布产物与软件源如何配合 |
 | [图标设计与制作](design/app-icon.md) | 图标源文件、导出工具与系统显示检查如何维护 |

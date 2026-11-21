@@ -1,45 +1,15 @@
 import Foundation
 
-/// Selectors repeated across the list parsers in this file. Top-level `private`
-/// so the same-named groups in the sibling `UserSpaceHTMLParser+…` files stay
-/// strictly file-scoped.
 private enum Selectors {
-    /// Thread links in both URL forms (query-param and SEO rewrite).
     static let threadLink = "a[href*='viewthread'][href*='tid='], a[href*='thread-']"
-    /// Reply rows link through the redirect/findpost form instead.
     static let findPostLink = "a[href*='findpost'][href*='ptid='], a[href*='findpost'][href*='tid=']"
 }
 
-/// Simplified/traditional pairs of the list-row statistic labels (legacy
-/// text-labelled shapes only — the touch template uses icons, see below).
 private enum Labels {
     static let replyCount = ["回复", "回復"]
     static let viewCount = ["查看", "浏览", "瀏覽"]
 }
 
-/// User-space "my content" list pages (touch templates `space_thread.htm` /
-/// `space_blog_list.htm`): own threads, own replies, own blogs.
-///
-/// Touch row shape shared by these lists:
-/// ```html
-/// <li class="list">
-///   <div class="threadlist_top cl">
-///     <a href="home.php?mod=space&uid=N" class="mimg"><img …></a>
-///     <div class="muser"><h3><a … class="mmc">AUTHOR</a></h3><span class="mtime">TIME</span></div>
-///   </div>
-///   <a href="…"><div class="threadlist_tit cl"><span class="micon">投票</span><em>SUBJECT</em></div></a>
-///   <a href="…"><div class="threadlist_mes cl">EXCERPT</div></a>
-///   <div class="threadlist_foot cl"><ul>
-///     <li class="mr"><a>#FORUM</a></li>
-///     <li><i class="dm-eye-fill"></i>VIEWS</li>
-///     <li><i class="dm-chat-s-fill"></i>REPLIES</li>
-///   </ul></div>
-/// </li>
-/// ```
-/// Times are `date(…,'u')` output — relative phrases for recent items — and are
-/// kept verbatim. Counts hang off the foot icons, never off text labels.
-/// Reply rows (`type=reply`) link via `mod=redirect&goto=findpost&ptid=…&pid=…`
-/// with the quoted own reply in a `.quote blockquote` block.
 extension UserSpaceHTMLParser {
     static func parseThreads(from html: String) throws -> UserSpaceThreadPage {
         try YamiboHTMLPageInspector.ensureReadable(html)
@@ -105,8 +75,6 @@ extension UserSpaceHTMLParser {
                   seen.insert(blogID).inserted else {
                 continue
             }
-            // The touch blog row wraps title AND excerpt in one anchor —
-            // scope each to its own node before falling back to the link text.
             let title = firstNonBlank([
                 link.firstText(".threadlist_tit"),
                 link.normalizedText().nilIfBlank
@@ -178,7 +146,6 @@ extension UserSpaceHTMLParser {
         return threads
     }
 
-    /// Count next to a `.threadlist_foot` icon (`<i class="dm-eye-fill"></i>300`).
     private static func footCount(in row: Element, iconClass: String) -> Int? {
         guard let icon = row.selectFirst("i.\(iconClass)"),
               let cell = icon.parent() else {
@@ -189,14 +156,11 @@ extension UserSpaceHTMLParser {
             .flatMap(Int.init)
     }
 
-    /// Legacy text-labelled counts ("回复: 12") for non-touch page shapes.
     private static func legacyCount(labels: [String], in container: Element?) -> Int? {
         guard let text = container?.normalizedText().nilIfBlank else { return nil }
         return intAfterAny(labels: labels, in: text)
     }
 
-    /// Row timestamp, kept verbatim — recent items render as relative phrases
-    /// ("昨天 22:11", "3 天前") that the absolute-date regex cannot see.
     private static func rowTimeText(in row: Element) -> String? {
         firstNonBlank([
             row.firstText(".muser .mtime"),

@@ -36,7 +36,6 @@ final class ChapterCommentFilterModel {
             discussions = []
             return
         }
-        // Do not expose another chapter's list while the new projection loads.
         if case let .loaded(previousTarget, _) = state, previousTarget == target {} else {
             state = .loading(target)
         }
@@ -58,7 +57,7 @@ final class ChapterCommentFilterModel {
                 discussions = page.discussions.compactMap { $0.filtering(visibleIDs: visibleIDs) }
                 hasHiddenComments = comments.count < page.comments.count
                 state = .loaded(target, visiblePage)
-            } catch { /* Cancelled projections never replace a newer result. */ }
+            } catch { }
         }
     }
 

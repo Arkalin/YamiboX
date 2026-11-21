@@ -15,12 +15,6 @@ package struct NovelReadingSpread: Identifiable, Equatable, Sendable {
         self.chapterTitle = chapterTitle
     }
 
-    /// Pairs consecutive surfaces into two-page spreads, never pairing across
-    /// a document-view boundary (a view's trailing odd surface renders alone).
-    /// Lives on the spread type as the single pairing rule: the reading
-    /// session (ordinal bookkeeping) and the reading workflow (presentation
-    /// projection) each used to carry a private copy, and any drift between
-    /// them would desync spread selection from what is rendered.
     package static func makeSpreads(from surfaces: [NovelTextViewportIndexSurface]) -> [NovelReadingSpread] {
         guard !surfaces.isEmpty else { return [] }
 
@@ -346,9 +340,6 @@ package struct NovelReadingSession: Sendable {
     }
 
     public func captureNovelReadingPosition() -> NovelResumePoint? {
-        // The visible edge of a spread is a display detail. Hold the exact
-        // admitted semantic anchor after a layout-only change until a page
-        // turn or a live viewport sample supplies a new reading position.
         preservedResumePoint ?? currentNovelReadingPosition()
     }
 
@@ -390,13 +381,6 @@ package struct NovelReadingSession: Sendable {
         )
     }
 
-    /// Where each chapter sits on the forum page currently laid out, keyed by
-    /// chapter identity.
-    ///
-    /// Derived from segment order rather than from the novel directory: the
-    /// projection is always in hand here, the directory may not be, and the
-    /// ordinal only has to disambiguate posts *within* one page — the page
-    /// number already separates pages.
     public func currentChapterOrdinalsByIdentity() -> [NovelChapterIdentity: Int] {
         var ordinals: [NovelChapterIdentity: Int] = [:]
         var nextOrdinal = 0
@@ -511,8 +495,6 @@ package struct NovelReadingSession: Sendable {
             documentView: displayedViewCandidate(for: preferredSurfaceOrdinal, surfaces: surfaces, spreads: spreads)
         )
         let effectiveResumePoint = pendingResumePoint ?? preferredResumePoint
-        // Restore using the incoming document's coordinate index, not the
-        // previous generation (or nil on the first open).
         self.layoutResult = layoutResult
         let resolvedTarget = effectiveResumePoint.flatMap { resolveResumePoint($0, in: surfaces) } ?? fallbackTarget
         let normalizedSurfaceOrdinal = normalizedPagedSurfaceOrdinal(
@@ -598,7 +580,6 @@ package struct NovelReadingSession: Sendable {
         }
 
         let normalizedIndex = max(0, min(surfaceOrdinal, max(surfaces.count - 1, 0)))
-        // Spreads are ordered and disjoint, including odd document tails.
         var lower = 0
         var upper = spreads.count
         while lower < upper {
@@ -758,13 +739,6 @@ package struct NovelReadingSession: Sendable {
         )
     }
 
-    /// A liked image's resume point stores the image's identity in the same
-    /// `textSegmentIdentity` field text resume points use (see
-    /// `NovelImageLikeAnchor.imageSegmentIdentity`), but the image itself
-    /// lives on a surface's `externalBlocks`, not its `ranges` — so it never
-    /// matches `resolveTextSegmentIdentity` above. Without this, an image
-    /// resume point always falls through to `resolveChapterIdentity`, which
-    /// lands on the first surface of the chapter rather than the liked image.
     private func resolveImageSegmentIdentity(
         _ imageSegmentIdentity: NovelTextSegmentIdentity,
         surfacesInView: [NovelTextViewportIndexSurface]

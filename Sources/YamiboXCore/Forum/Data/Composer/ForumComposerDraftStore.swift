@@ -1,8 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Account-scoped local drafts. Tombstones and database generations reject late
-/// saves after deletion/reset, including saves from another instance of the store.
 public actor ForumComposerDraftStore: ForumComposerDraftPersisting {
     private let database: DatabasePool
     private let resourceDirectory: URL

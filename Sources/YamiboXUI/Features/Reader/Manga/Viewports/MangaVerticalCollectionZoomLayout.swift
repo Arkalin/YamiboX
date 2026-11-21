@@ -1,7 +1,5 @@
 import CoreGraphics
 
-/// Chapter geometry in unscaled reader coordinates. Rebuilt for width/ratio
-/// changes only; zoom and scroll queries use a binary search.
 struct MangaVerticalCollectionZoomLayout: Equatable {
     var pageIDs: [String] = []
     var frames: [CGRect] = []

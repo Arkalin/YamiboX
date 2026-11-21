@@ -1,8 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// Receives only the dedicated noninteractive scene, never a SwiftUI app
-/// window. UIKit can connect it before the shared app services are ready.
 public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowSceneDelegate {
     weak var displayCoordinator: ReaderExternalDisplayCoordinator?
     private(set) var registrationID: UUID?
@@ -35,7 +33,6 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
         if window != nil { removeWindow() }
         let window = UIWindow(windowScene: scene)
         window.backgroundColor = .black
-        // The noninteractive scene does not inherit the owner window's appearance.
         window.overrideUserInterfaceStyle = interfaceStyle
         let controller = ReaderExternalDisplayContainer(host: UIHostingController(rootView: content))
         window.rootViewController = controller
@@ -59,9 +56,6 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
 
     func retireWindow() {
         conceal(true)
-        // Give the connected display a committed neutral frame before UIKit
-        // removes the accessory. Immediate removal can leave the compositor's
-        // previous buffer presented even though the app window is gone.
         retirement?.cancel()
         guard scene != nil, window != nil else { removeWindow(); return }
         retirement = Task { [weak self] in
@@ -71,8 +65,6 @@ public final class ReaderExternalDisplaySceneDelegate: UIResponder, UIWindowScen
     }
 }
 
-/// The privacy layer is a sibling *above* the hosting view and isn't itself
-/// a modal presentation. UIKit doesn't reorder it below a SwiftUI update.
 private final class ReaderExternalDisplayContainer: UIViewController {
     let host: UIViewController
     let cover = UIView()
@@ -103,7 +95,6 @@ private final class ReaderExternalDisplayContainer: UIViewController {
     func conceal(_ concealed: Bool) {
         loadViewIfNeeded()
         UIView.performWithoutAnimation {
-            // Keep the viewport mounted for initial layout and restoration.
             host.view.accessibilityElementsHidden = concealed
             cover.isHidden = !concealed
             view.bringSubviewToFront(cover)
@@ -129,8 +120,6 @@ final class ReaderExternalDisplayScenes {
     }
 }
 
-/// Keep one accessory on the owner controller, including while its reader
-/// view is being exchanged for a trackpad or a device interaction.
 struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
     let update: (Host) -> Void
 
@@ -236,8 +225,6 @@ struct ReaderExternalDisplayRegistrationHost: UIViewControllerRepresentable {
         func disableAfterPrivacyFrame() {
             guard setEnabled != nil else { return }
             deactivation?.cancel()
-            // Disable only after the old window has painted black. A cover
-            // that remains mounted can offer the same registration again.
             deactivation = Task { [weak self] in
                 do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
                 self?.setEnabled?(false)

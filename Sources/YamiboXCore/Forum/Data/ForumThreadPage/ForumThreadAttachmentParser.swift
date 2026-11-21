@@ -1,9 +1,6 @@
 import Foundation
 
-/// Parses attachment listings of a post: the in-body `ul.post_attlist` block and
-/// the attachment entries rendered in the post footer.
 enum ForumThreadAttachmentParser {
-    /// Attachment described by an in-body `ul.post_attlist` element, or nil.
     static func attachmentListBlock(from element: Element) -> ForumThreadAttachmentBlock? {
         guard let link = element.select("a[href]").first(),
               let url = HTMLTextExtractor.absoluteURL(from: link.attr("href")) else {
@@ -26,7 +23,6 @@ enum ForumThreadAttachmentParser {
         )
     }
 
-    /// Attachments listed in the post footer, excluding ones nested inside the message body.
     static func footerAttachments(in container: Element, body: Element) -> [ForumThreadAttachmentBlock] {
         let bodyElementID = body.id()
         func outsideBody(_ element: Element) -> Bool {

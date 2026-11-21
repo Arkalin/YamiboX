@@ -2,11 +2,6 @@
 import SwiftUI
 import UIKit
 
-/// SwiftUI's `fullScreenCover` always presents/dismisses with a vertical slide and exposes no
-/// way to change that, so this reaches into the presented `UIViewController` to switch it to a
-/// cross-dissolve (fade) transition instead — used so the image browser fades in/out rather than
-/// sliding, matching the rest of its dismiss animation. Only the browser's `.fade` presentation
-/// uses this; `.zoom` hosts get the system zoom transition via `navigationTransition` instead.
 private struct ModalTransitionStyleConfigurator: UIViewControllerRepresentable {
     let style: UIModalTransitionStyle
 

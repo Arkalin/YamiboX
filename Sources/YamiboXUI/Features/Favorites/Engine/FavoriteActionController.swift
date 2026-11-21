@@ -14,7 +14,6 @@ enum FavoriteMemberManagement: String, Identifiable {
     var id: String { rawValue }
 }
 
-/// The resolved members drive both star presentation and mutations.
 @MainActor
 @Observable
 final class FavoriteActionController {
@@ -104,8 +103,6 @@ final class FavoriteActionController {
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
                     self.storeRevision += 1
-                    // Do not supersede a command's preflight read. It retries
-                    // if invalidated, and refreshes again when the command ends.
                     if self.isWorking { self.needsRefresh = true; continue }
                     await self.refreshFavorite()
                 }
@@ -284,8 +281,6 @@ final class FavoriteActionController {
         defer { finishOperation() }
         locationPickerContext = nil
         guard await refreshFavorite(), let membership else { return }
-        // A sibling may have been added while the new-item picker was open.
-        // Never reinterpret its empty selection as a group deletion.
         if membership.isSmartManga, membership.isFavorited {
             management = .locations
             return

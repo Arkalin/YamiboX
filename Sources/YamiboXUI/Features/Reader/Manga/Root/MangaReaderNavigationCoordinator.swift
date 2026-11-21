@@ -2,31 +2,15 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// Owns the manga reader's wayfinding across nonlinear jumps: the
-/// back/forward navigation history, the request sequencing that lets a
-/// newer jump invalidate an older one's history bookkeeping, and the
-/// linear-reading expiration that clears stale anchors after enough
-/// ordinary page turns. Observable history is owned here; view-model computed
-/// properties forward reads without duplicating state or observation signals.
 @MainActor
 @Observable
 final class MangaReaderNavigationCoordinator {
-    /// How a single restore attempt against reader content ended. The view
-    /// model performs the actual jump (prefetch cancellation, content
-    /// generations, presentation publishing are reader-content concerns);
-    /// the coordinator only sequences attempts and history bookkeeping.
     enum RestoreAttemptOutcome {
-        /// Content moved to the target; adjacent prefetch should resume
-        /// around this global page index.
         case restored(prefetchIndex: Int)
-        /// The whole restore request is void (no workflow, or the jump was
-        /// cancelled) — stop without touching the remaining candidates.
         case aborted
-        /// This target failed to load; discard it and try the next one.
         case failed
     }
 
-    /// Reading context and load effects supplied by the owning view model.
     struct Reading {
         var stableReadingPosition: @MainActor () -> MangaReadingPosition?
         var restorePosition: @MainActor (MangaReadingPosition) async -> RestoreAttemptOutcome

@@ -162,8 +162,6 @@ public struct MineHomeView: View {
                     },
                     showHistory: {
                         if appModel.selectConfiguredTab(.history) { return }
-                        // Keep history and its thread pages in the same path
-                        // so a thread push preserves the history page below it.
                         navigator.push(.browsingHistory)
                     }
                 )

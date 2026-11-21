@@ -6,7 +6,6 @@ package enum AppRuntimePhase: Sendable {
     case background
 }
 
-/// Owns app-lifetime subscriptions, not the lifetimes of the views showing them.
 @MainActor
 package final class AppRuntimeCoordinator {
     struct StoreObservation {
@@ -48,7 +47,6 @@ package final class AppRuntimeCoordinator {
         let id = UUID()
         runID = id
 
-        // Register before returning, so writes need not wait for task scheduling.
         for observation in observations {
             let stream = observation.changes()
             observationTasks.append(Task { [weak self] in
@@ -67,7 +65,6 @@ package final class AppRuntimeCoordinator {
         }
     }
 
-    /// Does not flush or undo work already handed to the continuity workflow.
     package func stop() {
         guard runID != nil else { return }
         runID = nil
@@ -80,8 +77,6 @@ package final class AppRuntimeCoordinator {
         actions.invalidateUnread()
     }
 
-    /// Returns true only for a new phase in a running runtime, including the
-    /// initial phase. The UI adapter uses this receipt for platform side effects.
     @discardableResult
     package func transition(to nextPhase: AppRuntimePhase) -> Bool {
         guard let runID, phase != nextPhase else { return false }

@@ -1,6 +1,4 @@
 <?php
-// Temporary, opt-in local hook. Include before Discuz bootstrap, then remove.
-// Only a specifically seeded test session is affected, never other local users.
 if (getenv('YAMIBO_LOCAL_RUNTIME') !== '1' ||
     (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '') !== '127.0.0.1:8088') { return; }
 $fixtureRun = isset($_COOKIE['nox_fixture']) ? $_COOKIE['nox_fixture'] : '';

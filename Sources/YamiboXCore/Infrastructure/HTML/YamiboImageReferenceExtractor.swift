@@ -1,24 +1,14 @@
 import Foundation
 
-/// The forum's image reference rules in one place: which element attributes
-/// carry the real image URL in each page template, which references are
-/// template noise, and how raw references normalize to absolute URLs.
 struct YamiboImageReferenceExtractor: Sendable {
-    /// Mobile manga view pages: `zsrc` carries the lazy-loaded original.
-    /// Smiley filtering happens at the CSS-selector level in the caller.
     static let mangaPage = Self(attributes: ["zsrc", "src"], rejectedSubstrings: [])
-    /// Post image listings reused by reader fallbacks: `static/image/` assets are forum chrome.
     static let forumPostImage = Self(attributes: ["zsrc", "src"], rejectedSubstrings: ["static/image/"])
-    /// Forum thread content blocks: `none.gif` is the lazy-load placeholder.
     static let forumContent = Self(attributes: ["file", "zoomfile", "src"], rejectedSubstrings: ["none.gif"])
-    /// Novel inline images: `smiley/` assets are emoticons.
     static let novelInline = Self(attributes: ["zoomfile", "file", "src"], rejectedSubstrings: ["smiley/"])
 
     var attributes: [String]
     var rejectedSubstrings: [String]
 
-    /// Picks the first non-empty attribute in priority order; a chosen value
-    /// matching a rejected substring disqualifies the element entirely.
     func rawReference(from element: Element) -> String? {
         for attribute in attributes {
             let value = element.attr(attribute)

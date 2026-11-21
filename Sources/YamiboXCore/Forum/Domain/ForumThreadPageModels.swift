@@ -10,7 +10,6 @@ public struct ForumThreadPage: Codable, Equatable, Sendable {
     public var forumID: String?
     public var forumName: String?
     public var formHash: String?
-    /// Nil on legacy caches. Only current parser output may skip HTML repair.
     public var contentParserVersion: Int?
 
     public init(
@@ -44,7 +43,6 @@ public struct ForumThreadPost: Codable, Equatable, Identifiable, Hashable, Senda
     public var author: BlogReaderUser
     public var postedAtText: String?
     public var lastEditedText: String?
-    /// Resolved at HTML capture time, never when decoding a cached page.
     public var postedAt: Date?
     public var lastEditedAt: Date?
     public var contentHTML: String

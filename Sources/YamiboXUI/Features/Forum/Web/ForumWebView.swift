@@ -261,7 +261,6 @@ public struct IOSForumWebView: UIViewRepresentable {
             for navigationAction: WKNavigationAction,
             windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
-            // Target-blank requests are handled once in the action policy.
             return nil
         }
 
@@ -273,8 +272,6 @@ public struct IOSForumWebView: UIViewRepresentable {
                 guard let self, let webView else { return }
                 defer { nativeNavigationTask = nil }
                 guard let snapshot = try? await sessionStore.snapshot() else { return }
-                // Commit the login response's cookies before the native screen
-                // builds its first authenticated URLSession request.
                 let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
                     .map { YamiboCookie($0) }
                     .filter { YamiboDomain.isYamiboCookieDomain($0.domain) }
@@ -302,16 +299,10 @@ public struct IOSForumWebView: UIViewRepresentable {
         private func startObservingSessionChanges() {
             guard sessionObservationTask == nil, !isChangingAccount else { return }
 
-            // `sessionStore` is captured directly (not through `self`) so the
-            // stream can be obtained even after the coordinator goes away —
-            // mirroring how the old NotificationCenter loop outlived `self`
-            // until cancellation.
             sessionObservationTask = Task { @MainActor [weak self, sessionStore] in
                 for await changeID in sessionStore.changes() {
                     guard !Task.isCancelled else { return }
                     guard let self else { return }
-                    // Per-instance stream: the guard is kept as the explicit
-                    // "only this exact store instance" contract.
                     guard changeID == sessionStore.changeID else {
                         continue
                     }
@@ -333,9 +324,6 @@ public struct IOSForumWebView: UIViewRepresentable {
             didObserveAuthentication = true
             lastAuthenticationCookie = authenticationCookie
 
-            // `nilIfBlank`, not `nilIfEmpty`: this file's deleted private
-            // `nilIfEmpty` copy trimmed whitespace, so the trimming variant is
-            // the behavior-preserving replacement.
             if let userAgent = sessionState.userAgent.nilIfBlank,
                webView.customUserAgent != userAgent {
                 webView.customUserAgent = userAgent
@@ -345,8 +333,6 @@ public struct IOSForumWebView: UIViewRepresentable {
             case .none:
                 return
             case .injectWAFCookies:
-                // Never delete/reseed authentication while the bridge may be
-                // replaying a navigation with the newly committed clearance.
                 await injectCookies(sessionState.cookies.filter { YamiboCookie.isWAFCookie($0.name) }, into: webView, wafOnly: true)
             case let .injectCookies(reload):
                 await injectCookies(sessionState.cookies, into: webView)
@@ -506,19 +492,6 @@ private extension WKUserScript {
         )
     }
 
-    /// Rules that recolor the forum page to match the active forum theme.
-    ///
-    /// Light mode blankets known structural containers (wrap/bm/tl/threadlist)
-    /// because the site's own light skin is visually inconsistent across them.
-    /// Dark mode intentionally stays conservative: only `html,body` get a
-    /// background + default text color override. The site has no dark theme
-    /// of its own, so we can't know which nested elements set their own
-    /// explicit background/text colors (forum posts routinely do, e.g.
-    /// per-author BBCode colors) — blanket-overriding those in dark mode
-    /// risks illegible text (dark text forced onto a dark box, or vice
-    /// versa). Leaving them unset lets explicit site/post colors keep
-    /// showing through, same as how per-post author colors are left alone
-    /// elsewhere in this app.
     static func yamiboHideChromeSource(_ appearance: ForumWebAppearance) -> String {
         let themeRules: [String]
         if appearance.isDark {

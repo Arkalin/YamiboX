@@ -18,7 +18,6 @@ public struct MangaDirectory: Codable, Hashable, Sendable, Identifiable {
 
     public var favoriteIdentity: String { id.rawValue }
 
-    /// Historical progress key, retained exclusively for the one-way importer.
     var legacyFavoriteIdentity: String {
         let normalizedSourceKey = sourceKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if !normalizedSourceKey.isEmpty, normalizedSourceKey != cleanBookName {
@@ -72,8 +71,6 @@ public struct MangaDirectory: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// Lightweight per-directory listing used by the settings storage-management
-/// screen — chapter count instead of every chapter's full metadata.
 public struct MangaDirectorySummary: Identifiable, Hashable, Sendable {
     public let id: MangaDirectoryID
     public var cleanBookName: String

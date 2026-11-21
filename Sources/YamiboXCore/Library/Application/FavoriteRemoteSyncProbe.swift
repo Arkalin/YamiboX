@@ -1,7 +1,5 @@
 import Foundation
 
-/// Repository composition for a single sync run. The UI owns the run's task,
-/// while classification, metadata, covers and add-token reuse stay in Core.
 public extension FavoriteYamiboSyncClient {
     init(
         repository: any FavoriteRemoteSyncOperating,
@@ -44,8 +42,6 @@ public extension FavoriteYamiboSyncClient {
     }
 }
 
-/// One attempt only: the engine owns retry policy for the whole probe so
-/// nested metadata retries cannot multiply requests or erase their errors.
 struct FavoriteRemoteSyncProbe: Sendable {
     var resolve: @Sendable (YamiboThreadRouteRequest) async throws -> YamiboThreadRouteTarget
     var repository: any ThreadCoverPageResolving
@@ -64,8 +60,6 @@ struct FavoriteRemoteSyncProbe: Sendable {
             target = .novelThread(threadID: resolved.thread.tid)
             authorID = resolved.authorID
         case let .manga(resolved), let .mangaDirect(resolved):
-            // Smart Comic Mode changes presentation, never the favorite's
-            // thread identity or its original per-chapter title.
             payload = resolved
             target = .mangaThread(threadID: resolved.thread.tid)
             authorID = nil
@@ -90,8 +84,6 @@ struct FavoriteRemoteSyncProbe: Sendable {
         let page: ForumThreadPage
         let contentUpdatedAt: Date?
         if target.kind == .mangaThread {
-            // Sync already needs this chapter page for classification/cover.
-            // Reuse it; manga publication dates do not justify another fetch.
             if let cached = await repository.cachedThreadPage(
                 thread: payload.thread, title: payload.title, authorID: nil, page: 1
             ) {

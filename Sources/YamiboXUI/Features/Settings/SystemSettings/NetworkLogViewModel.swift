@@ -40,8 +40,6 @@ final class NetworkLogViewModel {
                 } catch { return }
             }
             guard !Task.isCancelled else { return }
-            // The stream keeps only its newest event while bursts of image
-            // completions are coalesced, without delaying explicit refreshes.
             lastRefresh = clock.now
             await refresh()
         }

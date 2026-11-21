@@ -55,9 +55,6 @@ extension DownloadStore {
                 ? L10n.string("reader.page_number_spaced", normalized.view)
                 : normalized.title
 
-            // Auto-refresh replays this on every online page load for views that are already
-            // downloaded, so resolve whether anything would actually change before paying
-            // for a full re-encode + atomic file rewrite + metadata upsert.
             let sourceUnchanged = try await database.read { db -> Bool in
                 let resolvedImageURLs = try Self.imageURLsForNovelSourcePageMetadata(
                     request: normalized,
@@ -141,12 +138,7 @@ extension DownloadStore {
                         return nil
                     }
                 }
-                // The existing-entry check and file replacement are serialized with deletion
-                // in this transaction, so background refresh cannot recreate a removed entry.
                 try sourceData.write(to: sourceURL, options: [.atomic])
-                // Resolved inside the write transaction: the actor can interleave other work
-                // at the awaits above, so a list captured during the earlier read could merge
-                // against stale state and overwrite image references written concurrently.
                 let resolvedImageURLs = try Self.imageURLsForNovelSourcePageMetadata(
                     request: normalized,
                     imageURLs: normalized.targetImageURLs,
@@ -203,12 +195,6 @@ extension DownloadStore {
         }
     }
 
-    /// Fingerprint used by the auto-refresh skip check, computed over a copy with
-    /// per-fetch/per-session fields stripped: the Discuz view counter increments on every
-    /// visit (including the fetch itself), reply counters bump on activity anywhere in the
-    /// thread, and the form hash plus manage-action links rotate with the session. Hashing
-    /// the full page would make the skip branch unreachable; the payload file still stores
-    /// the complete page.
     func novelSourcePageFingerprint(for sourcePage: ForumThreadPage) throws -> String {
         var canonical = sourcePage
         canonical.totalViews = nil
@@ -217,8 +203,6 @@ extension DownloadStore {
         canonical.posts = canonical.posts.map { post in
             var post = post
             post.manageActions = []
-            // Relative display dates resolve against each fetch time. Keep
-            // their source text in the fingerprint, not the derived instants.
             post.postedAt = nil
             post.lastEditedAt = nil
             return post
@@ -298,7 +282,6 @@ extension DownloadStore {
         )
     }
 
-    /// The auto-refresh path needs identity and existence, not a decoded old body.
     func novelOfflineSourcePageMetadata(
         threadID: String,
         view: Int,
@@ -341,8 +324,6 @@ extension DownloadStore {
         let row: NovelOfflineSourcePageSnapshotRow?
         do {
             row = try await database.read { db -> NovelOfflineSourcePageSnapshotRow? in
-                // A route without author metadata must still work after its
-                // discovery page disappears. Ambiguous author views stay a miss.
                 let rows = try Row.fetchAll(
                     db,
                     sql: """
@@ -470,9 +451,6 @@ extension DownloadStore {
 
     private static func encodeJSONData<T: Encodable>(_ value: T, context: String) throws -> Data {
         do {
-            // Sorted keys make the fingerprint reproducible: re-encoding an unchanged
-            // ForumThreadPage must hash identically to the previously stored fingerprint, and
-            // JSONEncoder's default key order is not guaranteed stable across separate encode calls.
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             return try encoder.encode(value)
@@ -595,9 +573,6 @@ private extension String {
     }
 }
 
-// Same contract as `downloadPersistenceError`: domain errors pass through
-// untouched, everything else is wrapped with the source error preserved as
-// `underlying` for logging.
 private func novelPayloadPersistenceError(from error: Error) -> any Error {
     if let error = error as? YamiboError {
         return error

@@ -1,6 +1,5 @@
 import Foundation
 
-/// One atomic document owns saved credentials and both current-account projections.
 public actor AccountStore {
     public nonisolated let forumScopeID = UUID()
     public static let shared = AccountStore(persistence: KeychainAccountVaultPersistence(), legacyDefaults: .standard)
@@ -169,7 +168,6 @@ public actor AccountStore {
 
     func resetAll(token: UUID) throws {
         guard transition == token else { throw CancellationError() }
-        // Keep an empty vault as the migration tombstone, including after a reset.
         try persist(Document())
         clearLegacyData()
     }
@@ -249,7 +247,6 @@ public actor AccountStore {
     }
 }
 
-/// Actor reentrancy must not permit a second account operation during network awaits.
 public actor AccountOperationGate {
     private var owner: UUID?
 

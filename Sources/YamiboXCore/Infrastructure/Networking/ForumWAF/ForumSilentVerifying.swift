@@ -16,7 +16,6 @@ public enum ForumWAFFailure: String, Error, Sendable, LocalizedError {
     case replayNotPermitted
     case replayExhausted
 
-    /// Suitable for inline load/queue failure, not an instruction to open login.
     public var errorDescription: String? {
         switch self {
         case .challenge: "请求遇到站点安全验证。"
@@ -32,7 +31,6 @@ public enum ForumWAFFailure: String, Error, Sendable, LocalizedError {
     }
 }
 
-/// A verifier cannot return account credentials or change the request's UA.
 public struct ForumWAFResult: Sendable {
     public let cookies: [YamiboCookie]
 
@@ -56,9 +54,6 @@ public struct ForumWAFResult: Sendable {
 
     func updates(comparedTo baseline: Self) -> Self {
         let previous = Dictionary(uniqueKeysWithValues: baseline.cookies.map { ($0.identity, $0) })
-        // WebKit snapshots give every cookie a new capturedAt, including old
-        // cookies copied into the jar. Do not roll back another provider's
-        // concurrent flight by committing those unchanged baseline cookies.
         return Self(cookies: cookies.filter { cookie in
             guard let old = previous[cookie.identity] else { return true }
             return cookie.value != old.value || cookie.expiresAt != old.expiresAt
@@ -85,8 +80,6 @@ public struct ForumSilentVerificationRequest: Sendable {
     }
 }
 
-/// No presentation, navigation, login or fallback authority. Cancellation must
-/// tear down the platform resources, not leave a suspended browser behind.
 public protocol ForumSilentVerifying: Sendable {
     func verify(_ request: ForumSilentVerificationRequest) async throws -> ForumWAFResult
 }

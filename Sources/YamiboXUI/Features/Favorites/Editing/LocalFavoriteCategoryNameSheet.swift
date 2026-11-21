@@ -12,7 +12,6 @@ struct LocalFavoriteCategoryNameDraft: Identifiable {
     var initialName: String = ""
 }
 
-/// Name entry sheet for creating or renaming a category.
 struct LocalFavoriteCategoryNameSheet: View {
     let draft: LocalFavoriteCategoryNameDraft
     let onCancel: () -> Void

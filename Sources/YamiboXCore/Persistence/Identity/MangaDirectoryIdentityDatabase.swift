@@ -1,12 +1,7 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Shared identity registry. Business-table rewrites belong to their feature adapters.
-/// Directory cache deletion intentionally never deletes this registry.
 enum MangaDirectoryIdentityDatabase {
-    // A historical display name can now belong to an unrelated directory.
-    // Prefer chapter/opaque-identity evidence and retain conflicting records
-    // unresolved instead of attaching them to whichever title currently exists.
     static func resolveLegacyRecord(name: String, identity: String?, chapterTID: String?, allowNameFallback: Bool = true, in db: Database) throws -> String? {
         let identities = try snapshot(in: db)
         let usesStableIDs = try db.columns(in: "manga_directory_chapters").contains { $0.name == "directory_id" }

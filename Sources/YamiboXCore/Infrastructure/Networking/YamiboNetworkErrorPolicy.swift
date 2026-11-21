@@ -1,6 +1,5 @@
 import Foundation
 
-/// Shared transport classification; callers retain their own recovery and UI policy.
 enum YamiboNetworkErrorPolicy {
     static func isOffline(_ error: any Error) -> Bool {
         let source = LoadDiagnosticError.classificationError(error)
@@ -11,8 +10,6 @@ enum YamiboNetworkErrorPolicy {
         return urlError.code == .notConnectedToInternet || urlError.code == .networkConnectionLost
     }
 
-    /// Only transport errors are mapped. Cancellation and non-network failures
-    /// keep their original identity, and mapped errors retain their diagnostics.
     static func mappingErrors<Value>(_ operation: () async throws -> Value) async throws -> Value {
         do {
             return try await operation()

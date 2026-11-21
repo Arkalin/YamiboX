@@ -6,14 +6,10 @@ import YamiboXCore
 import UIKit
 #endif
 
-/// All scheduler state and system UI updates share the main actor. The core
-/// queue runs independently even while the scheduler defers or rejects a request.
 @MainActor
 public final class DownloadContinuedProcessingCoordinator: DownloadQueueRunObserving {
     private static let taskIdentifierSuffix = "download.continuedProcessing"
 
-    /// Run before exposing the download UI. A previous process's request has no
-    /// surviving executor and must not be allowed to restart restored work.
     public static func cancelRestoredRequests() async {
         #if os(iOS) && canImport(BackgroundTasks)
         let legacyPrefix = "\(bundleIdentifier).offlineCache.continuedProcessing."
@@ -47,7 +43,6 @@ public final class DownloadContinuedProcessingCoordinator: DownloadQueueRunObser
     }
 
     private var run: Run?
-    // Finishes can race an actor hop made by a just-created worker.
     private var endedRuns: Set<DownloadRunID> = []
 
     public init() {}
@@ -67,7 +62,6 @@ public final class DownloadContinuedProcessingCoordinator: DownloadQueueRunObser
         let registered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: identifier, using: .main
         ) { [weak self] task in
-            // BGTaskScheduler explicitly dispatches this handler on .main.
             MainActor.assumeIsolated {
                 guard let self, let task = task as? BGContinuedProcessingTask else {
                     task.setTaskCompleted(success: false)
@@ -171,7 +165,6 @@ public final class DownloadContinuedProcessingCoordinator: DownloadQueueRunObser
         task.expirationHandler = { [weak self] in
             Task { @MainActor in
                 guard let current = self?.run, current.id == id else { return }
-                // End system ownership promptly, then cancel only this run's work.
                 self?.finish(id: id, success: false)
                 await current.pause()
             }

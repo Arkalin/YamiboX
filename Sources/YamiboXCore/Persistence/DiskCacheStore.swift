@@ -16,7 +16,6 @@ actor DiskCacheStore {
         }
     }
 
-    /// Minimum age of `last_accessed_at` before a cache hit rewrites it.
     private static let lastAccessedTouchInterval: TimeInterval = 300
 
     private let writer: any DatabaseWriter
@@ -90,8 +89,6 @@ actor DiskCacheStore {
 
         do {
             let value = try decoder.decode(Value.self, from: try Data(contentsOf: fileURL))
-            // Coarse LRU: skip the per-hit write transaction while the stored
-            // timestamp is fresh enough — eviction only needs minute-level order.
             if now().timeIntervalSince(entry.lastAccessedAt) >= Self.lastAccessedTouchInterval {
                 try await touchLastAccessedAt(namespace: resolvedNamespace, key: resolvedKey)
             }

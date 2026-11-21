@@ -185,35 +185,19 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var maxChromeWidth: CGFloat { 276 }
     public var progressPanelHeight: CGFloat { 48 }
     public var actionButtonIconFrame: CGFloat { 34 }
-    // Includes the glass button style's padding around the 34pt icon frame.
     public var actionButtonRowHeight: CGFloat { 48 }
     public var actionButtonSpacing: CGFloat { panelSpacing }
     public var bottomControlsAdditionalBottomOffset: CGFloat { 8 }
     public var bottomChromeTopPadding: CGFloat { 8 }
 
-    /// Bottom padding under the whole chrome stack: tucks the chrome toward
-    /// the home indicator (inset − 18) but never lets it collapse below 8pt
-    /// on inset-less devices. Both readers must share this curve or their
-    /// chrome heights drift — it used to live as a magic formula in each.
     public func bottomPadding(forBottomInset bottomInset: CGFloat) -> CGFloat {
         max(bottomInset - 18, 8)
     }
 
-    /// Line spacing inside the two-line progress summary. Shared between
-    /// the summary's `VStack` and the paged bottom-band reservation so the
-    /// reserved height and the rendered height cannot drift.
     public var progressSummaryLineSpacing: CGFloat { 2 }
 
-    /// Breathing room between the last content-text line and the top of
-    /// the progress summary in paged mode.
     public var pagedProgressSummaryContentGap: CGFloat { 8 }
 
-    /// The extra bottom inset paged pagination must reserve — beyond the
-    /// safe area, which layout subtracts separately — so content text ends
-    /// above the progress summary that renders at
-    /// `bottomPadding(forBottomInset:)` off the screen bottom.
-    /// `pagedProgressSummaryMovesBelowContentText` states the contract;
-    /// this is the geometry that enforces it.
     public func pagedContentBottomReserve(
         forBottomInset bottomInset: CGFloat,
         progressSummaryHeight: CGFloat
@@ -237,20 +221,13 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var progressSummaryVisibleWhileScrubbing: Bool { true }
     public var verticalScrubberWidth: CGFloat { 44 }
 
-    /// Capsules both readers always stack above the action row: 目录, 评论, 设置.
     public var baseStackedCapsuleCount: Int { 3 }
 
-    /// The vertical-mode scrubber bottom-aligns with the action button row
-    /// (`verticalScrubberBottomAlignsWithActionButtons`), so its height has to
-    /// span the whole capsule stack sitting above that row. The 书签与喜欢
-    /// capsule only renders when the work has annotations, which is why this
-    /// takes the count the caller actually rendered instead of hard-coding it.
     public func verticalScrubberHeight(capsuleCount: Int) -> CGFloat {
         let capsules = CGFloat(max(capsuleCount, 1))
         return progressPanelHeight * capsules + panelSpacing * capsules + actionButtonRowHeight
     }
 
-    /// Height of the baseline stack, with no annotation capsule present.
     public var verticalScrubberHeight: CGFloat { verticalScrubberHeight(capsuleCount: baseStackedCapsuleCount) }
     public var verticalPreviewWidth: CGFloat { maxChromeWidth }
     public var verticalPreviewHeight: CGFloat { 50 }
@@ -270,10 +247,6 @@ public struct ReaderBottomChromeLayoutPresentation: Equatable, Sendable {
     public var directoryCapsuleContentUsesAccentColor: Bool { true }
     public var bottomProgressSummaryUsesPageCenter: Bool { true }
     public var verticalProgressSummaryUsesLiquidGlass: Bool { true }
-    /// Contract flag only — the geometry that keeps the paged summary below
-    /// the content text is `pagedContentBottomReserve(forBottomInset:progressSummaryHeight:)`,
-    /// consumed by `NovelReaderVerticalBandsPresentation` and fed into
-    /// pagination via `NovelReaderView.readerLayout`.
     public var pagedProgressSummaryMovesBelowContentText: Bool { true }
     public var verticalChapterTitleCapsuleWrapsContent: Bool { true }
     public var capsuleChapterTickRoundedEdgeInset: CGFloat { 6 }
@@ -341,8 +314,6 @@ public struct ReaderChromeVisibilityAnimationPresentation: Equatable, Sendable {
 
         let lastIndex = max(count - 1, 0)
         let rank = lastIndex > 0 ? CGFloat(min(max(index, 0), lastIndex)) / CGFloat(lastIndex) : 0
-        // One reversible timeline: directory first on entry, last on exit.
-        // No delayed tasks that can replay stale visibility after a quick tap.
         let stagger: CGFloat = lastIndex > 0 ? 0.42 : 0
         let phase = min(max((progress - rank * stagger) / (1 - stagger), 0), 1)
         let movement = 1 - pow(1 - phase, 3)
@@ -392,9 +363,6 @@ public struct ReaderProgressScrubState: Equatable, Sendable {
         var haptics: [ReaderProgressScrubHaptic] = []
         if phase != .scrubbing {
             haptics.append(.start)
-            // Seed with the chapter covering the resting position (not nil) so the
-            // very first update of a scrub doesn't spuriously read as a chapter
-            // crossing merely because it moved off the exact resting index.
             let restingTargetIndex = context.targetIndex(context.restingValue)
             lastTickTargetIndex = context.tickTargetIndex(restingTargetIndex)
         }

@@ -82,7 +82,6 @@ struct OptionalTabRootView: View {
     }
 }
 
-/// The hidden bookshelf remains accessible from Mine without nesting stacks.
 struct MineBookshelfView: View {
     let appModel: YamiboAppModel
     let navigator: ForumDestinationNavigator

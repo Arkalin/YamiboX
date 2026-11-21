@@ -1,0 +1,9 @@
+# Keep forum route identity separate from how a reader opens
+
+An explicit reading-mode choice takes precedence for a single navigation, without changing the board default. When it settles the type, the resolver may skip a metadata fetch made solely to classify it. The choice does not enable Smart Comic Mode: only an explicitly configured board opens a manga detail page; a missing or unconfigured board opens the individual manga thread.
+
+Resolve `findpost` before classification, in the native readers' forward order. A reverse/default-order redirect can identify the thread but cannot establish a page number for the ordinary forward reader. A filtered or desktop response can supply location metadata; reuse its body as a reader seed only when it is an unfiltered, forward touch page that contains the target, if specified. Keep that response out of navigation identity and persisted launch state. Unlike an interactive open, a background favorite import must propagate authentication failure rather than turn it into a browser route.
+
+“查看讨论” is a companion to an existing work and shares its thread ID. It does not produce a separate browsing-history visit; eligible anchor progress can still be saved. Opening the original post as the main reader, or opening a thread as a visit from favorites or history, is not the same as showing its discussion companion.
+
+Sources: [thread route resolver](../../Sources/YamiboXCore/Routing/YamiboThreadRouteResolver.swift), [route and launch models](../../Sources/YamiboXCore/Routing/YamiboThreadRoutingModels.swift), [link origins](../../Sources/YamiboXCore/Forum/Domain/ForumRouteResolver.swift), [activity gating](../../Sources/YamiboXUI/Features/Forum/ThreadReader/ForumThreadReaderViewModel.swift). See also [routing and fallback](../architecture/networking-and-routing.md#5-原生-url-路由与网页回退).

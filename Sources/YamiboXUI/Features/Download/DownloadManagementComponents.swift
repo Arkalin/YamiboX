@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Drill-down detail of one downloaded work, pushed from the management list
-/// (hierarchy navigation, not a self-contained modal task).
 struct DownloadManagementGroupScreen: View {
     let viewModel: DownloadManagementViewModel
     let groupID: DownloadGroupID
@@ -271,8 +269,6 @@ struct DownloadManagementSelectAllButton: View {
     }
 }
 
-/// Builds the selection-mode bottom bar's single "delete selected" action —
-/// rendering is delegated to the shared `SelectionBottomToolbar`.
 enum DownloadManagementSelectionActions {
     static func delete(
         actionState: DownloadManagementSelectionActionState,

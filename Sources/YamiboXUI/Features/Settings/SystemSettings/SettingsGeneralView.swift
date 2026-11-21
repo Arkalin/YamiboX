@@ -2,8 +2,6 @@ import SwiftUI
 import YamiboXCore
 
 struct SettingsGeneralView: View {
-    // Plain stored reference: @Observable registers exactly the properties
-    // `body` reads, so no property wrapper is needed for observation.
     let viewModel: SettingsGeneralViewModel
     @State private var editingNavigation: AppNavigationSettings?
 

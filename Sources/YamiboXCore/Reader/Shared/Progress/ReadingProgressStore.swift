@@ -30,7 +30,6 @@ public actor ReadingProgressStore {
         snapshotObservation.values(bufferingPolicy: .bufferingNewest(1))
     }
 
-    /// Observe only this work's resume record, not the complete progress history.
     public func snapshots(threadID: String) -> some AsyncSequence<ReadingProgressRecord?, any Error> & Sendable {
         ValueObservation.tracking { db in
             try Self.fetchRecord(in: db, sql: """
@@ -58,16 +57,6 @@ public actor ReadingProgressStore {
         self.database = databasePool
     }
 
-    /// Fuzzy novel/manga lookup by tid. Deliberately excludes `.thread`
-    /// rows: every consumer of this method (`LocalFavoriteOpenTargetResolver`
-    /// novels, detail pages' continue-reading state, `AppContinuityWorkflow`,
-    /// the novel reader's self-restore) reads `.novel`/`.manga` payloads, and
-    /// a normal-thread anchor row for the same tid (e.g. written by a
-    /// "查看讨论" companion view) is always the freshest row — without the
-    /// exclusion it would shadow the real novel/manga record and silently
-    /// kill resume. Normal-thread restore uses the precise
-    /// `load(for: .normalThread(threadID:))` lookup instead.
-    /// Only a missing record returns nil; a failed read must not reset resume state.
     public func load(threadID: String) async throws -> ReadingProgressRecord? {
         guard let threadID = Self.trimmedNonEmpty(threadID) else { return nil }
         return try await database.read { db in
@@ -230,7 +219,6 @@ public actor ReadingProgressStore {
             }
             return record
         }
-        // Preserve unresolved legacy deletion markers and their import rules.
         let deletions = MangaIdentityDeletionRemapping.normalize(
             snapshot.deletions, identities: identities
         )
@@ -254,10 +242,6 @@ public actor ReadingProgressStore {
         try deletions.save(to: "reading_progress_sync_state", in: db)
     }
 
-    /// Saves a normal thread's page + floor-anchor resume position — the
-    /// first real writer `.normalThread` has ever had (browsing-history
-    /// decisions #6/#7). Restored by `ForumThreadReaderViewModel` on every
-    /// entrance without an explicit deep-link target (decision #8).
     @discardableResult
     public func saveNormalThread(
         threadID: String,
@@ -311,32 +295,6 @@ public actor ReadingProgressStore {
         return record
     }
 
-    /// Saves manga reading progress, branching on Smart Comic Mode
-    /// (smart-comic-mode design decision #15) rather than on
-    /// `position.directoryName != nil` — a mode-off synthesized
-    /// single-chapter pseudo-directory also produces a non-nil
-    /// `directoryName`, so that signal can no longer be trusted to mean
-    /// "mode is on" (see the Phase B warning in the design doc).
-    ///
-    /// Mode on: writes only the directory-level `.mangaTitle` record
-    /// (unchanged mechanism — one row per directory, tracking the current
-    /// chapter/page across the whole manga). Deliberately a single write, not
-    /// a dual write into `.mangaThread` too — two dependent writes for one
-    /// logical progress update is a split-brain risk if the second write
-    /// never happens (e.g. the calling Task is cancelled between the two
-    /// `await`s), and every mode-on reader
-    /// (`LocalFavoriteOpenTargetResolver.mangaDirectoryResumeTarget`,
-    /// `MangaDetailViewModel`, `AppContinuityWorkflow`'s mode-on branch)
-    /// already resolves progress via `.mangaTitle`, not `.mangaThread` — so a
-    /// mode-on `.mangaThread` row would have no reader. Accepted trade-off:
-    /// if a board's mode is later toggled off, mode-off resume for a chapter
-    /// that was only ever read while mode was on will start at page 0 rather
-    /// than the last-read page, since no `.mangaThread` row was ever written
-    /// for it.
-    ///
-    /// Mode off: writes only the `.mangaThread` record and returns it; the
-    /// `.mangaTitle` record (if one exists from a prior mode-on session) is
-    /// left completely untouched/stale, per decision #15.
     @discardableResult
     public func saveManga(_ position: MangaProgressReadingPosition, date: Date = .now, discardingOlderUpdate: Bool = false) async throws -> ReadingProgressRecord {
         guard position.isSmartModeEnabled else {
@@ -358,15 +316,6 @@ public actor ReadingProgressStore {
         )
     }
 
-    /// Saves this chapter thread's own manga reading progress, independent of
-    /// any directory-level `.mangaTitle` record — one upserted row per
-    /// thread, mirroring the shape of `saveNovel`'s `.novelThread` record
-    /// (smart-comic-mode design decision #15). Keyed by
-    /// `position.chapterThreadID` (the specific chapter currently being
-    /// read), not `position.threadID` (which stays fixed to whichever
-    /// chapter this reader session originally launched with and can diverge
-    /// from the current chapter after in-session chapter jumps) — so each
-    /// chapter thread the user reads gets its own independent row.
     @discardableResult
     public func saveMangaThread(_ position: MangaProgressReadingPosition, date: Date = .now, discardingOlderUpdate: Bool = false) async throws -> ReadingProgressRecord {
         let target = FavoriteContentTarget.mangaThread(threadID: position.chapterThreadID)

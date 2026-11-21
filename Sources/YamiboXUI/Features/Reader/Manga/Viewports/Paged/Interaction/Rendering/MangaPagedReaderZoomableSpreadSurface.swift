@@ -27,8 +27,6 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
                     pageSlot(leftPageSurface)
                     pageSlot(rightPageSurface)
                 }
-                // UIKit already sizes the hosting view to the spread. A fixed
-                // SwiftUI frame can recenter inside the remaining safe area.
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -39,7 +37,6 @@ struct MangaPagedReaderZoomableSpreadSurface: View {
     }
 
     private var hasLoadedImage: Bool {
-        // Read both dependencies even when the first checked slot is already loaded.
         let leftLoaded = leftPageSurface?.surfaceInteraction.runtime.imageLoaded == true
         let rightLoaded = rightPageSurface?.surfaceInteraction.runtime.imageLoaded == true
         return leftLoaded || rightLoaded
@@ -71,7 +68,6 @@ private struct MangaNativeHostedSurface<Content: View>: UIViewRepresentable {
 
     private var hostedContentConfiguration: some UIContentConfiguration {
         UIHostingConfiguration {
-            // This nested hosting root must not inset the already-laid-out spread again.
             content()
                 .environment(\.readerRemoteInput, remoteInput)
                 .environment(\.readerDeviceInteraction, deviceInteraction)

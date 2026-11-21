@@ -1,0 +1,5 @@
+# Share reader settings components without making reader choices identical
+
+The [shared palette](../../Sources/YamiboXUI/Features/Reader/Shared/Settings/ReaderSettingsPalette.swift) defines inputs to the controls, not one palette initializer. Manga derives surfaces from system appearance while the novel reader also blends in its reading theme. Share only values the two readers actually agree on; card strokes, light-mode text, and surface colors remain distinct. Selected controls use a contrasting fixed foreground because the app accent's lightness reverses with the color scheme.
+
+The [direction picker](../../Sources/YamiboXUI/Features/Reader/Shared/Settings/ReaderSettingsDirectionPicker.swift) preserves each mode's enum ordering (manga starts with right-to-left, novel with left-to-right). The [stepper](../../Sources/YamiboXUI/Features/Reader/Shared/Settings/ReaderSettingsStepperButton.swift) similarly takes a diameter: 42 pt for manga and 44 pt for novels. The smaller button expands its hit target to 44 pt without affecting layout.

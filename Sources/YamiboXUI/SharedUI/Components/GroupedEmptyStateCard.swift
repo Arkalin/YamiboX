@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Empty-state placeholder rendered as a grouped card, for screens whose
-/// content area is a stack of grouped cards rather than a bare list.
 struct GroupedEmptyStateCard: View {
     var systemImage = "tray"
     let title: String

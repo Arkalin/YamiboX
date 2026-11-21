@@ -118,8 +118,6 @@ struct ReaderThreadPageProjectionLoadingStrategy<Adapter: ReaderThreadPageProjec
         try Task.checkCancellation()
         let parsed = try LoadDiagnosticError.parsing(html: html, context: "ForumThreadPageHTMLParser.parsePage") {
             let page = try ForumThreadPageHTMLParser.parsePage(from: html, thread: thread, fallbackTitle: nil)
-            // Discuz clamps an out-of-range request to its last page. Do not
-            // cache or refresh a saved page using a different page's body.
             guard sourcePageMatches(page, threadID: identity.threadID, view: identity.view) else {
                 throw YamiboError.parsingFailed(context: L10n.string("context.reader_source_page_mismatch"))
             }

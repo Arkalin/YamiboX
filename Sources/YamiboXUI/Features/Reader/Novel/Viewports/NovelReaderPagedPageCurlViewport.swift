@@ -648,8 +648,6 @@ struct NovelReaderPagedPageCurlViewport: UIViewControllerRepresentable {
     }
 }
 
-// UIKit has no public control for the curl's additive back lighting. Keep this
-// compatibility adjustment separate from page content, geometry, and shadow colors.
 @MainActor
 private final class NovelReaderPageCurlLighting: NSObject {
     private weak var view: UIView?
@@ -674,7 +672,6 @@ private final class NovelReaderPageCurlLighting: NSObject {
                 filter.setValue(UIColor.clear.cgColor, forKey: "inputBackColor1")
             }
         }
-        // UIKit can add new filters after a gesture starts, including when reversing.
         for sublayer in layer.sublayers ?? [] {
             apply(to: sublayer)
         }

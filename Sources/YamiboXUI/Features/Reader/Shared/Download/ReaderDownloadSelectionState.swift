@@ -1,6 +1,5 @@
 import Foundation
 
-/// Selection summary shared by the manga and novel reader download sheets.
 public struct ReaderDownloadSelectionState: Equatable, Sendable {
     public var selectedTIDs: Set<String>
     public var notDownloadedSelectedTIDs: Set<String>

@@ -129,8 +129,6 @@ struct MangaDirectoryManagementConfirmation: Identifiable, Equatable {
     }
 }
 
-/// Builds the manga-directory management selection-mode bottom bar's single
-/// "delete selected" action, mirroring `DownloadManagementSelectionActions`.
 enum MangaDirectoryManagementSelectionActions {
     static func delete(
         selectedCount: Int,

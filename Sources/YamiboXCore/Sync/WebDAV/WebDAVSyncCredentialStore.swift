@@ -1,18 +1,12 @@
 import Foundation
 import Security
 
-/// The settings store owns migration and reference selection; this protocol
-/// keeps the Keychain boundary small and makes secure-write failure handling
-/// explicit without putting a test double in the production composition root.
 protocol WebDAVSyncCredentialPersisting: Sendable {
     func read(reference: String) throws -> String?
     func write(_ password: String, reference: String) throws
     func remove(reference: String) throws
 }
 
-/// WebDAV credentials are intentionally isolated from forum account vaults.
-/// The environment suffix prevents a local simulator credential from ever
-/// being read by the production build (and vice versa).
 struct KeychainWebDAVCredentialPersistence: WebDAVSyncCredentialPersisting, Sendable {
     private let service: String
 
@@ -45,9 +39,6 @@ struct KeychainWebDAVCredentialPersistence: WebDAVSyncCredentialPersisting, Send
     func write(_ password: String, reference: String) throws {
         let attributes: [String: Any] = [
             kSecValueData as String: Data(password.utf8),
-            // Background sync is allowed after the device has been unlocked
-            // once. ThisDeviceOnly avoids syncing a WebDAV secret through
-            // iCloud Keychain to another installation.
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         var status = SecItemUpdate(query(reference: reference) as CFDictionary, attributes as CFDictionary)

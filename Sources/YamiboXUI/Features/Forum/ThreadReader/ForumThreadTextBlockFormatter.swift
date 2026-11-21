@@ -2,13 +2,10 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// Maps a `ForumThreadTextBlock` (plain text + style runs + links + rubies)
-/// to renderable SwiftUI values. Pure value transformation, no view state.
 struct ForumThreadTextBlockFormatter {
     let block: ForumThreadTextBlock
     var theme: ForumTheme = .classic
 
-    /// The whole block text with style runs and links applied.
     var attributedText: AttributedString {
         var attributed = AttributedString(block.text)
         let characterCount = block.text.count
@@ -54,10 +51,6 @@ struct ForumThreadTextBlockFormatter {
         return attributed
     }
 
-    /// The authored background a link is painted over, if any. A link inside a
-    /// highlighted run needs a fixed color for the same reason the run's own
-    /// text does — the scheme-adaptive link color is picked for the app's
-    /// surfaces, not for the author's.
     private func authoredBackgroundHex(under link: ForumThreadTextLink) -> String? {
         block.styleRuns.first { run in
             run.style.backgroundHex != nil
@@ -66,8 +59,6 @@ struct ForumThreadTextBlockFormatter {
         }?.style.backgroundHex
     }
 
-    /// Paragraph metrics and ruby use one selectable TextKit text storage, not
-    /// independently sized SwiftUI fragments. Offsets in the domain are graphemes.
     @MainActor
     func nativeText(images: [URL: UIImage], imageSize: CGFloat) -> NSAttributedString {
         let offsets = block.text.reduce(into: [0]) { offsets, character in
@@ -151,9 +142,6 @@ struct ForumThreadTextBlockFormatter {
     }
 
     private func platformFont(for style: ForumThreadTextStyle, italic: Bool = false) -> UIFont {
-        // Styled runs must track Dynamic Type like the unstyled body text
-        // around them, so the author-relative size is scaled through the
-        // body text style's metrics instead of being frozen at 17pt.
         let baseSize = min(max(17 * (style.relativeFontSize ?? 1), 6), 256) * ((style.baseline ?? 0) == 0 ? 1 : 0.72)
         let scaledSize = UIFontMetrics(forTextStyle: .body).scaledValue(for: baseSize)
         var font = UIFont.systemFont(ofSize: scaledSize)
@@ -183,14 +171,6 @@ struct ForumThreadTextBlockFormatter {
     ]
 }
 
-/// Per-view-instance memoization of `ForumThreadTextBlockFormatter` output.
-/// `ForumThreadTextBlockView` re-evaluates its `body` whenever
-/// `ForumThreadReaderBodyView`'s `visiblePostIDs` changes during scrolling,
-/// which would otherwise rebuild the `AttributedString` (an O(runs × n)
-/// operation) for every visible text block on every scroll-triggered
-/// visibility change. Held as `@State` in the view, so mutating this class's
-/// stored properties updates the cache in place without itself triggering a
-/// SwiftUI update.
 final class ForumThreadTextBlockFormatterCache {
     private var cachedBlock: ForumThreadTextBlock?
     private var cachedThemeID: String?

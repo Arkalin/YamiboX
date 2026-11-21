@@ -2,8 +2,6 @@ import SwiftUI
 import YamiboXCore
 
 extension FavoriteTagSortOrder {
-    /// User-facing label for the tag sort menu; presentation mapping lives
-    /// with the views, not the model.
     var title: String {
         switch self {
         case .manual: L10n.string("favorites.tag_sort.manual")
@@ -41,9 +39,6 @@ struct LocalFavoriteTagSelectionDraft: Identifiable {
     }
 }
 
-/// Tag picker sheet used for filtering, editing one favorite's tags, or bulk
-/// tagging the current selection. Also hosts tag create/edit/delete/reorder,
-/// bound directly to `FavoriteLibraryOrganizer` — no ViewModel/closures.
 struct FavoriteTagPickerView: View {
     @Environment(\.dismiss) private var dismiss
 

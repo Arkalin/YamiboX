@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Sheet shell for contexts without a navigation stack of their own (the
-/// full-screen readers' download sheets).
 struct DownloadQueueSheet: View {
     let viewModel: DownloadQueueViewModel
     let management: DownloadManagementViewModel
@@ -29,8 +27,6 @@ struct DownloadQueueScreen: View {
                     }
                 }
             }
-            // Keep the data section in place when the last row disappears.
-            // An empty-state row must not replace it during a deletion update.
             Section {
                 ForEach(viewModel.groups) { group in
                     DownloadQueueOwnerRow(
@@ -148,8 +144,6 @@ private struct DownloadQueueSelectAllButton: View {
     }
 }
 
-/// Builds the selection-mode bottom bar's single "cancel selected" action —
-/// rendering is delegated to the shared `SelectionBottomToolbar`.
 @MainActor
 private enum DownloadQueueSelectionActions {
     static func cancel(viewModel: DownloadQueueViewModel) -> [SelectionToolbarAction] {
@@ -362,9 +356,6 @@ private struct DownloadQueueOwnerRow: View {
     }
 }
 
-/// Drill-down detail for one owner's queued chapters, pushed onto the
-/// enclosing navigation stack (system back replaces the old sheet-on-sheet
-/// close button).
 private struct DownloadQueueOwnerScreen: View {
     let viewModel: DownloadQueueViewModel
     let groupID: DownloadGroupID
@@ -591,9 +582,6 @@ private struct DownloadQueueCancelSwipeButton: View {
     let action: () -> Void
 
     var body: some View {
-        // Cancellation joins the worker and deletes persisted work asynchronously.
-        // A destructive swipe optimistically removes the row before that finishes;
-        // only the refreshed queue snapshot should drive the list's deletion.
         Button(action: action) {
             Label(L10n.string("mine.download_queue.cancel_download"), systemImage: "xmark.circle")
         }

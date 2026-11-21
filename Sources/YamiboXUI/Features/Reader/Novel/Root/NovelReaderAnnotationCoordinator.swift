@@ -2,8 +2,6 @@ import Observation
 import UIKit
 import YamiboXCore
 
-/// Session-scoped annotation state and operations. The view forwards viewport
-/// events and handles presentation; persistence remains in the Core service.
 @MainActor
 @Observable
 final class NovelReaderAnnotationCoordinator {
@@ -66,8 +64,6 @@ final class NovelReaderAnnotationCoordinator {
         )
     }
 
-    /// Structured subscriptions end with the reader's appearance-scoped task.
-    /// Subscribe before reading so a concurrent edit cannot fall into a gap.
     func observeChanges() async {
         let likeChanges = dependencies.likeStore.changes()
         let bookmarkChanges = dependencies.bookmarkStore.changes()
@@ -120,7 +116,6 @@ final class NovelReaderAnnotationCoordinator {
         isCurrentPositionBookmarked = isBookmarked
     }
 
-    /// The view synchronizes its vertical viewport immediately before this call.
     func toggleBookmark() {
         guard let anchor = currentBookmarkAnchor else { return }
         let excerpt = model.previewText(

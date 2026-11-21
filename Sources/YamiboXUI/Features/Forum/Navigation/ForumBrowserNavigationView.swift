@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Wide columns and the compact stack project the same canonical route.
 struct ForumBrowserNavigationView<Root: View>: View {
     @Bindable var navigator: ForumDestinationNavigator
     let appModel: YamiboAppModel
@@ -16,7 +15,6 @@ struct ForumBrowserNavigationView<Root: View>: View {
                     NavigationStack(path: navigator.browserPathBinding(for: .list)) {
                         root()
                             .navigationDestination(for: ForumDestination.self) { destination in
-                                // Destinations need the column's provenance explicitly.
                                 ForumDestinationScreen(destination: destination, navigator: navigator, appModel: appModel)
                                     .environment(\.forumBrowserSourceIsList, true)
                             }

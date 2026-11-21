@@ -1,30 +1,11 @@
 import Foundation
 import YamiboXCore
 
-// MARK: - Directory management
-//
-// The reader's directory command lane: panel-driven update/search, reset,
-// rename, chapter deletion, the automatic post-load update, and the
-// cooldown/forced-search countdown that the directory panel renders. The
-// lane's outputs ARE reader content — every mutation republishes through
-// the view model's `publishPresentation` — so the lane does not touch
-// presentation directly; it reaches reader content only through the
-// `Reader` closures the view model supplies. What it owns outright is the
-// command serialization state: the mutation/tick/auto-update task handles,
-// the mutation generation, and the cooldown deadlines.
 @MainActor
 final class MangaReaderDirectoryLane {
-    /// Reader-content access supplied by the owning view model. Directory
-    /// mutations republish full reader content, which stays a view-model
-    /// concern (generations, browsing-history sync, progress scheduling).
     struct Reader {
         var workflow: @MainActor () -> MangaReaderWorkflow?
         var presentation: @MainActor () -> MangaReaderPresentation
-        /// Direct presentation write for panel command state (updating
-        /// flag, countdowns, error text) — deliberately NOT
-        /// `publishPresentation`: command state is panel chrome, not reader
-        /// content, so it must not re-trigger browsing-history or progress
-        /// side effects.
         var setPresentation: @MainActor (MangaReaderPresentation) -> Void
         var progressSnapshot: @MainActor (MangaReaderPresentation) -> MangaReaderProgressSnapshot?
         var publishPresentation: @MainActor (MangaReaderPresentation, MangaReaderProgressSnapshot?) -> Void
@@ -46,14 +27,11 @@ final class MangaReaderDirectoryLane {
     }
 
     deinit {
-        // The lane's task handles ride its lifetime (they were moved here
-        // from the view model together with the command logic they serve).
         directoryTickTask?.cancel()
         directoryMutationTask?.cancel()
         automaticDirectoryUpdateTask?.cancel()
     }
 
-    // MARK: - Commands
 
     func updateDirectoryFromPanel() async {
         guard case let .loaded(loaded) = reader.presentation().state else { return }
@@ -127,16 +105,11 @@ final class MangaReaderDirectoryLane {
         }
     }
 
-    /// Reader-session teardown (retryInitialLoad): drop the transient
-    /// cooldown deadlines so the fresh session starts with a clean panel.
     func resetCooldownState() {
         directoryTiming = MangaDirectoryCommandTiming()
     }
 
-    /// Reader-session teardown (retryInitialLoad): stop every in-flight
-    /// lane task; the fresh session schedules its own.
     func cancelTasks() {
-        // Cancelled operations may still unwind through their catch/defer paths.
         directoryMutationGeneration += 1
         directoryTickTask?.cancel()
         directoryTickTask = nil
@@ -165,9 +138,6 @@ final class MangaReaderDirectoryLane {
         await task.value
     }
 
-    /// Establishes one UI-side command boundary for every directory writer.
-    /// The workflow separately admits the eventual window commit; this lane
-    /// generation only controls which command may publish panel/content UI.
     private func beginDirectoryMutation(cancellingExistingTask: Bool) -> Int {
         if cancellingExistingTask {
             directoryMutationTask?.cancel()
@@ -304,7 +274,6 @@ final class MangaReaderDirectoryLane {
         }
     }
 
-    // MARK: - Panel command state and countdowns
 
     var currentDirectoryPanelErrorMessage: String? {
         guard case let .loaded(loaded) = reader.presentation().state else { return nil }
@@ -371,15 +340,10 @@ final class MangaReaderDirectoryLane {
         }
     }
 
-    /// Applies a successful update/reset command's cooldown outcome: an
-    /// active cooldown wins, otherwise a short forced-search shortcut window
-    /// may open, otherwise both clear.
     private func applyDirectoryCommandCooldown(_ result: MangaDirectoryUpdateResult) {
         directoryTiming.apply(result, configuration: dependencies.directoryWorkflowConfiguration)
     }
 
-    /// Applies a failed command's cooldown: a server-reported search
-    /// cooldown wins, else whatever cooldown the workflow currently tracks.
     private func applyDirectoryFailureCooldown(_ error: Error, workflow: MangaReaderWorkflow) async {
         let deadline = await MangaDirectoryCommandTiming.failureCooldownExpiresAt(
             for: error,
@@ -390,11 +354,6 @@ final class MangaReaderDirectoryLane {
     }
 }
 
-// MARK: - View-model command surface
-//
-// Thin forwarders so `MangaDirectorySheet`'s closures and the tests keep
-// calling `model.updateDirectory(...)` etc. unchanged; the lane is the
-// implementation.
 extension MangaReaderViewModel {
 
     public func updateDirectoryFromPanel() async {

@@ -5,8 +5,6 @@ public enum CategoryMoveDirection: Sendable {
     case down
 }
 
-/// Batch item edits used by the favorites organizer when applying
-/// selection-based operations to the library document.
 public extension FavoriteLibraryDocument {
     mutating func moveItems(
         ids selectedIDs: Set<String>,
@@ -71,8 +69,6 @@ public extension FavoriteLibraryDocument {
         return locations.filter { seen.insert($0.id).inserted }
     }
 
-    /// New manual order of the non-default categories after moving `id` one
-    /// step, or nil when the move is out of bounds.
     func reorderedCategoryIDs(moving id: String, _ direction: CategoryMoveDirection) -> [String]? {
         let nonDefaultCategories = categories
             .filter { !$0.isDefault }
@@ -85,8 +81,6 @@ public extension FavoriteLibraryDocument {
         return orderedIDs
     }
 
-    /// New manual order of the collection's category siblings after moving
-    /// `id` one step, or nil when the move is out of bounds.
     func reorderedCollectionIDs(moving id: String, _ direction: CategoryMoveDirection) -> (categoryID: String, orderedIDs: [String])? {
         guard let collection = collections.first(where: { $0.id == id }) else { return nil }
         let siblings = collections

@@ -32,7 +32,6 @@ enum ForumBBCodeTextCodec {
         var indexedNodes: [String: ForumComposerNode] = [:]
         func visit(_ nodes: [ForumComposerNode]) {
             for node in nodes {
-                // Match document.node(id:)'s first depth-first result.
                 if indexedNodes[node.id] == nil { indexedNodes[node.id] = node }
                 visit(node.children)
             }
@@ -265,8 +264,6 @@ final class ForumBBCodeAttachment: NSTextAttachment {
 @MainActor
 final class ForumBBCodeAttachmentProvider: NSTextAttachmentViewProvider {
     override func loadView() {
-        // UIKit declares these synchronous callbacks nonisolated. This provider
-        // belongs only to the main-actor editor; assert that boundary at runtime.
         nonisolated(unsafe) let attachment = textAttachment as? ForumBBCodeAttachment
         let content = MainActor.assumeIsolated { attachment.map { ForumBBCodePreviewControl(attachment: $0) } }
         view = content

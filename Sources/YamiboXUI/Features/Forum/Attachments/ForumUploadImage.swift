@@ -36,7 +36,6 @@ actor ForumUploadImageProcessor {
         guard let type = UTType(identifier as String) else { throw ForumPageError.unsupportedUpload }
         let limit = min(configuration.maximumBytes, 5 * 1024 * 1024)
 
-        // Keep animation, transparency and existing encoding intact whenever possible.
         if type == .jpeg || type == .png || type == .gif {
             let ext = try permittedExtension(for: type, configuration: configuration)
             guard data.count <= limit else { throw ForumPageError.fileTooLarge }
@@ -68,7 +67,6 @@ actor ForumUploadImageProcessor {
         guard let destination = CGImageDestinationCreateWithData(output, outputType.identifier as CFString, 1, nil) else {
             throw ForumUploadImageError.invalidImage
         }
-        // The thumbnail transform is baked into the pixels; do not copy EXIF orientation or GPS.
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw ForumUploadImageError.invalidImage }
         try Task.checkCancellation()

@@ -72,8 +72,6 @@ struct MangaPagedReaderViewport: UIViewRepresentable {
         coordinator.attach(to: collectionView)
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
             guard let coordinator, let collectionView else { return }
-            // Layout can run inside the SwiftUI render commit; defer callbacks
-            // published by the placement work out of the update transaction.
             coordinator.callbackScheduler.performViewUpdate {
                 coordinator.didLayoutViewport(collectionView)
             }

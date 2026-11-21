@@ -1,9 +1,6 @@
 import Observation
 import YamiboXCore
 
-/// Owns presentation inputs and runtime-update admission/rollback for a reader
-/// session. The ViewModel supplies the workflow and publishes committed output;
-/// it does not manage geometry/appearance request generations itself.
 @MainActor
 @Observable
 final class NovelReaderRuntimeUpdateCoordinator {
@@ -101,8 +98,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
         let requestSequence = preparation.requestLayout(layout)
         guard reading.workflow()?.state != nil else {
             preparation.commitLayout(layout)
-            // The initial view task owns settings/repository bootstrap.
-            // Geometry may arrive while that task is still suspended.
             if reading.workflow() != nil {
                 await reading.prepareInitialPresentation()
             }
@@ -147,8 +142,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
         if isApplyingAppearanceSettings { activity = .idle }
     }
 
-    /// Apply the target geometry directly. Applying appearance to the old
-    /// window first would index the same document twice during handoff.
     func commitReaderViewport(_ update: NovelReadingWorkflowRuntimeUpdate) async throws -> Bool {
         guard initialPresentationPhase != .cancelled, !Task.isCancelled else { return false }
         guard update.layout.novelTextBoxLayout(
@@ -246,8 +239,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
         }
     }
 
-    /// Both asynchronous success and failure belong to a specific workflow and
-    /// request. Closing/replacing the workflow or a newer request invalidates both.
     func requestRuntimeUpdate(
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout,
@@ -266,9 +257,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
                 )
                 guard requestSequence == sequence, reading.workflow() === workflow,
                       initialPresentationPhase != .cancelled, !Task.isCancelled else { return nil }
-                // Navigation may supersede the content transaction, but does
-                // not invalidate this still-owned window/settings request.
-                // Each retry requires a new document event, never just nil.
                 if state == nil, workflow.documentRequestRevision != documentRevision { continue }
                 guard surfaceAppearanceRevision != surfaceRevision else { return state }
                 guard let latestSurfaceAppearanceSettings,
@@ -290,9 +278,6 @@ final class NovelReaderRuntimeUpdateCoordinator {
     }
 
     private func beginLayoutRequestOwnership() -> UInt64 {
-        // Equal geometry can still belong to a newer appearance transaction.
-        // Keep ownership separate from the geometry revision so an older
-        // resize cannot roll back that transaction's requested layout.
         layoutRequestOwnershipSequence &+= 1
         return layoutRequestOwnershipSequence
     }
@@ -316,14 +301,10 @@ final class NovelReaderRuntimeUpdateCoordinator {
 
 private extension NovelReaderAppearanceSettings {
     func isSurfaceOnlyAppearanceChange(to other: NovelReaderAppearanceSettings) -> Bool {
-        // Authored ink is contrast-adjusted against the paper color in the
-        // attributed document, so a theme change must rebuild its attributes.
         if forumFormat.textColor || forumFormat.backgroundColor || forumFormat.quote,
            backgroundStyle != other.backgroundStyle {
             return false
         }
-        // Quiet changes the attributed glyph color, not just the page background.
-        // Rebuild on entry and exit so the live TextKit graph cannot retain old text colors.
         if backgroundStyle != other.backgroundStyle,
            backgroundStyle == .quiet || other.backgroundStyle == .quiet {
             return false

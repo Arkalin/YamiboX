@@ -1,14 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Schema for the browsing-history timeline owned by `BrowsingHistoryStore`.
-///
-/// Deliberately independent of `reading_progress` (browsing-history decision
-/// #4): history rows are display metadata with their own retention policy
-/// (2000-row cap), while resume positions stay in the reader schema. This
-/// also deliberately re-introduces a history table after ADR-0031 declined
-/// to port Android's `ReadingHistory` — 0031 rejected a history table as the
-/// *resume-position* store, and this table never carries resume state.
 enum BrowsingHistoryDatabaseSchema: DatabaseSchemaModule {
     static func registerMigrations(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("history.v1") { db in
@@ -46,9 +38,6 @@ enum BrowsingHistoryDatabaseSchema: DatabaseSchemaModule {
             }
             let deletions = try SyncDeletionState.load(from: "browsing_history_sync_state", in: db)
             var records = try BrowsingHistoryStore.snapshotEntries(in: db).map(BrowsingHistorySyncRecord.init)
-            // The earlier sync-facts migration used the same table names but
-            // stored complete history entries. Decode before replacing anything;
-            // GRDB rolls back the entire migration if conversion fails.
             if try db.tableExists("browsing_history_sync_records") {
                 let columns = Set(try db.columns(in: "browsing_history_sync_records").map(\.name))
                 if columns.contains("payload") {

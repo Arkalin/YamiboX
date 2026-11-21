@@ -1,11 +1,8 @@
 import Foundation
 
-/// Everything the manga reader feature UI (reader, directory panel, offline
-/// cache sheet) needs from the composition root.
 public struct MangaReaderDependencies: Sendable {
     public let settingsStore: SettingsStore
     public let readingProgressStore: ReadingProgressStore
-    /// Shared with the other reader surfaces, including in test compositions.
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let localFavoriteLibraryStore: FavoriteLibraryStore
@@ -18,11 +15,6 @@ public struct MangaReaderDependencies: Sendable {
     public let makeDirectoryRepository: @Sendable () async -> any MangaDirectoryRepository
     public let makeChapterCommentsRepository: @Sendable () async -> any ReaderChapterCommentsLoading
     public let makeDownloadQueueExecutor: @Sendable () async -> DownloadQueueExecutor
-    /// Smart Comic Mode off (design decision #16): the reader reuses
-    /// `ThreadCoverResolver` to auto-resolve a `.thread(tid:)` cover for the
-    /// chapter being read, the same mechanism
-    /// `ForumThreadReaderViewModel`/`NovelDetailViewModel` already use
-    /// for normal threads — this is what drives it.
     public let makeForumThreadReaderRepository: @Sendable () async -> any ThreadCoverPageResolving
     public let downloadQueue: DownloadQueueDependencies
     public let like: LikeDependencies

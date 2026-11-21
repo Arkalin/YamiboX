@@ -105,8 +105,6 @@ struct DownloadWorkProcessor<Strategy: DownloadWorkProcessingStrategy>: Sendable
         var completed: [URL] = []
         for imageURL in targetImageURLs {
             try Task.checkCancellation()
-            // Existence check only — loading the image bytes here would read
-            // every already-downloaded image of the work into memory per run.
             let hasOfflineImage = await store.hasOfflineImage(for: imageURL)
             try Task.checkCancellation()
             if hasOfflineImage {
@@ -194,8 +192,6 @@ private struct DownloadImageTransferResult: Sendable {
     var bytesPerSecond: Int
 }
 
-/// Network delegates can run concurrently. Report while holding this private
-/// lock so snapshots reach the stream in the same order as the byte updates.
 private final class DownloadImageProgressTracker: @unchecked Sendable {
     private let lock = NSLock()
     private let count: Int

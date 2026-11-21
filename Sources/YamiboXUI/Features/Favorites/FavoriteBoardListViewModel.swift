@@ -2,23 +2,15 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// Drives the board-favorite management page. Board favorites are
-/// intentionally network-only — unlike thread favorites there is no local
-/// store or sync — so every load fetches the remote list and every delete
-/// posts straight to the forum.
 @MainActor
 @Observable
 final class FavoriteBoardListViewModel {
     private(set) var boards: [BoardFavorite]?
     private(set) var isLoading = false
-    /// First-load failure with nothing to show; renders as a full-screen
-    /// error state with retry.
     private(set) var errorMessage: String? {
         didSet { errorDetails = nil }
     }
     private(set) var errorDetails: LoadFailureDetails?
-    /// Failures of row-level deletes and of refreshes that keep existing
-    /// content; shown as an alert on top of the list.
     var actionErrorMessage: String? {
         didSet { actionErrorDetails = nil }
     }

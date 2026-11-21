@@ -1,0 +1,7 @@
+# Keep the reader annotation panel usable without the live chapter
+
+The [reader panel](../../Sources/YamiboXUI/Features/Reader/Shared/Annotations/ReaderAnnotationPanel.swift) renders persisted bookmarks even when no live projection or resolved title is available. A bookmark synced to a device that has never opened its chapter still needs to make sense. A reflowable novel has no stable page number, so its snapshot distinguishes bookmarks in the same chapter; a comic row can use its chapter-local page number. Blank snapshot fields count as absent rather than hiding the next fallback.
+
+The panel owns its navigation item and keeps its tab contents mounted. Switching tabs therefore keeps each scroll position, does not flash an empty list during reload, and does not briefly remove the title or Select action. The [annotation capsule](../../Sources/YamiboXUI/Features/Reader/Shared/Chrome/ReaderAnnotationPresentation.swift) is a doorway, not a dashboard: it shows one bounded count to avoid squeezing the title, appears only when there is a destination with content, and opens the last bookmark or like segment (or the nonempty segment on first use). Chapters are optional and their selection does not replace that remembered annotation destination.
+
+The [highlight style default](../../Sources/YamiboXUI/Features/Reader/Shared/Annotations/ReaderHighlightStyleDefault.swift) is the last style the reader chose across works, not a per-work default; the user's color conventions should survive opening a new book.

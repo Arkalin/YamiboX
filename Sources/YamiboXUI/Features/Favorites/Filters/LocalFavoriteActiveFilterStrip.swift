@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Horizontal chips showing the active source-group and tag filters, with
-/// one-tap clearing. The caller (`LocalFavoriteBrowseChrome`) only includes
-/// this view while a filter is active, so it renders unconditionally.
 struct LocalFavoriteActiveFilterStrip: View {
     let organizer: FavoriteLibraryOrganizer
 

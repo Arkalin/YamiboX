@@ -23,8 +23,6 @@ struct SettingsAppearanceSection: View {
         Section {
             VStack(spacing: 18) {
                 ForumThemePreview(theme: previewTheme)
-                    // Keep the illustrative sample compact; the actual controls
-                    // below continue to follow the full accessibility text size.
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(L10n.string("settings.app_theme.preview"))
@@ -195,7 +193,6 @@ private struct AppThemeChoice: View {
     }
 }
 
-/// Uses the same resolved palette as the forum, not a separately styled mock.
 struct ForumThemePreview: View {
     let theme: ForumTheme
     @Environment(\.colorScheme) private var colorScheme

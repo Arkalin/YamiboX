@@ -1,8 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Owns only the write boundary. Stores retain their SQL, merge rules and
-/// notification conditions; failed transactions never publish an invalidation.
 enum StoreWriteTransaction {
     static nonisolated(nonsending) func perform<Value: Sendable>(
         in database: DatabasePool,

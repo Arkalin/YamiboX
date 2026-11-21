@@ -25,7 +25,6 @@ public struct AppThemeDefinition: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// Membership and selection travel together so deleting the active theme is atomic.
 public struct AppThemeLibrary: Codable, Hashable, Sendable {
     public private(set) var themes: [AppThemeDefinition]
     public private(set) var selectedID: String?

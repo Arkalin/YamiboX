@@ -1,7 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Cross-feature reference changes happen only for explicit identity merges.
 struct GRDBMangaDirectoryIdentityMigration: Sendable {
     private let database: DatabasePool
 
@@ -19,8 +18,6 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
             let source: MangaDirectory
             if let cached = try MangaDirectoryStore.directory(id: canonicalSource, in: db) { source = cached }
             else if let name = try String.fetchOne(db, sql: "SELECT name FROM manga_identities WHERE id = ?", arguments: [canonicalSource.rawValue]) {
-                // Identity-only data can join an existing directory without
-                // first fabricating or persisting a directory cache of its own.
                 source = MangaDirectory(id: canonicalSource, cleanBookName: name, strategy: target.strategy, sourceKey: target.sourceKey)
             } else { throw YamiboPersistenceError(context: "Directory identity no longer exists") }
             guard source.id != target.id else { return target }
@@ -72,8 +69,6 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
             if let existing = local.legacyIdentities[alias] { unite(existing, id) }
         }
         let allIDs = Set(remote.names.values).union(remote.legacyIdentities.values).union(remote.redirects.keys).union(remote.redirects.values).union(remote.titles.keys).union(parent.keys).union(parent.values)
-        // Keep the same smallest-alias choice without sorting every alias
-        // again for each identity, including identities with no name alias.
         var preferredNameByID: [String: String] = [:]
         for (name, id) in remote.names {
             if let current = preferredNameByID[id], current <= name { continue }
@@ -83,8 +78,6 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
             let name = preferredNameByID[id] ?? id
             try db.execute(sql: "INSERT OR IGNORE INTO manga_identities(id, name) VALUES (?, ?)", arguments: [id, name])
         }
-        // Merge cached local directories before publishing redirects so lookups
-        // still distinguish both source rows. Orphan identities need no directory.
         for id in parent.keys.sorted() {
             let canonical = root(id)
             if let source = try MangaDirectoryStore.directory(id: MangaDirectoryID(rawValue: id), in: db), source.id.rawValue == id {
@@ -106,12 +99,7 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
         }
         for (name, id) in remote.names { try MangaDirectoryIdentityDatabase.addAlias(name, kind: "name", id: id, in: db) }
         for (alias, id) in remote.legacyIdentities { try MangaDirectoryIdentityDatabase.addAlias(alias, kind: "favorite", id: id, in: db) }
-        // Resolve the whole batch before looking for name collisions. A name
-        // occupied now may be vacated by another winning rename in this batch.
         var winningTitles: [String: (name: String, modifiedAt: Double)] = [:]
-        // The content merges above retain destination metadata. Compare the
-        // pre-merge local titles too: a losing ID may have an unsynced rename
-        // newer than both the destination and the incoming redirect's title.
         for snapshot in [local, remote] {
             for (id, title) in snapshot.titles {
                 let canonical = try MangaDirectoryIdentityDatabase.canonicalID(MangaDirectoryID(rawValue: id), in: db).rawValue
@@ -123,9 +111,6 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
                 winningTitles[canonical] = (title, candidateTime)
             }
         }
-        // Stage only the UNIQUE display-name column, inside this transaction.
-        // Do not pass temporary names through save/register: they are not
-        // identity aliases and must never advance a title's conflict clock.
         for (id, title) in winningTitles {
             guard let name = try String.fetchOne(db, sql: "SELECT clean_book_name FROM manga_directories WHERE id = ?", arguments: [id]), name != title.name else { continue }
             var temporaryName: String
@@ -137,8 +122,6 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
         for (id, winningTitle) in winningTitles.sorted(by: { $0.key < $1.key }) {
             let canonical = try MangaDirectoryIdentityDatabase.canonicalID(MangaDirectoryID(rawValue: id), in: db).rawValue
             let title = winningTitle.name
-            // A title may already belong to a directory discovered independently.
-            // Only final-name collisions remain after staging the batch.
             if let existing = try MangaDirectoryStore.directory(named: title, in: db), existing.id.rawValue != canonical {
                 if let source = try MangaDirectoryStore.directory(id: MangaDirectoryID(rawValue: canonical), in: db) {
                     try merge(source: source, target: existing, name: title, searchKeyword: existing.searchKeyword, preserveClock: true, in: db)
@@ -159,10 +142,6 @@ struct GRDBMangaDirectoryIdentityMigration: Sendable {
             let titleClock = max(currentClock, winningTitle.modifiedAt)
             try db.execute(sql: "UPDATE manga_identities SET name = ?, modified_at = ? WHERE id = ?", arguments: [title, titleClock, resolved])
             try MangaDirectoryIdentityDatabase.addAlias(title, kind: "name", id: resolved, in: db)
-            // Identity metadata can arrive through progress/annotations before
-            // directory content. Do not give the cached chapter list the title's
-            // newer clock: it would tie with, and potentially replace, the real
-            // remote content when directory synchronization runs later.
             try db.execute(sql: "UPDATE manga_directories SET clean_book_name = ? WHERE id = ?", arguments: [title, resolved])
         }
         try MangaIdentityRemapping.normalizeReferences(snapshot: MangaDirectoryIdentityDatabase.snapshot(in: db), legacy: false, in: db)

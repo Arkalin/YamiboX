@@ -39,15 +39,6 @@ public struct MangaProgressReadingPosition: Hashable, Sendable {
     public var pageCount: Int?
     public var mangaID: String?
     public var directoryName: String?
-    /// Whether Smart Comic Mode is on for this chapter's board — threaded
-    /// straight from `MangaLaunchContext.isSmartModeEnabled` (the reader
-    /// never re-derives it). `ReadingProgressStore.saveManga` branches on
-    /// this field (not on `directoryName != nil`) to decide whether to also
-    /// upsert the directory-level `.mangaTitle` record, since a mode-off
-    /// synthesized single-chapter pseudo-directory also produces a non-nil
-    /// `directoryName` (smart-comic-mode design decision #15; see the Phase B
-    /// warning in the design doc). Defaults to `true` to match
-    /// `MangaLaunchContext`'s own default for pre-Phase-C call sites.
     public var isSmartModeEnabled: Bool
 
     public init(
@@ -75,8 +66,6 @@ public struct MangaProgressReadingPosition: Hashable, Sendable {
     }
 }
 
-/// Normal-thread reading position (browsing-history decisions #6/#7): the
-/// current page plus the topmost visible post's id as the floor-level anchor.
 public struct ThreadReadingPosition: Hashable, Sendable {
     public var threadID: String
     public var page: Int
@@ -177,8 +166,6 @@ public actor ProgressSyncModule {
     }
 
     private func saveIfNeeded(_ position: ProgressSyncPosition, activityDate: Date) async throws {
-        // Don't deduplicate against the last completed save while another one
-        // is in flight. A -> B -> A can otherwise leave B stored after exit.
         while let activeSave { _ = await activeSave.result }
         guard activityDate >= lastSyncedActivityDate, activityDate >= lastQueuedActivityDate else { return }
         guard position != lastSyncedPosition || needsRetry else { return }
@@ -205,8 +192,6 @@ public actor ProgressSyncModule {
     }
 }
 
-/// Resume positions remain mode-specific; timeline activity is routed through
-/// the board-configured canonical identity. Preview sessions never enqueue.
 public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
     private let readingProgressStore: ReadingProgressStore
     private let browsingHistoryWorkflow: BrowsingHistoryWorkflow
@@ -243,8 +228,6 @@ public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
             _ = try await readingProgressStore.saveManga(position, date: activityDate, discardingOlderUpdate: true)
             await browsingHistoryWorkflow.refreshPosition(threadID: position.chapterThreadID, reader: .manga, date: activityDate)
         case let .thread(position):
-            // Read at write time, not enqueue time: a pending debounce or
-            // exit flush must honor a setting changed while the reader is open.
             if await settingsStore?.load().readingProgress.savesNormalThreadProgress == true {
                 _ = try await readingProgressStore.saveNormalThread(
                     threadID: position.threadID, page: position.page,
@@ -252,7 +235,6 @@ public struct FavoriteLibraryProgressSyncAdapter: ProgressSyncAdapter {
                     date: activityDate, discardingOlderUpdate: true
                 )
             }
-            // Visits and activity remain independent of resume persistence.
             if position.recordsBrowsingHistory {
                 await browsingHistoryWorkflow.refreshPosition(threadID: position.threadID, reader: .normal, date: activityDate)
             }

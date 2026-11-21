@@ -1,6 +1,5 @@
 import YamiboXCore
 
-/// Each viewport owns a session; loader replacement and teardown share one policy.
 @MainActor
 final class MangaPagedImagePrefetchSession {
     private var loader: MangaReaderPageImageLoader

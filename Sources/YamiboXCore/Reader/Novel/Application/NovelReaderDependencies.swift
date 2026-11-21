@@ -1,12 +1,9 @@
 import Foundation
 
-/// Everything the novel reader feature UI (reader, download panel)
-/// needs from the composition root.
 public struct NovelReaderDependencies: Sendable {
     public let sessionStore: SessionStore
     public let settingsStore: SettingsStore
     public let readingProgressStore: ReadingProgressStore
-    /// Shared with the other reader surfaces, including in test compositions.
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let downloadStore: any DownloadStoring
@@ -73,14 +70,10 @@ public struct NovelReaderDependencies: Sendable {
         }
     }
 
-    /// Builds the chapter-comments module wired to the composition root's
-    /// repository; the reader view model supplies only its state sink.
     public let makeChapterCommentsModule: @Sendable (
         _ onChange: @escaping @Sendable (ReaderChapterCommentsSnapshot) -> Void
     ) -> ReaderChapterCommentsModule
 
-    /// Builds the downloads operation repository backed by the shared
-    /// download store, settings, and download queue executor.
     public let makeDownloadOperationRepository: @Sendable () -> any NovelReaderDownloadOperationRepository
 
     @MainActor

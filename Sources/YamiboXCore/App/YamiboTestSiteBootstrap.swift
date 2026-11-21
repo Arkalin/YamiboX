@@ -1,6 +1,5 @@
 import Foundation
 
-/// Binds the isolated test sandbox to one origin, never supplies launch configuration.
 @MainActor
 public enum YamiboTestSiteBootstrap {
     private struct Binding: Codable {
@@ -27,7 +26,6 @@ public enum YamiboTestSiteBootstrap {
         try PropertyListEncoder().encode(Binding(origin: previous?.origin, resetPending: true))
             .write(to: file, options: .atomic)
 
-        // No WebView, session observers or runtime are active while resetting.
         let database = try await Task.detached(priority: .userInitiated) {
             try YamiboDatabase.openPool()
         }.value
@@ -38,7 +36,6 @@ public enum YamiboTestSiteBootstrap {
         await context.downloadBackgroundDownloadTransport.invalidateRestoredDownloads()
         try await context.resetApplicationData()
         try await ReaderFontFileStore().reset()
-        // Nuke stages deletions; flush them before another pipeline can read disk.
         guard await context.imagePipeline.totalDiskUsageBytes() == 0 else {
             throw CocoaError(.fileWriteUnknown)
         }

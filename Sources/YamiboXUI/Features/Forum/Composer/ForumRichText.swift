@@ -56,7 +56,6 @@ enum ForumRichTextCodec {
         let previous = run(from: attributes)
         var result = attributes
         result.removeValue(forKey: .attachment)
-        // New characters inherit formatting, never an image's serialized source.
         result[.forumComposerRun] = ForumComposerRunBox(.init(text: "", source: "", wrappers: previous.wrappers,
                                                            isLiteral: previous.isLiteral && !previous.isAttachment))
         return result
@@ -95,7 +94,6 @@ enum ForumRichTextCodec {
         if style.isBold { traits.insert(.traitBold) }
         if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) { font = UIFont(descriptor: descriptor, size: pointSize) }
         if style.isItalic {
-            // Slant the upright face so CJK fallback glyphs lean too, without double-slanting Latin.
             let matrix = CGAffineTransform(a: 1, b: 0, c: 0.2, d: 1, tx: 0, ty: 0)
             font = UIFont(descriptor: font.fontDescriptor.withMatrix(matrix), size: pointSize)
         }

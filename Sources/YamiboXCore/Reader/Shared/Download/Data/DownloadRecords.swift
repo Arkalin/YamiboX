@@ -299,8 +299,6 @@ extension DownloadStore {
         ).map { try novelEntry(from: $0, in: db) }
     }
 
-    /// Management still validates each persisted document, but only retains
-    /// one decoded body at a time instead of the entire downloaded library.
     static func forEachNovelEntry(in db: Database, _ body: (NovelDownloadEntry) throws -> Void) throws {
         let rows = try Row.fetchCursor(db, sql: """
             SELECT \(novelEntryColumnList) FROM download_novel_entries

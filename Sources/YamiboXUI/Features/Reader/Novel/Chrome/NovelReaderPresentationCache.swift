@@ -1,7 +1,6 @@
 import Foundation
 import YamiboXCore
 
-/// UI-only, session-local derived data. Never stores a TextKit graph or images.
 @MainActor
 final class NovelReaderPresentationCache {
     private struct ProgressKey: Equatable {

@@ -12,8 +12,6 @@ struct PressableCardStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            // Reduce Motion keeps the comprehension-aiding dim but drops the
-            // scale movement.
             .scaleEffect(configuration.isPressed && !reduceMotion ? pressedScale : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)

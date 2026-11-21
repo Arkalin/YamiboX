@@ -1,17 +1,11 @@
 import SwiftUI
 import YamiboXCore
 
-/// The previous/next pager shown under forum-style paged lists. The page
-/// number always comes from the caller (`currentPage`) rather than
-/// `navigation` because some screens track an optimistic page separately
-/// from the last parsed one.
 struct ForumPageNavigationBar: View {
     @Environment(\.forumTheme) private var theme
     let navigation: ForumPageNavigation?
     let currentPage: Int
     let goToPage: (Int) -> Void
-    /// Hides the whole bar for single-page content instead of rendering a
-    /// disabled pager.
     var hidesOnSinglePage = false
 
     var body: some View {

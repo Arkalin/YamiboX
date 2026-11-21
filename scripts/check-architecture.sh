@@ -3,8 +3,6 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-# Import guardrails plus targeted checks for known cross-feature implementation
-# leaks. These source checks are not a complete Swift symbol dependency graph.
 import_prefix='^[[:space:]]*((@preconcurrency|@testable|public|package|internal|fileprivate|private)[[:space:]]+)*import[[:space:]]+((typealias|struct|class|enum|protocol|let|var|func)[[:space:]]+)?'
 violations=0
 
@@ -42,8 +40,6 @@ check_pattern() {
 }
 
 while IFS= read -r -d '' file; do
-    # Exact-file registrations, not directory exceptions. Native adapters own
-    # one attempt; external-service registrations may not sign forum requests.
     case "$file" in
         Sources/YamiboXCore/Infrastructure/Networking/NetworkLoggedTransport.swift|\
         Sources/YamiboXCore/Infrastructure/Networking/YamiboNetworkConfiguration.swift|\
@@ -73,7 +69,7 @@ while IFS= read -r -d '' file; do
     esac
     case "$file" in
         Sources/YamiboXCore/Infrastructure/Images/YamiboImageDataPipeline.swift|\
-        Sources/YamiboXUI/Platform/Images/YamiboUIImagePipeline.swift) ;; # UI decodes Core-supplied bytes only.
+        Sources/YamiboXUI/Platform/Images/YamiboUIImagePipeline.swift) ;;
         *) check_pattern "$file" '(^|[^[:alnum:]_])(DataLoader|ImagePipeline)[[:space:]]*[({]' 'Nuke loaders require an exact transport or decode-only registration.' ;;
     esac
     check_symbols "$file" 'YamiboWAFChallengeRecovering|allowsWAFRecovery|allowsWAFReplay|wafRecoverer|presentFallback|presentVerificationFallback|wafVerificationPresentation|WAFVerificationPresentationModifier|BackgroundCheckInWAFRecoverer' \

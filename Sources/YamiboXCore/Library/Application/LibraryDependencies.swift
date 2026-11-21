@@ -1,11 +1,5 @@
 import Foundation
 
-/// Dependency package the favorites feature's composition roots use to build
-/// their modules. Each module (`FavoriteLibraryOrganizer`,
-/// `FavoriteRemoteSyncSession`, `FavoriteUpdateMonitor`,
-/// `LocalFavoriteOpenTargetResolver`) declares a narrow initializer taking
-/// only the stores it uses; this struct just carries them from the app
-/// composition root to those call sites.
 public struct LibraryDependencies: Sendable {
     public var history: BrowsingHistoryDependencies {
         BrowsingHistoryDependencies(
@@ -24,17 +18,11 @@ public struct LibraryDependencies: Sendable {
     public let favoriteUpdateStore: FavoriteUpdateStore
     public let favoriteSyncRunStore: FavoriteSyncRunStore
     public let readingProgressStore: ReadingProgressStore
-    /// Shared history services used by the home shelf and browsing-history page.
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let settingsStore: SettingsStore
     public let contentCoverStore: ContentCoverStore
     public let mangaDirectoryStore: any MangaDirectoryPersisting
-    /// Shared, single-instance cooldown state for the manga-directory search
-    /// flow (mirrors `ForumDependencies`' own copy) — the smart-manga update
-    /// check lane's `MangaDirectoryWorkflow` must share the same instance the
-    /// reader uses, or the two would independently think a just-triggered
-    /// forum search is still safe to repeat.
     public let mangaDirectorySearchCooldownState: MangaDirectorySearchCooldownState
     public let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
     public let bookshelfBackgroundImageStore: CustomBackgroundImageStore

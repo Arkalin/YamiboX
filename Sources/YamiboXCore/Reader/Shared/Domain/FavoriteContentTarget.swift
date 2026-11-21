@@ -1,30 +1,16 @@
 import Foundation
 
-/// Shared target kind for reading progress and browsing history.
-/// The historical public name is retained for source compatibility; favorites
-/// use the separate `FavoriteItemTargetKind`, which cannot represent `.mangaTitle`.
 public enum FavoriteContentTargetKind: String, Codable, CaseIterable, Sendable {
     case normalThread
     case novelThread
     case mangaTitle
-    /// Per-thread manga reading progress, written alongside (mode on) or
-    /// instead of (mode off) the directory-level `.mangaTitle` record.
     case mangaThread
 }
 
-/// Shared reading target used by progress and history, not a favorite entry.
-/// Keep the public name, IDs and Codable representation compatible with existing
-/// callers and persisted records. Favorites own the distinct `FavoriteItemTarget`.
 public enum FavoriteContentTarget: Codable, Hashable, Identifiable, Sendable {
     case normalThread(threadID: String)
     case novelThread(threadID: String)
     case mangaTitle(mangaID: String, cleanBookName: String)
-    /// This thread's own manga reading progress, independent of the
-    /// directory-level `.mangaTitle` record. Deliberately uses the same id
-    /// format (`"manga-thread:\(threadID)"`) as the favorites-side
-    /// `FavoriteItemTarget.mangaThread` so a closed-board single-thread
-    /// favorite can match its progress record by direct id lookup without a
-    /// cleanBookName fallback (smart-comic-mode design decision #15).
     case mangaThread(threadID: String)
 
     private enum CodingKeys: String, CodingKey {

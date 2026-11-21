@@ -1,10 +1,6 @@
 import Foundation
 
-/// Authentication, unsupported forum pages and off-site content use a browser. Keep this
-/// decision shared by URL routing and the WebKit navigation delegate.
 public enum ForumWebPagePolicy {
-    /// Audited navigation reads only. Unknown GET endpoints do not earn replay
-    /// permission merely by lacking a token or confirmation parameter.
     public static func allowsAutomaticReadReplay(_ url: URL) -> Bool {
         ForumRequestDefinition.navigation(URLRequest(url: url)).allowsAutomaticRetry
     }
@@ -39,8 +35,6 @@ public enum ForumWebPagePolicy {
         return components.url ?? url
     }
 
-    /// Discuz has state-changing GET links. Never fetch a token-bearing action
-    /// simply because a view appeared, a link was previewed, or Retry was tapped.
     public static func requiresConfirmationToLoad(_ url: URL) -> Bool {
         ForumRequestDefinition.requiresConfirmationToLoad(url)
     }

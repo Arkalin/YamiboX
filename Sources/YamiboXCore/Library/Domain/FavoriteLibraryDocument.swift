@@ -1,28 +1,11 @@
 import Foundation
 
-/// Stored state and construction-time normalization of the favorites
-/// library document. The mutating API is split by sub-domain into
-/// `FavoriteLibraryDocument+Items/+Categories/+Collections/+Tags.swift`;
-/// the `normalized*` helpers stay here because `init` funnels every
-/// programmatic (re)construction through them.
 public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
     public var categories: [FavoriteCategory]
     public var collections: [LocalFavoriteCollection]
     public var items: [FavoriteItem]
     public var tags: [FavoriteTag]
 
-    /// id → deletedAt for items/categories/collections/tags removed from
-    /// this document. Consulted only by `FavoriteLibraryWebDAVMerger` so a
-    /// deletion isn't silently revived by a stale peer's union-by-id copy of
-    /// the same id — see each deletion call site
-    /// (`removeItem`/`deleteCategory`/`dissolveCollection`/`deleteTag`) for
-    /// where these are written. `deletedItemIDs` is timestamped because
-    /// `FavoriteItemTarget.id` is content-derived (re-favoriting the same
-    /// thread reuses it), so a later re-add must be able to outrun an older
-    /// tombstone; the other three key on randomly generated ids that are
-    /// never reused, so once tombstoned they stay tombstoned permanently —
-    /// the date is kept anyway for uniform merge-time handling and for
-    /// debugging, not because reconciliation ever reads it.
     internal var deletedItemIDs: [String: Date]
     internal var deletedCategoryIDs: [String: Date]
     internal var deletedCollectionIDs: [String: Date]
@@ -46,13 +29,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         )
     }
 
-    /// Internal counterpart used by `FavoriteLibraryWebDAVMerger` (to carry
-    /// merged tombstones into `mergedLibrary`) and `FavoriteLibraryStore`'s
-    /// `canonicalized()` (to keep tombstones from being silently reset on
-    /// every save) — the public initializer above always starts a document
-    /// with no tombstones, which is correct for every external construction
-    /// site but would be wrong for those two, since both are reconstructing
-    /// a document that may already carry real ones.
     init(
         categories: [FavoriteCategory],
         collections: [LocalFavoriteCollection],
@@ -73,13 +49,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         self.deletedTagIDs = deletedTagIDs
     }
 
-    /// Rebuilds this document through the normalizing initializer (see
-    /// `normalizedCategories`/`normalizedItems`) while carrying its own
-    /// deletion tombstones forward — for callers that need to re-run
-    /// normalization on a document that may already carry live tombstones
-    /// (`FavoriteLibraryWebDAVParticipant.applyRemote`,
-    /// `FavoriteLibraryStore.canonicalized`), where the public initializer's
-    /// implicit "start with no tombstones" would silently erase them.
     func rebuiltPreservingTombstones() -> FavoriteLibraryDocument {
         FavoriteLibraryDocument(
             categories: categories,
@@ -98,16 +67,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         case deletedItemIDs, deletedCategoryIDs, deletedCollectionIDs, deletedTagIDs
     }
 
-    /// Hand-written rather than synthesized so old persisted documents
-    /// (written before these tombstone fields existed) keep decoding — see
-    /// `FavoriteLibraryWebDAVPayload.currentVersion`'s doc comment for the
-    /// same tolerance precedent. Deliberately does NOT route through the
-    /// normalizing initializer above, matching the prior synthesized
-    /// decode's behavior: `normalizedItems`'s doc comment already documents
-    /// that "Codable decoding bypasses this initializer" as load-bearing
-    /// (every deliberate (re)construction call site normalizes explicitly;
-    /// blind normalization on every decode is not something existing code
-    /// expects).
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         categories = try container.decode([FavoriteCategory].self, forKey: .categories)
@@ -124,9 +83,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         categories.first(where: \.isDefault) ?? .defaultCategory
     }
 
-    /// Internal rather than private: the category-mutating API lives in
-    /// `FavoriteLibraryDocument+Categories.swift` and must re-normalize
-    /// after every change, while `init` also funnels through here.
     static func normalizedCategories(_ categories: [FavoriteCategory]) -> [FavoriteCategory] {
         var result = categories
         if !result.contains(where: \.isDefault) {
@@ -167,10 +123,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         collections: [LocalFavoriteCollection],
         tags: [FavoriteTag]
     ) -> [FavoriteItem] {
-        // Deduplicate by target id, keeping the most recently updated entry.
-        // Codable decoding bypasses this initializer, but every programmatic
-        // (re)construction runs through here, so sync payloads routed through
-        // the initializer cannot re-introduce duplicate targets.
         guard !items.isEmpty else { return [] }
         let index = ItemNormalizationIndex(categories: categories, collections: collections, tags: tags)
         var newestByID: [String: FavoriteItem] = [:]
@@ -184,9 +136,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         return newestByID.values.sorted { lhs, rhs in lhs.id < rhs.id }
     }
 
-    /// Internal rather than private: every item write path in
-    /// `FavoriteLibraryDocument+Items.swift` must funnel through this
-    /// normalization, and `normalizedItems` above reuses it for `init`.
     static func normalizedItem(
         _ item: FavoriteItem,
         categories: [FavoriteCategory],
@@ -196,8 +145,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
         normalizedItem(item, index: ItemNormalizationIndex(categories: categories, collections: collections, tags: tags))
     }
 
-    /// Shared with transaction-scoped batch imports so the same organization
-    /// sets can validate each item without rebuilding them for every write.
     struct ItemNormalizationIndex {
         let validCategoryIDs: Set<String>
         let validCollectionIDsByCategory: [String: Set<String>]
@@ -229,13 +176,6 @@ public struct FavoriteLibraryDocument: Codable, Equatable, Sendable {
             return index.validCollectionIDsByCategory[location.categoryID, default: []].contains(collectionID)
         }
         item.locations = filtered.isEmpty ? [.category(index.defaultCategoryID)] : filtered
-        // Cross-validated against `tags`, not just deduplicated, mirroring
-        // `locations`'s validity filter above: a tag deleted (and tombstoned)
-        // on one device can still win the `tagIDs` last-writer-wins merge on
-        // an item from a peer that never learned about the deletion — without
-        // this filter, the now-nonexistent tag id would persist as a dangling
-        // reference on that item forever (invisible in the UI, but sitting in
-        // the data) instead of being dropped like a dangling location is.
         item.tagIDs = FavoriteItem.normalizedIDs(item.tagIDs).filter { index.validTagIDs.contains($0) }
         return item
     }

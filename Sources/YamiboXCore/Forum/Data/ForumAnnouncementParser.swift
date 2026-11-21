@@ -34,8 +34,6 @@ enum ForumAnnouncementParser {
                 ))
             }
         }
-        // Explicit server messages (no announcements, permission, login) use
-        // the shared status parser rather than an invented empty result.
         guard !items.isEmpty || document.select(".annlist, #annonav").count > 0 else { return nil }
         var seen: Set<URL> = []
         let filters = document.select("#annonav a, #dhnav_li a").array().compactMap { link -> ForumComposerLink? in

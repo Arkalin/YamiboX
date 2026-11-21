@@ -1,6 +1,5 @@
 import Foundation
 
-/// Extracts native forms and explicit status messages, never general page content.
 enum ForumFormPageParser {
     static func desktopFallbackURL(html: String, url: URL) throws -> URL? {
         let payload = HTMLTextExtractor.discuzAjaxPayload(from: html) ?? html
@@ -9,8 +8,6 @@ enum ForumFormPageParser {
               ["无手机页面", "無手機頁面", "无手机模板", "無手機模板"].contains(where: message.text().contains),
               ["电脑版", "電腦版"].contains(where: message.text().contains) else { return nil }
 
-        // Only follow the site's desktop continuation, never its back link or
-        // an arbitrary status-message redirect. Preserve the destination query.
         let destination = message.select("a[href]").array().compactMap { link -> URL? in
             guard let target = resolvedURL(link.attr("href"), baseURL: url),
                   ForumWebPagePolicy.requiresForumHandling(target) else { return nil }
@@ -33,11 +30,7 @@ enum ForumFormPageParser {
             guard let url = link.attrURL("href") else { return nil }
             return ForumComposerLink(title: link.normalizedText(), url: url)
         }
-        // These are desktop upload dialog forms, not independent user forms.
-        // Remove their chrome too; otherwise hidden dialog text leaks below
-        // the native composer even when its controls were excluded.
         document.select("#e_menus, #e_image_menu, #e_attach_menu, #icoImg_image_menu, #icoAttach_attach_menu, form[id=imgattachform], form[id^=imgattachform_], form[id=attachform], form[id^=attachform_]").remove()
-        // Do not mistake the desktop header's inline login form for a login page.
         if document.select("body.pg_logging, #main_messaqge #loginform, .loginbox").count > 0 {
             throw YamiboError.notAuthenticated
         }
@@ -81,8 +74,6 @@ enum ForumFormPageParser {
             kind = .standard
         }
 
-        // Browser editor helpers and upload dialogs are not successful composer
-        // controls. Their functionality is supplied by the native editor.
         let controls = element.select("input, textarea, select, button").array().filter { control in
             guard !control.hasAttribute("disabled"),
                   !control.parents().contains(where: { $0.tagName() == "fieldset" && $0.hasAttribute("disabled") }) else { return false }
@@ -134,8 +125,6 @@ enum ForumFormPageParser {
                 var seen: Set<String> = []
                 for option in nodes {
                     let optionValue = option.hasAttribute("value") ? option.attr("value") : option.text()
-                    // Discuz uses these sentinel values for JS dialogs, not form
-                    // submissions. Never send them as real category identifiers.
                     guard optionValue != "addoption", seen.insert(optionValue).inserted else { continue }
                     options.append(.init(value: optionValue, label: option.text()))
                 }
@@ -180,7 +169,6 @@ enum ForumFormPageParser {
                 isReadOnly: control.hasAttribute("readonly"), maxLength: Int(control.attr("maxlength"))
             ))
         }
-        // Forms without a submit action are UI helpers, not stand-alone pages.
         guard !buttons.isEmpty else { return nil }
         var instructions: [ForumThreadContentBlock] = []
         let instructionNodes = element.select(".alert_info, .notice, .description, .c").array()
@@ -199,14 +187,11 @@ enum ForumFormPageParser {
 
     private static func composerIsFirstPost(in document: Document) -> Bool {
         let scripts = document.select("script:not([src])").array().map { $0.html() }.joined(separator: "\n")
-        // Read Discuz's literal desktop flag without running site JavaScript.
         if let value = HTMLTextExtractor.firstMatch(
             pattern: #"(?:^|[;\r\n])\s*(?:var\s+)?isfirstpost\s*=\s*([01])\s*;"#, in: scripts
         )?.dropFirst().first {
             return value == "1"
         }
-        // The touch template exposes subject inputs on replies too, but only
-        // first-post editors bind subject validation. Unknown editors stay read-only.
         return HTMLTextExtractor.firstMatch(
             pattern: #"\$\(\s*['"]#needsubject['"]\s*\)\s*\.\s*on\s*\(\s*['"]keyup input['"]"#, in: scripts
         ) != nil
@@ -243,8 +228,6 @@ enum ForumFormPageParser {
     private static func continuationURL(document: Document, root: Element, baseURL: URL) -> URL? {
         if let link = root.selectFirst("#messagetext a[href], .jump_c a[href], .showmessage a[href]"),
            let url = resolvedURL(link.attr("href"), baseURL: baseURL) { return url }
-        // A refresh is exposed as an explicit native link, never executed. It
-        // can lead to another account action, even after a successful POST.
         for meta in document.select("meta[http-equiv]") where meta.attr("http-equiv").lowercased() == "refresh" {
             let parts = meta.attr("content").split(separator: ";", maxSplits: 1)
             guard parts.count == 2, let equals = parts[1].firstIndex(of: "=") else { continue }
@@ -272,8 +255,6 @@ enum ForumFormPageParser {
     private static func resolveComposerTabs(in document: Document, pageURL: URL) {
         let pageItems = URLComponents(url: pageURL, resolvingAgainstBaseURL: true)?.queryItems ?? []
         guard pageURL.path == "/forum.php", pageItems.contains(where: { $0.name == "mod" && $0.value == "post" }) else { return }
-        // Discuz's new-thread tabs use a literal switchpost URL instead of an
-        // href. Extract only that known signature; never evaluate JavaScript.
         let pattern = #"^\s*(?:return\s+)?switchpost\(['"](forum\.php\?[^'"]+)['"]\)\s*;?\s*(?:return false;?)?\s*$"#
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return }
         for link in document.select("a[onclick]") {
@@ -294,7 +275,5 @@ enum ForumFormPageParser {
 }
 
 private extension Element {
-    // Element.text() collapses whitespace for display; an editor must preserve
-    // the exact line breaks and indentation of the submitted source instead.
     var textareaValue: String { getChildNodes().map { $0.text() }.joined() }
 }

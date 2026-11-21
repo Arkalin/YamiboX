@@ -1,20 +1,5 @@
 import Foundation
 
-/// Descriptive label mirroring the tracked target's kind.
-/// `.normalThread`/`.novelThread`/`.mangaThread` map 1:1 from
-/// `FavoriteItemTargetKind` via `init(kind:)` so a favorite is never
-/// mislabeled. `.mangaThread` is still unreached at runtime:
-/// per-favorite update checking's candidate filter
-/// (`FavoriteUpdateMonitor.candidates(in:)`) excludes `.mangaThread`
-/// favorites entirely — the case is kept only for kind-parity so
-/// `init(kind:)` stays a total mapping.
-///
-/// `.mangaDirectory` is a DIFFERENT thing, added for smart-manga chapter
-/// checking: it labels a *directory-level* tracked target/event, which has
-/// no single favorite kind to map from (multiple `.mangaThread` favorites
-/// that resolve to the same `MangaDirectory` collapse into one). It is only
-/// ever constructed directly (never via `init(kind:)`) and paired with
-/// `FavoriteUpdateTargetKey.mangaDirectory`.
 public enum FavoriteUpdateTargetMode: String, Codable, Hashable, Sendable {
     case normalThread
     case novelThread
@@ -33,14 +18,6 @@ public enum FavoriteUpdateTargetMode: String, Codable, Hashable, Sendable {
     }
 }
 
-/// Identifies what a tracked target / event is about. Thread-mode checking
-/// (`.normalThread`/`.novelThread` favorites) keys off the individual
-/// favorite's own `FavoriteItemTarget`. Smart-manga chapter checking keys
-/// off the `MangaDirectory` itself (`cleanBookName`) instead: multiple
-/// favorited chapters that resolve to the same directory collapse into ONE
-/// tracked target / ONE potential event, mirroring how the favorites page
-/// already merges them into one card (see design decision #4 in the
-/// smart-manga update-check plan).
 public enum FavoriteUpdateTargetKey: Codable, Hashable, Sendable {
     case favorite(FavoriteItemTarget)
     case mangaDirectory(directoryID: MangaDirectoryID)
@@ -86,10 +63,6 @@ public enum FavoriteUpdateTargetKey: Codable, Hashable, Sendable {
         }
     }
 
-    /// Reverses `.mangaDirectory(cleanBookName:).id` for callers (e.g.
-    /// notification tap-routing) that only have the persisted id string, not
-    /// the original enum case. Returns nil for a `.favorite` id, never
-    /// guesses — the single source of truth for the prefix stays `id` above.
     public static func mangaDirectoryID(fromID id: String) -> MangaDirectoryID? {
         guard id.hasPrefix(mangaDirectoryIDPrefix) else { return nil }
         return MangaDirectoryID(rawValue: String(id.dropFirst(mangaDirectoryIDPrefix.count)))
@@ -113,9 +86,6 @@ public enum FavoriteUpdateRunPhase: String, Codable, Hashable, Sendable {
     case canceled
 }
 
-/// Transient progress detail for a running update check, beyond what
-/// `FavoriteUpdateRunPhase` conveys. The presentation layer maps these to
-/// localized text; the model never stores display copy.
 public enum FavoriteUpdateRunProgress: Codable, Hashable, Sendable {
     case loadedTargets(count: Int)
     case checking(index: Int, total: Int, title: String)
@@ -184,16 +154,8 @@ public struct FavoriteUpdateTrackedTarget: Codable, Hashable, Identifiable, Send
     public var knownLatestPostID: String?
     public var knownReplyCount: Int?
     public var knownPageCount: Int?
-    /// Chapter-tid baseline for `.mangaDirectory` targets only — always nil
-    /// for thread-mode targets. Monotonic: only ever grows (set union), even
-    /// though `MangaDirectoryWorkflow.updateDirectory`'s own retention logic
-    /// can prune stale chapters from the directory's stored list independent
-    /// of this baseline — shrinking the baseline in lockstep with that
-    /// pruning would make a pruned-then-reappearing chapter falsely
-    /// re-report as new.
     public var knownChapterTIDs: Set<String>?
     public var baselineReady: Bool
-    /// Nil on legacy records whose novel baseline included reader replies.
     public var novelBaselineVersion: Int?
     public var lastCheckedAt: Date?
     public var lastUpdatedAt: Date?
@@ -239,12 +201,9 @@ public struct FavoriteUpdateTrackedTarget: Codable, Hashable, Identifiable, Send
     }
 }
 
-/// What changed for a tracked favorite between two update checks.
 public enum FavoriteUpdateSummary: Codable, Hashable, Sendable {
     case newReplies(count: Int)
     case newPages(count: Int)
-    /// New chapter-thread tids found for a `.mangaDirectory` target — the
-    /// directory-mode counterpart of `.newReplies`/`.newPages`.
     case newChapters(count: Int)
     case changed
 }

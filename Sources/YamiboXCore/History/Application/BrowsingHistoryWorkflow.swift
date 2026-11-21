@@ -1,7 +1,5 @@
 import Foundation
 
-/// Serializes activity and configuration changes across all reader surfaces.
-/// Database compare-and-swap also protects against deletes outside this actor.
 public actor BrowsingHistoryWorkflow {
     private let store: any BrowsingHistoryReconciling
     private let settingsStore: any BrowsingHistorySettingsReading
@@ -38,9 +36,6 @@ public actor BrowsingHistoryWorkflow {
         _ = try await reconcile(visit: visit, mayCreate: false)
     }
 
-    /// Progress saves have no authority to create a timeline row. Source
-    /// metadata comes from the existing visit; all position fields come from
-    /// the canonical target's independent progress record.
     public func refreshPosition(threadID: String, reader: BrowsingHistoryCategory, title: String = "", date: Date = .now) async {
         await acquire()
         defer { release() }
@@ -54,15 +49,10 @@ public actor BrowsingHistoryWorkflow {
         }
     }
 
-    /// The common progress path only reads one canonical target. Identity
-    /// changes still use full reconciliation; configuration observers also
-    /// retain that path for changes affecting the entire timeline.
     private func refreshCanonicalPosition(_ visit: BrowsingHistoryVisit) async throws -> Bool {
         while true {
             try Task.checkCancellation()
             let settings = await settingsStore.loadBoardReaderSettings()
-            // Targeted writes can resolve board ownership without changing
-            // identity, so they cannot preserve proof from another configuration.
             if settings != lastNormalizedBoardReaderSettings {
                 lastNormalizedBoardReaderSettings = nil
             }
@@ -93,8 +83,6 @@ public actor BrowsingHistoryWorkflow {
             let progress = position.map { [$0.id: $0] } ?? [:]
             let updated = Self.canonical(incoming, settings: settings, directories: directories, forumIDs: forumIDs, progress: progress)
             guard try await store.canRecord(visit, targetID: updated.id) else { return true }
-            // Keep both pre-commit and post-commit checks: directory changes
-            // during either database await must be normalized before returning.
             guard settings == (await settingsStore.loadBoardReaderSettings()),
                   directories == (try await directoryStore.directories(containingTIDs: tids)) else { continue }
             guard try await store.applyPositionEntry(updated, replacing: existing, visit: visit) else { continue }
@@ -130,7 +118,6 @@ public actor BrowsingHistoryWorkflow {
         }
     }
 
-    /// Owned by the application runtime, independently of the visible reader.
     public func observeChanges() async {
         let settingsChanges = settingsStore.changes()
         let directoryChanges = directoryStore.changes()
@@ -175,8 +162,6 @@ public actor BrowsingHistoryWorkflow {
     }
 
     private func reconcile(visit: BrowsingHistoryVisit? = nil, mayCreate: Bool = false) async throws -> BrowsingHistorySnapshot {
-        // Only a completed full normalization proves that unrelated settings
-        // signals can be skipped. A failed read/commit must remain retryable.
         lastNormalizedBoardReaderSettings = nil
         var mayCreate = mayCreate
         var pendingVisit = visit
@@ -242,8 +227,6 @@ public actor BrowsingHistoryWorkflow {
                         visitTargetID = canonical.id
                         normalized.append(canonical)
                     }
-                    // If a concurrent delete invalidates this snapshot, an
-                    // existing visit must not be recreated by the retry.
                     if existing != nil { mayCreate = false }
                 }
             }
@@ -255,8 +238,6 @@ public actor BrowsingHistoryWorkflow {
             guard settings == (await settingsStore.loadBoardReaderSettings()),
                   storedDirectories == (try await directoryStore.directories(containingTIDs: tids)) else { continue }
             guard try await store.applyCanonicalEntries(entries, replacing: original, visit: pendingVisit, visitTargetID: visitTargetID) else { continue }
-            // A settings save can race the database await. Finish normalizing
-            // before exposing a snapshot; do not replay the activity timestamp.
             pendingVisit = nil
             mayCreate = false
             guard settings == (await settingsStore.loadBoardReaderSettings()),

@@ -217,7 +217,6 @@ private struct MangaReaderPagedPreviewCanvas: View {
 
     var body: some View {
         if usesTwoPageSpread {
-            // One reader viewport with two equal slots, not two independently layered cards.
             HStack(spacing: 0) {
                 MangaReaderPagedSpreadPreviewPage(
                     palette: palette,

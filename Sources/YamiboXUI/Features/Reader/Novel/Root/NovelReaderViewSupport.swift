@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Projects window geometry and settings together, before asking TextKit to
-/// lay out the document. Appearance commits and the view must use the same
-/// inputs so publishing new settings does not trigger a second pagination.
 @MainActor
 enum NovelReaderLayoutPresentation {
     static func externalLayout(
@@ -124,11 +121,7 @@ enum NovelReaderPresentedSheet: ReaderPanelRoute, Hashable {
     case downloadPanel
     case downloadProgress
     case chapterComments
-    /// Chapters, bookmarks, and likes share this one reader-library panel.
     case annotations
-    /// Note editor for one annotation. Carries the item so the sheet renders
-    /// the excerpt it is a note on; `LikeItem` is Hashable, which is all
-    /// `Identifiable` by `Self` needs.
     case note(LikeItem)
 
     var id: Self { self }
@@ -142,8 +135,6 @@ enum NovelReaderPresentedSheet: ReaderPanelRoute, Hashable {
 }
 
 struct NovelReaderPresentationModifier: ViewModifier {
-    // Plain reference (was `@ObservedObject`): the `@Observable` model's
-    // tracked properties read in `body` register observation on their own.
     let model: NovelReaderViewModel
     @Binding var presentedSheet: NovelReaderPresentedSheet?
     @Binding var forumThreadOverlayItem: ForumThreadOverlayItem?
@@ -269,9 +260,6 @@ struct NovelReaderPresentationModifier: ViewModifier {
 }
 
 struct NovelReaderStateObserverModifier: ViewModifier {
-    // Plain reference (was `@ObservedObject`): the `onChange(of:)` reads of
-    // the `@Observable` model's tracked properties in `body` register
-    // observation on their own.
     let model: NovelReaderViewModel
     @Binding var presentedSheet: NovelReaderPresentedSheet?
     @Binding var forumThreadOverlayItem: ForumThreadOverlayItem?
@@ -303,9 +291,6 @@ struct NovelReaderStateObserverModifier: ViewModifier {
                 onUpdateChromeForContentState()
                 onRestoreVerticalPositionIfNeeded()
             }
-            // Replaces the five per-boolean observers: every boolean flip maps
-            // to a change of the single sheet enum, and the handler is an
-            // idempotent state sync, so one observer is equivalent.
             .onChange(of: presentedSheet) { _, _ in
                 onUpdateChromeForContentState()
             }

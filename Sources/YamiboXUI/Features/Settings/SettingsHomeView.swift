@@ -2,8 +2,6 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// iPhone settings are pushed into Mine. iPad owns an independent split
-/// container so both settings columns survive window-size changes.
 public struct SettingsHomeView: View {
     private let onClose: () -> Void
     @State private var state: SettingsPresentationState
@@ -189,14 +187,6 @@ public struct SettingsHomeView: View {
         }
     }
 
-    /// Every path into a category page — the list above and these search
-    /// results — routes through `pushedCategory`, which is only reachable
-    /// from this screen. Gating navigation here on `viewModel.isBusy`, not
-    /// just each destination's own controls, is what keeps a
-    /// still-running action on one page (e.g. Storage) from ever becoming
-    /// reachable-but-frozen on another page the user navigates to next, and
-    /// keeps Sign Out from firing concurrently with an in-flight action
-    /// that shares the same view model and underlying stores.
     private var searchResultsSection: some View {
         let results = SettingsSearchRegistry.search(searchText)
         return Section {

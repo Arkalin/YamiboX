@@ -4,6 +4,8 @@
 
 数据存储与身份规则见[持久化、作品身份与迁移](persistence-and-identity.md)，账号切换见[账号与应用生命周期](account-lifecycle.md)，图片和离线文件见[下载、缓存与封面存储](downloads-and-storage.md)。
 
+设计取舍见[数据集版本与协调](../adr/0602-webdav-dataset-reconciliation.md)和[连接切换与失败边界](../adr/0603-webdav-boundaries.md)。
+
 ## 1. 同步范围与远端文件
 
 当前有 8 个数据集，由 [`WebDAVSyncContent`](../../Sources/YamiboXCore/Sync/WebDAV/WebDAVSyncModels.swift)定义。每个数据集独立选择、读取、合并和提交，不存在一个包含全部数据的总备份文件。

@@ -24,7 +24,6 @@ enum MangaInteractionDecision: Equatable {
 
 struct MangaInteractionConfiguration: Equatable {
     var chromeVisible = false
-    // Nested pages leave zooming to their enclosing spread surface.
     var zoomEnabled = true
     var doubleTapZoomEnabled = true
     var allowsUnzoomedPan = true

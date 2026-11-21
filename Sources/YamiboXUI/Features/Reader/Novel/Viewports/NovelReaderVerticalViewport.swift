@@ -70,8 +70,6 @@ struct NovelReaderVerticalViewportScrollView: UIViewRepresentable {
         let coordinator = context.coordinator
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
             guard let coordinator, let collectionView else { return }
-            // Layout can run inside the SwiftUI render commit; defer the
-            // frame/viewport publishes out of the update transaction.
             coordinator.callbackScheduler.performViewUpdate {
                 coordinator.publishLayout(from: collectionView)
             }
@@ -904,7 +902,6 @@ private final class NovelReaderVerticalViewportCell: UICollectionViewCell {
     func updateImageLikes(_ likedImageAnchors: Set<NovelImageLikeAnchor>) {
         guard currentLikedImageAnchors != likedImageAnchors, let currentPage else { return }
         currentLikedImageAnchors = likedImageAnchors
-        // Update badges in place so annotation changes preserve text selection and scroll position.
         for (block, blockView) in zip(currentPage.blocks, blockViews) {
             guard case let .image(url) = block,
                   let imageView = blockView.view as? NovelReaderVerticalViewportImageView else { continue }

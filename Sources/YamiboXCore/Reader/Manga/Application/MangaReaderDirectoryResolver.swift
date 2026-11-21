@@ -6,7 +6,6 @@ public enum MangaReaderDirectoryResolutionError: LocalizedError, Equatable, Send
     public var errorDescription: String? { L10n.string("manga.open.ambiguous_ownership") }
 }
 
-/// Resolves the same stable download owner for validation, details and reading.
 public enum MangaReaderDirectoryResolver {
     public static func resolve(
         context: MangaLaunchContext,

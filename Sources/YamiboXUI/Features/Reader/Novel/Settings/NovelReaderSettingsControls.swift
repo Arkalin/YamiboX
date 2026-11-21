@@ -3,11 +3,6 @@ import YamiboXCore
 
 #if os(iOS)
 
-// The section card, divider, toggle row, mode/direction pickers, and the
-// round stepper button are shared with the Manga sheet — see
-// Reader/Shared/Settings. This file keeps only the Novel-specific rows
-// (typography, translation, background theme) and the mapping between Novel
-// settings and the shared option types.
 
 struct NovelReaderFontScaleRow: View {
     private static let range = 0.8 ... 3.3
@@ -29,7 +24,6 @@ struct NovelReaderFontScaleRow: View {
             }
 
             HStack(spacing: 14) {
-                // 44pt is the Novel sheet's original size; Manga uses 42pt.
                 ReaderSettingsStepperButton(
                     systemName: "minus",
                     palette: palette,
@@ -164,8 +158,6 @@ struct NovelReaderSliderLeadingIcon: View {
 }
 
 extension ReaderSettingsReadingModeOption {
-    /// Maps Novel settings onto the shared option; Manga keeps the same
-    /// shape of initializer next to its own settings type.
     init(_ settings: NovelReaderAppearanceSettings) {
         self.init(isPaged: settings.readingMode == .paged)
     }

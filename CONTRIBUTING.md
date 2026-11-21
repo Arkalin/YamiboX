@@ -38,6 +38,7 @@ Issue、PR、截图和附件通常是公开的。提交前请移除密码、Cook
 
 - `Sources/YamiboXCore` 负责数据模型、应用流程、网络和持久化；`Sources/YamiboXUI` 负责界面和平台实现，UI 单向依赖 Core。先阅读 [架构总览](docs/architecture.md) 与相关 [技术专题](docs/README.md)。
 - 遵循相邻代码的命名、格式、并发与错误处理方式，优先复用现有 API。每个 PR 聚焦一个问题，不夹带无关重构、格式化、依赖升级或生成文件。
+- Swift 不新增注释。重要的理由和取舍写入 [ADR](docs/adr/)；存量注释用[减量规则](docs/development/comment-ratchet.md)逐步清理。
 - 界面改动考虑 iPhone/iPad、自适应布局和辅助功能；涉及文案时检查简体与繁体资源，维护方式见 [平台集成与资源维护](docs/development/platform-and-resources.md)。
 - 行为、配置或操作方式变更时同步更新相关文档。不要在多个文档中复制启动参数或服务端配置清单。
 - 不提交本机路径、签名凭据、账号数据、构建产物或临时诊断文件。新增资源和第三方代码须有可使用的授权，并保留必要的来源与许可声明。
@@ -59,6 +60,7 @@ Issue、PR、截图和附件通常是公开的。提交前请移除密码、Cook
 ```sh
 git diff --check
 bash scripts/check-architecture.sh
+bash scripts/check-comments.sh check
 ```
 
 如已准备 Local 环境，可按下例构建，将占位符替换为当前可用的 iOS 模拟器 UDID。使用其他环境的贡献者按实际配置构建并记录结果，无需为了提交 PR 搭建 Local 环境。
@@ -76,7 +78,7 @@ xcodebuild build \
 
 当前工程没有测试 target，旧 UI 自动化测试及其专用宿主已移除，不使用旧项目的 `swift test` 流程。未经明确批准，不新增单元测试、单元测试文件或 target；认为需要时先在 Issue/PR 中提出并取得批准。
 
-[Swift CI](.github/workflows/swift.yml) 当前执行架构检查和禁用签名的 `YamiboX` 模拟器编译，不安装或运行 App。CI 可提供编译结果，但不能证明交互验证通过；不要求外部贡献者额外完成 Local 验证。
+[Swift CI](.github/workflows/swift.yml) 当前执行架构检查、Swift 注释减量检查和禁用签名的 `YamiboX` 模拟器编译，不安装或运行 App。CI 可提供编译结果，但不能证明交互验证通过；不要求外部贡献者额外完成 Local 验证。
 
 ## 提交 Pull Request
 

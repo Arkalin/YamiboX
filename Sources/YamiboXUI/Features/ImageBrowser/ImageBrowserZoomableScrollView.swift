@@ -2,11 +2,6 @@
 import SwiftUI
 import UIKit
 
-/// Pure math shared by the zoom container and its tests. Zoom is expressed as
-/// a factor normalized against the aspect-fit scale: 1 = the image exactly
-/// fits the container, `maximumZoomFactor` = 5× past fit — the same scale
-/// space the previous pure-SwiftUI implementation used, so
-/// `ImageBrowserSwipeDismissGesture` keeps receiving unchanged values.
 enum ImageBrowserZoomMath {
     static let maximumZoomFactor: CGFloat = 5
     static let doubleTapZoomFactor: CGFloat = 2.6
@@ -29,9 +24,6 @@ enum ImageBrowserZoomMath {
         min(maximumZoomFactor, max(1, factor))
     }
 
-    /// The rect in natural-image coordinates that `UIScrollView.zoom(to:)`
-    /// should target so a double tap ends at `doubleTapZoomFactor`, centered
-    /// on the tapped image point.
     static func doubleTapZoomRect(
         tapPoint: CGPoint,
         imageSize: CGSize,
@@ -55,16 +47,10 @@ enum ImageBrowserZoomMath {
         clampedFactor(zoomIn ? factor * accessibilityZoomStep : factor / accessibilityZoomStep)
     }
 
-    /// Whether a zoom factor counts as "zoomed in" for gesture routing. One
-    /// shared predicate keeps both sides of the fence flipping together: the
-    /// scroll view starts accepting its pan at exactly the factor where the
-    /// SwiftUI layer detaches the dismiss drag.
     static func isEngagedZoom(factor: CGFloat) -> Bool {
         factor > 1.01
     }
 
-    /// Insets that keep undersized content centered in the container — the
-    /// standard `UIScrollView` centering trick, applied on zoom and layout.
     static func centeringInsets(contentSize: CGSize, containerSize: CGSize) -> UIEdgeInsets {
         let horizontal = max((containerSize.width - contentSize.width) / 2, 0)
         let vertical = max((containerSize.height - contentSize.height) / 2, 0)
@@ -72,14 +58,10 @@ enum ImageBrowserZoomMath {
     }
 }
 
-/// Commands the zoom container from SwiftUI (accessibility zoom actions and
-/// resetting zoom when a page is swiped away) without rebuilding the view.
 @MainActor
 final class ImageBrowserZoomProxy {
     fileprivate weak var view: ImageBrowserZoomScrollView?
 
-    /// Nonisolated so the proxy can serve as a `@State` default value, which
-    /// SwiftUI evaluates outside the main actor.
     nonisolated init() {}
 
     func stepZoom(zoomIn: Bool) {
@@ -91,25 +73,8 @@ final class ImageBrowserZoomProxy {
     }
 }
 
-/// `UIScrollView`-backed zoomable image page: anchored pinch zoom,
-/// rubber-banding past the limits, deceleration on pan flicks and double-tap
-/// zoom at the tapped point all come from the scroll view itself — feel the
-/// pure-SwiftUI gesture stack this replaced could not reproduce. At minimum
-/// zoom the scroll view has nothing to scroll, so vertical drags fall through
-/// to the SwiftUI swipe-to-dismiss gesture and horizontal swipes to
-/// `TabView(.page)`; once zoomed in, its pan takes over and pans the content,
-/// handing off to the pager only at the content edge.
 struct ImageBrowserZoomableScrollView: UIViewRepresentable {
-    /// `nil` while the page's image is still loading (or evicted by the
-    /// pager's keep window): the scroll view stays mounted showing nothing,
-    /// so load completion is a property change instead of a view-tree edit —
-    /// `TabView(.page)` halts its page-settle animation mid-flight when a
-    /// page's subtree changes shape during the swipe.
     let image: UIImage?
-    /// The current frame of an animated payload, `nil` for a still image. It
-    /// stays separate from `image` because zoom, content size and insets are
-    /// all derived from `image`: re-configuring the container on every frame
-    /// would reset the reader's zoom twenty times a second.
     let animationFrame: UIImage?
     let proxy: ImageBrowserZoomProxy
     let onSingleTap: () -> Void
@@ -176,9 +141,6 @@ final class ImageBrowserZoomScrollView: NativeZoomScrollView {
         setNeedsLayout()
     }
 
-    /// Swaps only the displayed bitmap. Animation frames share the poster
-    /// frame's pixel size, so every layout input stays valid and the reader's
-    /// zoom and pan survive playback untouched.
     func displayFrame(_ frame: UIImage?) {
         let displayed = frame ?? currentImage
         guard imageView.image !== displayed else { return }
@@ -236,13 +198,6 @@ final class ImageBrowserZoomScrollView: NativeZoomScrollView {
         onSingleTap?()
     }
 
-    /// At minimum zoom the scroll view has nothing to scroll — but the
-    /// aspect-fit `zoomScale` is a floating-point quotient, so `contentSize`
-    /// can land a hair *above* `bounds` (≈1e-13 pt, roughly 1 in 20 image
-    /// sizes). UIScrollView's can-scroll check has no tolerance: that hair is
-    /// enough for its pan to consider itself scrollable and swallow every
-    /// drag on the page, killing both the pager's page swipe and the dismiss
-    /// drag. Refuse the pan outright until the user actually zooms in.
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard super.gestureRecognizerShouldBegin(gestureRecognizer) else { return false }
         guard gestureRecognizer === panGestureRecognizer else { return true }

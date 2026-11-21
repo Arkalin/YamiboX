@@ -4,8 +4,6 @@ import Foundation
 public actor MangaDirectoryStore: MangaDirectoryPersisting {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
@@ -60,9 +58,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
             let seedID = MangaDirectoryID(rawValue: identities.canonicalID(seed.id.rawValue))
             let hasIdentity = identities.titles[seedID.rawValue] != nil
-            // An unpersisted random seed is not a second business identity.
-            // Check names and aliases inside the same write transaction as the
-            // insert, so simultaneous first discoveries adopt one directory.
             let resolvedID = hasIdentity ? seedID : identities.names[name].map { MangaDirectoryID(rawValue: identities.canonicalID($0)) }
             let existing: MangaDirectory?
             if let resolvedID {
@@ -72,8 +67,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             }
             var candidate = seed.reidentified(as: resolvedID ?? existing?.id ?? seedID)
             if var existing {
-                // Discovery can add a sibling but must not replace a concurrent
-                // creator's chapters or overwrite established user metadata.
                 var known = Set(existing.chapters.map(\.tid))
                 existing.chapters += seed.chapters.filter { known.insert($0.tid).inserted }
                 candidate = existing
@@ -104,9 +97,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             if let current = try Self.directory(id: directory.id, in: db),
                let sources = try Self.contentIdentityIDs(id: current.id, in: db),
                current.id != snapshot.directory.id || !sources.isSubset(of: snapshot.contentIdentityIDs) {
-                // A merge can retain the refreshing directory's ID. Its old
-                // snapshot must not replace the destination's merged content,
-                // nor claim the new provenance for an incomplete chapter list.
                 let baselineTIDs = Set(snapshot.directory.chapters.map(\.tid))
                 var known = Set(current.chapters.map(\.tid))
                 updated = current
@@ -176,8 +166,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         try await database.read { db in try MangaDirectoryIdentityDatabase.snapshot(in: db) }
     }
 
-    /// Old history can retain a title subsequently reused by another directory.
-    /// A conflict is not a license to bind that record by its display name.
     func resolveLegacyImportDirectoryID(name: String, identity: String?, chapterTID: String?, allowNameFallback: Bool = true) async throws -> MangaDirectoryID? {
         try await database.read { db in
             try MangaDirectoryIdentityDatabase.resolveLegacyRecord(name: name, identity: identity, chapterTID: chapterTID, allowNameFallback: allowNameFallback, in: db)
@@ -253,24 +241,10 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         }
     }
 
-    /// Bulk tid → owning-directory lookup used by favorites' virtual
-    /// merged-directory grouping (smart-comic-mode Phase E). Mirrors
-    /// `directory(containingTID:)`'s JOIN/most-recently-updated-directory-
-    /// wins ordering, just batched: a single `WHERE c.tid IN (...)` query
-    /// resolves every tid's owning directory name in one round trip (chunked
-    /// only if the input is larger than `Self.maxInClauseBatchSize` — see
-    /// that constant's doc comment), then each *distinct* resolved directory
-    /// is loaded once and shared by every tid that maps to it, rather than
-    /// once per tid.
     public func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory] {
         let normalizedTIDs = Array(Set(tids.compactMap(\.nilIfBlank)))
         guard !normalizedTIDs.isEmpty else { return [:] }
         return try await database.read { db in
-            // Ties within a tid (same tid appearing under more than one
-            // directory) resolve exactly like the single-tid method: most
-            // recently updated directory wins, `clean_book_name` breaks ties.
-            // Ordering by `tid` first lets a single pass over the rows keep
-            // only the first (best-ranked) directory seen per tid.
             var winningNameByTID: [String: String] = [:]
             for batch in normalizedTIDs.chunked(intoBatchesOf: Self.maxInClauseBatchSize) {
                 let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
@@ -398,8 +372,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         _ transform: @escaping @Sendable (inout SyncRecordSnapshot<MangaDirectorySyncRecord>, SyncRecordSnapshot<MangaDirectorySyncRecord>?) throws -> T
     ) async throws -> T {
         let result = try await database.write { db in
-            // A merge may commit after WebDAV normalization. Resolve both
-            // sides under the write lock before comparing versions/tombstones.
             let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
             let previous = try Self.syncSnapshot(identities: identities, in: db)
             var snapshot = try Self.canonicalSnapshot(previous, identities: identities)
@@ -409,8 +381,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             guard snapshot != previous else { return (result, false) }
             try db.execute(sql: "DELETE FROM manga_directories")
             for record in snapshot.records {
-                // save registers names/aliases but does not change redirects.
-                // It still reads authoritative titles from the live database.
                 try Self.save(record.directory, modifiedAt: record.modifiedAt, contentIdentityIDs: record.contentIdentityIDs, identities: identities, in: db)
             }
             try snapshot.deletions.save(to: "manga_directory_sync_state", in: db)
@@ -431,8 +401,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
             if let title = identities.titles[canonical], title != canonical {
                 record.directory.cleanBookName = title
             }
-            // Content lineage tracks incorporated chapters, not redirects.
-            // Preserve it so the merger can still identify unseen origins.
             return record
         }
         let deletions = MangaIdentityDeletionRemapping.normalize(
@@ -453,8 +421,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         return SyncRecordSnapshot(records: records, deletions: try SyncDeletionState.load(from: "manga_directory_sync_state", in: db))
     }
 
-    /// Lightweight per-directory listing for the settings management screen:
-    /// name + chapter count instead of every chapter's full metadata.
     public func allDirectorySummaries() async -> [MangaDirectorySummary] {
         do {
             return try await database.read { db in
@@ -522,15 +488,11 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         }
     }
 
-    /// Content provenance is not an identity alias: rekeying a directory must
-    /// never claim that another directory's chapters have already been merged.
     static func contentIdentityIDs(id: MangaDirectoryID, in db: Database) throws -> Set<String>? {
         guard let json = try String.fetchOne(db, sql: "SELECT content_identity_ids_json FROM manga_directories WHERE id = ?", arguments: [id.rawValue]) else { return nil }
         return try JSONDecoder().decode(Set<String>.self, from: Data(json.utf8))
     }
 
-    /// Optional identities share redirects within the caller's transaction;
-    /// title/provenance reads stay live as earlier saves register content.
     static func save(_ directory: MangaDirectory, modifiedAt: Date = .now, allowRename: Bool = false, contentIdentityIDs: Set<String>? = nil, identities: MangaDirectoryIdentitySnapshot? = nil, in db: Database) throws {
         let canonical = try identities?.canonicalID(directory.id.rawValue)
             ?? MangaDirectoryIdentityDatabase.canonicalID(directory.id, in: db).rawValue
@@ -538,8 +500,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         let sourcesJSON = String(decoding: try JSONEncoder().encode(sources.sorted()), as: UTF8.self)
         var normalized = directory.reidentified(as: MangaDirectoryID(rawValue: canonical))
         if canonical != directory.id.rawValue, let current = try Self.directory(id: normalized.id, identities: identities, in: db) {
-            // A refresh that began before a merge must not restore the losing
-            // title or replace the destination's chapters with its stale subset.
             var known = Set(current.chapters.map(\.tid))
             normalized = current
             normalized.chapters += directory.chapters.filter { known.insert($0.tid).inserted }
@@ -547,8 +507,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         if !allowRename,
            let currentName = try String.fetchOne(db, sql: "SELECT name FROM manga_identities WHERE id = ?", arguments: [canonical]),
            currentName != canonical, currentName != normalized.cleanBookName {
-            // Network refreshes may finish after a rename without changing ID.
-            // Content writers cannot roll back the authoritative title/keyword.
             if let current = try Self.directory(id: normalized.id, identities: identities, in: db) { normalized.searchKeyword = current.searchKeyword }
             normalized.cleanBookName = currentName
         }
@@ -609,8 +567,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         return try directory(id: MangaDirectoryID(rawValue: id), identities: identities, in: db)
     }
 
-    /// A supplied snapshot must belong to this database operation, not a
-    /// retained cache that can outlive an identity merge.
     static func directory(id: MangaDirectoryID, identities: MangaDirectoryIdentitySnapshot? = nil, in db: Database) throws -> MangaDirectory? {
         let canonical = try identities?.canonicalID(id.rawValue)
             ?? MangaDirectoryIdentityDatabase.canonicalID(id, in: db).rawValue
@@ -661,16 +617,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
         )
     }
 
-    /// Conservative ceiling for one `WHERE tid IN (...)` query's bound
-    /// parameters. SQLite's compiled-in `SQLITE_MAX_VARIABLE_NUMBER` has
-    /// varied a lot across versions (historically 999; modern default
-    /// builds raise it to 32766), and nothing here pins which SQLite this
-    /// app links against, so `directories(containingTIDs:)` chunks well
-    /// under the old, stricter ceiling rather than assuming the new one.
-    /// No existing chunking helper was found elsewhere in the codebase for
-    /// this (checked `ContentCoverStore`/`ReadingProgressStore`/
-    /// `FavoriteSyncRunStore` — none of them batch `IN` queries today), so
-    /// this is a fresh, file-local constant/helper rather than a reused one.
     private static let maxInClauseBatchSize = 500
 
     private nonisolated func postChangeNotification() {
@@ -680,7 +626,6 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
 }
 
 private extension Array {
-    /// Splits into batches of at most `size` elements, preserving order.
     func chunked(intoBatchesOf size: Int) -> [[Element]] {
         guard size > 0, !isEmpty else { return isEmpty ? [] : [self] }
         return stride(from: 0, to: count, by: size).map {
@@ -697,9 +642,6 @@ private func optionalDate(from value: Double?) -> Date? {
     value.map(Date.init(timeIntervalSince1970:))
 }
 
-// Same contract as `downloadPersistenceError`: domain errors pass through
-// untouched, everything else is wrapped with the source error preserved as
-// `underlying` for logging.
 private func persistenceError(from error: Error) -> any Error {
     if let error = error as? YamiboError {
         return error

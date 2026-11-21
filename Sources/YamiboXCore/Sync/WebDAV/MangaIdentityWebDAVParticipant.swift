@@ -1,6 +1,5 @@
 import Foundation
 
-/// Feature-owned identity capability, consumed only by the composition root.
 protocol MangaIdentitySyncParticipant: WebDAVSyncParticipant {
     var mangaIdentityStrategy: MangaIdentityPayloadStrategy? { get }
 }
@@ -12,9 +11,6 @@ extension MangaIdentitySyncParticipant {
     }
 }
 
-/// Adds identity transport without teaching each dataset's merger about the
-/// directory registry. Every payload is self-contained, including when the
-/// user elects to sync annotations but not directories.
 struct MangaIdentityWebDAVParticipant: WebDAVSyncParticipant {
     static let namespace = "manga-identity-v1"
     private static let identityKey = "mangaIdentities"
@@ -76,8 +72,6 @@ struct MangaIdentityWebDAVParticipant: WebDAVSyncParticipant {
         if exported == nil {
             data = try await strategy.filteringLegacyDeletions(data, local: base.readLocalDeletionState())
         }
-        // Legacy payloads lack a registry. Derive identities only at this
-        // import boundary, never from a production write's display name.
         var legacyTargets = exported == nil ? try await strategy.resolveLegacyTargets(in: data, legacy: true, directoryStore: directoryStore, datasetID: datasetID) : [:]
         var identities = try exported ?? strategy.legacyIdentitySnapshot(in: object(data))
         if !legacyTargets.isEmpty {
@@ -93,8 +87,6 @@ struct MangaIdentityWebDAVParticipant: WebDAVSyncParticipant {
         }
         try await directoryStore.mergeIdentitySnapshot(identities)
         if exported != nil {
-            // Incoming aliases can disambiguate a record preserved by local
-            // migration. Retry only after those aliases are in the registry.
             legacyTargets = try await strategy.resolveLegacyTargets(in: data, legacy: false, directoryStore: directoryStore, datasetID: datasetID)
         }
         let canonical = try await directoryStore.identitySnapshot()

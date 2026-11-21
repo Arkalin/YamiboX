@@ -8,10 +8,6 @@ struct ForumThreadSummaryRowView: View {
     let thread: ForumThreadSummary
     let onThreadTap: () -> Void
     let onAuthorTap: (String, String?) -> Void
-    /// Long-press menu for opening this one thread with a different reader
-    /// than its board is configured for. `nil` (the default) leaves the card
-    /// without a context menu entirely — an empty menu would still swallow
-    /// the long press.
     var onReaderOverrideTap: ((YamiboThreadReaderOverride) -> Void)?
 
     var body: some View {
@@ -67,11 +63,6 @@ struct ForumThreadSummaryRowView: View {
 }
 
 extension View {
-    /// Long-press menu for opening one thread with a reader other than the one
-    /// its board is configured for. Shared by every row that can open a thread
-    /// (summary cards and pinned rows); pass `nil` where no thread is behind
-    /// the row — an announcement opens a native document, which has no reading
-    /// mode to choose.
     func forumThreadReaderOverrideContextMenu(
         onSelect: ((YamiboThreadReaderOverride) -> Void)?
     ) -> some View {
@@ -79,9 +70,6 @@ extension View {
     }
 }
 
-/// Applies the reading-mode context menu only when a handler exists: an
-/// always-present `.contextMenu` whose body happens to be empty still turns
-/// every long press on the row into a menu-less preview.
 private struct ForumThreadReaderOverrideContextMenu: ViewModifier {
     let onSelect: ((YamiboThreadReaderOverride) -> Void)?
 

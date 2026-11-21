@@ -1,8 +1,6 @@
 import Foundation
 
-/// Pure color, size, and inline-style rules shared by editing and HTML adapters.
 enum ForumTextStyleRules {
-    /// Style carried by CSS (color, background-color, font-size, font-style).
     static func style(fromStyleAttribute styleAttribute: String) -> ForumThreadTextStyle {
         let declarations = styleDeclarations(from: styleAttribute)
         let decoration = declarations["text-decoration"] ?? declarations["text-decoration-line"] ?? ""

@@ -42,15 +42,12 @@ public struct YamiboImageSource: Hashable, Sendable {
         url.absoluteString
     }
 
-    /// Recovery is request-scoped even when successful bytes share a URL key.
     public var recoveryKey: String {
         let source = normalizedForLoading
         let referer = source.refererPageURL?.absoluteString ?? ""
         return "\(source.cacheKey.utf8.count):\(source.cacheKey)\(referer.utf8.count):\(referer)"
     }
 
-    /// Unknown legacy manga provenance gets a site-level Referer, never an
-    /// invented chapter. External artwork must not receive forum navigation.
     public static func cover(url: URL, refererPageURL: URL? = nil, threadID: String? = nil) -> Self {
         let fallback = YamiboDomain.isForumURL(url)
             ? threadID.map { YamiboRoute.threadByID(tid: $0, page: 1, authorID: nil, reverse: false).url }

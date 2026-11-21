@@ -16,7 +16,6 @@ public struct NetworkLogError: Codable, Equatable, Sendable {
 
     init(error: any Error) {
         let error = error as NSError
-        // Domains outside this list may be supplied by arbitrary remote data.
         let knownDomains: Set<String> = [
             NSURLErrorDomain, NSCocoaErrorDomain, NSPOSIXErrorDomain,
             "NSOSStatusErrorDomain", "kCFErrorDomainCFNetwork", "WKErrorDomain",
@@ -78,7 +77,6 @@ public struct NetworkLogEntry: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// This produces the only URL representation accepted by the recorder.
 enum NetworkLogRedactor {
     static let maximumURLBytes = 4_096
     private static let marker = "[REDACTED]"
@@ -156,8 +154,6 @@ enum NetworkLogRedactor {
         guard value.utf8.count > maximumBytes else { return (value, false) }
         let suffix = "[TRUNCATED]"
         let bytes = value.utf8.prefix(maximumBytes - suffix.utf8.count)
-        // A truncated scalar may decode as replacement text; trim it rather than
-        // persisting invalid UTF-8 or exceeding the limit.
         var prefix = String(decoding: bytes, as: UTF8.self)
         while prefix.utf8.count > maximumBytes - suffix.utf8.count { prefix.removeLast() }
         return (prefix + suffix, true)

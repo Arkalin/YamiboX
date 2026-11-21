@@ -190,9 +190,6 @@ struct ForumThreadReaderView: View {
         }
     }
 
-    /// Both menu toggles read back from the model rather than local state:
-    /// `setAuthorOnly` can refuse (unresolvable thread starter), and the
-    /// checkmark must follow what actually loaded.
     private var authorOnlyBinding: Binding<Bool> {
         Binding(
             get: {

@@ -3,10 +3,6 @@ import YamiboXCore
 #if os(iOS)
 import UIKit
 
-/// Renders persisted text Like Items as permanent highlights on top of the
-/// same selection-rect geometry `NovelTextSelectionController` uses for the
-/// live selection. Mirrors its register/unregister weak-view bookkeeping and
-/// `LikeStore.changes()` changeID loop-filtering.
 @MainActor
 final class NovelLikeHighlightController {
     private let registeredViews = NSHashTable<NovelTextViewportReferenceUIView>.weakObjects()
@@ -56,8 +52,6 @@ final class NovelLikeHighlightController {
             for await changeID in likeStore.changes() {
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
-                // Per-instance stream: the guard is kept as the explicit
-                // "only this exact store instance" contract.
                 guard changeID == expectedChangeID else {
                     continue
                 }
@@ -80,26 +74,12 @@ final class NovelLikeHighlightController {
         registeredViews.remove(view)
     }
 
-    /// One annotation resolved onto a concrete surface.
     struct ResolvedHighlight {
         let item: LikeItem
-        /// Already clipped to this surface by `selectionRects(for:)`.
         let rects: [CGRect]
-        /// Rect of the annotation's FIRST character, and only when that
-        /// character is on THIS surface — the note badge pins to the
-        /// highlight's beginning, Apple Books style. `rects.first` is merely
-        /// the start of the visible portion here, so it would put the badge at
-        /// the page break of an annotation that started overleaf.
         let startRect: CGRect?
     }
 
-    /// Every currently-resolvable highlight for `displayReference`'s surface.
-    /// Shared by the draw pass and tap hit-testing.
-    ///
-    /// Sorted by document position: `rangesByItemID` is a Dictionary, and an
-    /// unordered draw order made no visible difference while every highlight
-    /// was the same yellow — with six colours it would z-fight between frames
-    /// wherever two annotations touch.
     func highlights(
         for displayReference: NovelTextViewportDisplayReference
     ) -> [ResolvedHighlight] {
@@ -108,8 +88,6 @@ final class NovelLikeHighlightController {
         let surface = displayReference.surfaceIdentity
         if let cached = surfaceHighlights[surface] { return cached }
         let surfaceRange = displayReference.surfaceDocumentRange
-        // Prefix maximum ends keep long annotations that begin on an earlier
-        // surface in the candidate set, including overlapping annotations.
         var first = 0
         if let surfaceRange {
             var upper = indexedRanges.count
@@ -145,9 +123,6 @@ final class NovelLikeHighlightController {
         return highlights
     }
 
-    /// Probes a synthetic one-character range at the annotation's first
-    /// character; an empty result means that character lives on another
-    /// surface.
     private func startRect(
         of range: NovelTextSelectionRange,
         in displayReference: NovelTextViewportDisplayReference
@@ -180,8 +155,6 @@ final class NovelLikeHighlightController {
 
     func item(id: String) -> LikeItem? { itemsByID[id] }
 
-    /// Union of the rects `item` occupies on `view`'s surface, for anchoring
-    /// the style capsule. Empty when the item isn't resolvable there.
     func unionRect(for item: LikeItem, in view: NovelTextViewportReferenceUIView) -> CGRect? {
         guard let displayReference = view.displayReference else { return nil }
         let rects = highlights(for: displayReference)
@@ -223,10 +196,6 @@ final class NovelLikeHighlightController {
         }
     }
 
-    /// Repaints a style change on the same runloop tick as the tap, for the
-    /// same reason `applyCapturedItem` exists: the store-change round trip
-    /// lands a frame or more later, which would make the colour lag the touch.
-    /// The eventual `reload()` reconciles.
     func applyStyleOptimistically(itemID: String, style: LikeStyle) {
         guard itemsByID[itemID] != nil else { return }
         reloadRevision &+= 1
@@ -235,10 +204,6 @@ final class NovelLikeHighlightController {
         repaintRegisteredViews()
     }
 
-    /// Optimistically paints a just-captured like on the same runloop tick as
-    /// its success haptic — the store-change notification round trip that
-    /// `reload()` waits on lands a frame or more later, which decouples the
-    /// visual from the haptic. The eventual `reload()` reconciles.
     func applyCapturedItem(_ item: LikeItem) {
         guard item.kind == .text else { return }
         reloadRevision &+= 1
@@ -255,9 +220,6 @@ final class NovelLikeHighlightController {
         cachedDocument = key
         rangesByItemID.removeAll()
         for item in itemsByID.values {
-            // Each endpoint resolves through its OWN segment identity, which
-            // is what lets one annotation span the illustration that split its
-            // text into two segments.
             guard case let .novelText(anchor) = item.anchor,
                   let range = displayReference.highlightRange(
                       from: resumePoint(for: anchor, endpoint: anchor.start),
@@ -276,11 +238,6 @@ final class NovelLikeHighlightController {
         backfillExcerptContexts(using: displayReference)
     }
 
-    /// Heals the clause context of annotations that predate the field (or
-    /// arrived over WebDAV, which never carries it): this is the first moment
-    /// a device is guaranteed to hold both the item and the laid-out chapter
-    /// text it was captured from. One-shot per item — a healed item has
-    /// non-nil context and is never sliced again.
     private func backfillExcerptContexts(using displayReference: NovelTextViewportDisplayReference) {
         guard let likeStore else { return }
         var contexts: [String: (prefix: String?, suffix: String?)] = [:]
@@ -295,14 +252,9 @@ final class NovelLikeHighlightController {
             )
         }
         guard !contexts.isEmpty else { return }
-        // The store skips no-op rows and only notifies when something actually
-        // changed, so a context that legitimately resolves to (nil, nil) can't
-        // loop the observers.
         Task { await likeStore.resolveExcerptContexts(contexts) }
     }
 
-    // `view: 1` is a placeholder: `documentSelectionRange` overrides it with
-    // the active document's own `view` before lookup (see that method).
     private func resumePoint(for anchor: NovelTextLikeAnchor, endpoint: NovelLikeTextEndpoint) -> NovelResumePoint {
         NovelResumePoint(
             view: 1,
@@ -329,8 +281,6 @@ final class NovelLikeHighlightController {
         }
         guard configurationID == expectedConfiguration, reloadRevision == expectedRevision else { return }
         itemsByID = Dictionary(fetched.filter { $0.kind == .text }.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
-        // Generation didn't change, so `refreshIfNeeded` won't recompute on
-        // its own next call; force it and repaint every registered surface.
         invalidateRanges()
         repaintRegisteredViews()
     }

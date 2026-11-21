@@ -5,8 +5,6 @@ public enum ReadingWorkKind: String, Codable, Hashable, Sendable, CaseIterable {
     case manga
 }
 
-/// Shared work identity for reading, bookmarks and excerpts. Its stored fields
-/// and enum raw values preserve the original LikeWorkKey serialization.
 public struct ReadingWorkKey: Codable, Hashable, Sendable {
     public var kind: ReadingWorkKind
     public var id: String

@@ -1,4 +1,3 @@
-/// CSS named colors, shared by the reader's HTML color attributes and CSS declarations.
 enum ForumThreadCSSNamedColors {
     static let values: [String: String] = [
         "aliceblue": "#F0F8FF", "antiquewhite": "#FAEBD7", "aqua": "#00FFFF",

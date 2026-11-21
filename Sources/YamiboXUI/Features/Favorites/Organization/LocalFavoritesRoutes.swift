@@ -1,10 +1,6 @@
 import Foundation
 import YamiboXCore
 
-/// Presentation router for the favorites screen: which sheet and which
-/// confirmation dialog are currently shown. Child views trigger presentations
-/// by assigning to `sheet` or `dialog`; `LocalFavoritesOrganizationView`
-/// renders them.
 @MainActor
 final class LocalFavoritesRoutes: ObservableObject {
     enum Sheet: Identifiable {
@@ -74,10 +70,7 @@ final class LocalFavoritesRoutes: ObservableObject {
     @Published var sheet: Sheet?
     @Published var dialog: Dialog?
     @Published var detail: ContentDetailDestination?
-    /// The sync progress page is pushed (a full screen, not a sheet).
     @Published var isSyncProgressPushed = false
-    /// The favorite-updates page is pushed (toolbar bell entry).
     @Published var isUpdatesPagePushed = false
-    /// The board-favorite management page is pushed (overflow menu entry).
     @Published var isBoardFavoritesPushed = false
 }

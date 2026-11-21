@@ -1,7 +1,5 @@
 import Foundation
 
-/// Decodes the shared "<chapterIdentity>#text:N" / "#image:N" identity
-/// format without depending on bookmarks or Like Items.
 enum NovelSegmentIdentityParser {
     private static let occurrenceSuffixRegex = try! NSRegularExpression(pattern: #"#(?:text|image):(\d+)$"#)
 

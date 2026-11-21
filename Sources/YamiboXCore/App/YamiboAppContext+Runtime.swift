@@ -1,6 +1,5 @@
 import Foundation
 
-/// The sync service and runtime observations are projections of the same registration.
 struct AppWebDAVDataset: Sendable {
     let participant: any WebDAVSyncParticipant
     let changeID: String

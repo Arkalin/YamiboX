@@ -1,14 +1,10 @@
 import SwiftUI
 
-/// Shared title-on-color cover for favorites and book detail pages.
-/// The caller supplies the cover's frame; title-length font steps scale with
-/// its width so list thumbnails and larger covers retain the same proportions.
 struct BookCoverTextFallback: View {
     let title: String
     let boxWidth: CGFloat
     @Environment(\.appTheme) private var appTheme
 
-    /// Reference cover width for the Android-compatible 32/24/19/15/12 font steps.
     private static let referenceWidth: CGFloat = 150
 
     var body: some View {
@@ -40,8 +36,6 @@ struct BookCoverTextFallback: View {
     }
 
     private var fontSize: CGFloat {
-        // 10pt floor: below that the title stops being legible at all and the
-        // tile reads as noise (small mosaic tiles used to bottom out at 6pt).
         max(10, baseFontSize * scale)
     }
 

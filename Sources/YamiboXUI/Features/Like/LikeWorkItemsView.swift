@@ -2,11 +2,6 @@ import SwiftUI
 import YamiboXCore
 import UIKit
 
-/// Second-level Like list for one work: Mine push destination and both
-/// readers' `.sheet` share this exact type (see implementation-design.md §9).
-///
-/// Mine opens a text detail sheet or image browser first; the reader's
-/// annotation panel opts into opening the saved anchor directly.
 struct LikeWorkItemsView: View {
     let work: ReadingWorkKey
     let workTitle: String
@@ -85,11 +80,6 @@ struct LikeWorkItemsView: View {
         .scrollDismissesKeyboard(.interactively)
         .environment(\.imageBrowserZoomNamespace, imageBrowserZoomNamespace)
         .contentMargins(.top, 4, for: .scrollContent)
-        // The List stays permanently mounted (rather than being swapped for
-        // an empty-state view via if/else) so `.searchable` below always has
-        // a stable scrollable view to attach its search bar to — swapping it
-        // in right after this view is pushed (before `load()` finishes) is
-        // what caused the search bar to briefly ghost/overlap the first row.
         .overlay {
             if !hasLoaded {
                 if let loadFailure {
@@ -193,15 +183,8 @@ struct LikeWorkItemsView: View {
             publishAnnotationNavigationState()
             await load()
         }
-        // Appearance-scoped `.task` replacing the removed `.onReceive`
-        // bridge: sheets/covers presented from this view don't cancel it, so
-        // deletions made in them still refresh live, and anything missed
-        // while genuinely covered is caught by the sibling
-        // `.task { await load() }` re-running on reappear.
         .task(id: work) {
             for await changeID in like.likeStore.changes() {
-                // Per-instance stream: the guard is kept as the explicit
-                // "only this exact store instance" contract.
                 guard changeID == like.likeStore.changeID else {
                     continue
                 }
@@ -339,9 +322,6 @@ struct LikeWorkItemsView: View {
             sorted = Self.sortedNovelItems(fetched)
             chapterInfo = await like.resolveChapterInfo(for: sorted, work: work)
         case .manga:
-            // Manga Like Items never store a chapter ordinal (see
-            // implementation-design.md §11): chapter order is always resolved
-            // live against the directory's current chapter array.
             let directory = try? await like.mangaDirectoryStore.directory(id: MangaDirectoryID(rawValue: work.id))
             sorted = Self.sortedMangaItems(fetched, chapterOrder: Self.chapterOrder(for: directory))
             chapterInfo = await like.resolveChapterInfo(for: sorted, work: currentWork, mangaDirectory: directory)
@@ -362,7 +342,6 @@ struct LikeWorkItemsView: View {
         }
     }
 
-    // MARK: - Selection
 
     private func toggleSelection(_ id: String) {
         if selectedItemIDs.contains(id) {
@@ -378,11 +357,6 @@ struct LikeWorkItemsView: View {
         return !visibleIDs.isEmpty && visibleIDs.isSubset(of: selectedItemIDs)
     }
 
-    /// Not a true per-item inversion — mirrors `FavoriteLibraryOrganizer
-    /// .toggleSelectAllVisible`/`SystemSettingsViewModel
-    /// .toggleAllDownloadManagementRows`: selects every currently visible
-    /// (search-filtered) item, or clears the whole selection when everything
-    /// visible is already selected.
     private func toggleSelectAll() {
         let visibleIDs = Set(filteredItems.map(\.id))
         guard !visibleIDs.isEmpty else { return }
@@ -426,14 +400,6 @@ struct LikeWorkItemsView: View {
         )
     }
 
-    /// Novel Like Items arrive from the store already in book order: the row
-    /// carries a persisted `sortKey` derived from its anchor, which is exact
-    /// once a reader session has resolved the chapter's position on its forum
-    /// page.
-    ///
-    /// This used to sort here on `chapterIdentity.rawValue`, a string — so
-    /// `"post:9…"` sorted after `"post:10…"` and annotations in a long thread
-    /// came out in an order that looked arbitrary.
     private static func sortedNovelItems(_ items: [LikeItem]) -> [LikeItem] {
         items.sorted { lhs, rhs in
             if lhs.sortKey != rhs.sortKey {
@@ -443,8 +409,6 @@ struct LikeWorkItemsView: View {
         }
     }
 
-    // Mirrors `MangaChapterWindow.chapterOrder()`: first occurrence wins so a
-    // directory with a duplicate tid doesn't crash on dictionary insertion.
     private static func chapterOrder(for directory: MangaDirectory?) -> [String: Int] {
         var order: [String: Int] = [:]
         for (index, chapter) in (directory?.chapters ?? []).enumerated() where order[chapter.tid] == nil {
@@ -523,9 +487,6 @@ enum LikeImageBrowserItemFactory {
     }
 }
 
-/// One liked-item card: a quote-style card for text excerpts, a full-width
-/// photo card for images. Tapping either opens a detail surface instead of
-/// jumping straight to the original position (see `LikeWorkItemsView.open`).
 private struct LikeItemCard: View {
     let item: LikeItem
     let chapterInfo: String?
@@ -565,8 +526,6 @@ private struct LikeItemCard: View {
             isSelectionMode: isSelecting,
             isSelected: isSelected,
             cornerRadius: 8,
-            // These rows are flat, so the border has nothing but glyphs to sit
-            // against without this. The list row gives the same amount back.
             contentInset: 8
         )
     }

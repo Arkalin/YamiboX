@@ -3,8 +3,6 @@ import SwiftUI
 import UIKit
 
 extension Color {
-    /// Linearly interpolates between `self` and `other` in RGBA space.
-    /// `amount` 0 returns `self`, 1 returns `other`; values are clamped.
     func mix(with other: Color, amount: Double) -> Color {
         let clamped = min(max(amount, 0), 1)
         let lhs = UIColor(self)

@@ -1,14 +1,11 @@
 import SwiftUI
 import YamiboXCore
 
-/// Position key used to expire nonlinear navigation history after enough
-/// linear reading on the same page.
 struct NovelReaderLinearReadingPageKey: Equatable, Sendable {
     var view: Int
     var surfaceIndex: Int
 }
 
-/// Aggregated non-current-view chapter directory browsing state.
 struct NovelReaderChapterDirectoryState: Equatable {
     var view: Int? = nil
     var chapters: [NovelReaderChapter] = []
@@ -19,16 +16,8 @@ struct NovelReaderChapterDirectoryState: Equatable {
     var failureEventID: UUID? = nil
 }
 
-/// Owns the novel reader's wayfinding: browsing the chapter catalog of other
-/// web views, and the nonlinear navigation history (back/forward anchors
-/// with linear-reading expiration). The view model supplies the reading
-/// context and load effects; catalog and chrome views bind this coordinator
-/// directly.
 @MainActor
 final class NovelReaderNavigationCoordinator: ObservableObject {
-    /// Presentation effects shared by every user-initiated navigation path.
-    /// Synchronous moves restore immediately; asynchronous moves refresh only
-    /// after the caller confirms that navigation completed successfully.
     struct Presentation {
         var restoreViewport: @MainActor () -> Void
         var refreshAnnotations: @MainActor () async -> Void
@@ -48,7 +37,6 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
         }
     }
 
-    /// Reading context and load effects supplied by the owning view model.
     struct Reading {
         var maxView: @MainActor () -> Int
         var visibleView: @MainActor () -> Int
@@ -59,9 +47,6 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
         var currentPageKey: @MainActor () -> NovelReaderLinearReadingPageKey?
         var previewChapterCatalog: @MainActor (Int) async throws -> [NovelChapterDirectoryEntry]
         var jumpToChapter: @MainActor (NovelReaderChapter) -> Void
-        /// Opens a chapter anchor in another web view; returns nil when the
-        /// reading workflow is unavailable so the caller can fall back to a
-        /// plain view load.
         var openChapterAnchor: @MainActor (NovelChapterAnchor) async -> Bool?
         var loadWebView: @MainActor (Int) async -> Bool
         var restoreResumePoint: @MainActor (NovelResumePoint) async -> Bool
@@ -81,7 +66,6 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
         self.reading = reading
     }
 
-    // MARK: - Navigation history
 
     var canNavigateBack: Bool {
         reading.stableResumePoint() != nil && navigationHistory.canGoBack
@@ -201,7 +185,6 @@ final class NovelReaderNavigationCoordinator: ObservableObject {
         linearReadingHistoryExpiration.reset()
     }
 
-    // MARK: - Chapter directory browsing
 
     var visibleChapterDirectoryView: Int {
         chapterDirectory.view ?? reading.visibleView()

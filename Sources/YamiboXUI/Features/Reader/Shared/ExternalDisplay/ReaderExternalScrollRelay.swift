@@ -2,8 +2,6 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// The currently mounted external scroll view owns geometry and reading policy.
-/// The device's empty scroll view supplies only the native touch physics.
 @MainActor
 struct ReaderRemoteScrollTarget {
     weak var view: UIScrollView?
@@ -68,8 +66,6 @@ final class ReaderExternalScrollRelay: UIScrollView, UIScrollViewDelegate {
             guard let self else { return }
             self.touch = nil
             self.interrupt()
-            // A scroll view may track the first finger even when max touches
-            // is one. Cancel its recognizer before it can continue that pan.
             self.panGestureRecognizer.isEnabled = false
             self.panGestureRecognizer.isEnabled = true
         }
@@ -77,8 +73,6 @@ final class ReaderExternalScrollRelay: UIScrollView, UIScrollViewDelegate {
         contentInsetAdjustmentBehavior = .never
         scrollsToTop = false
 
-        // Keep the menu inside the scroll view so its pan can cancel the tap,
-        // but pin it to the viewport so it doesn't move with the relay.
         let menu = UIHostingConfiguration {
             ReaderDeviceControlButton.menu { [weak self] in self?.tapMenu() }
                 .accessibilityAction { [weak self] in self?.openMenu() }
@@ -103,8 +97,6 @@ final class ReaderExternalScrollRelay: UIScrollView, UIScrollViewDelegate {
         synchronize()
     }
 
-    // Set the physical range before UIKit processes a new touch. External
-    // navigation and other inputs can move the target while this relay is idle.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         let originalOrigin = bounds.origin
         if bounds.contains(point) { synchronize() }
@@ -137,8 +129,6 @@ final class ReaderExternalScrollRelay: UIScrollView, UIScrollViewDelegate {
         if view.isScrollAnimating { view.stopScrollingAndZooming() }
         let y = view.contentOffset.y
         let limits = ReaderVerticalBoundaryAttempt.limits(view)
-        // Keep the proxy's motion since touch-down, but anchor it at the
-        // reader's current position, not where a previous step was heading.
         let origin = y - touch.offsetY
         run = Run(epoch: input.beginScroll(), target: target, origin: origin, lastY: y, limits: limits)
         setLimits(limits, relativeTo: origin)
@@ -154,7 +144,6 @@ final class ReaderExternalScrollRelay: UIScrollView, UIScrollViewDelegate {
         let limits = ReaderVerticalBoundaryAttempt.limits(view)
         let didRelayout = limits != run.limits
         if didRelayout {
-            // Apply the next delta at the position chosen by a relayout.
             run.origin += view.contentOffset.y - run.lastY
             run.limits = limits
         }
@@ -204,9 +193,7 @@ final class ReaderExternalScrollRelay: UIScrollView, UIScrollViewDelegate {
     private func finish(_ event: ReaderVerticalScrollEvent) {
         guard let run else { return }
         self.run = nil
-        // A suspended or covered viewport may still own the offset we wrote.
         guard run.target.isAttached(), let view = run.target.view else { return }
-        // UIKit clamps its own interrupted bounce, not the remote offset.
         let range = ReaderVerticalBoundaryAttempt.limits(view)
         let y = min(max(view.contentOffset.y, range.lowerBound), range.upperBound)
         if y != view.contentOffset.y {
@@ -240,9 +227,6 @@ final class ReaderExternalScrollRelay: UIScrollView, UIScrollViewDelegate {
     }
 }
 
-/// Reject a two-finger sequence without replacing UIKit's single-finger pan.
-/// It cannot be prevented by an already-started native recognizer, so adding
-/// a second finger after the pan begins also cancels any pending edge action.
 private final class ReaderScrollTouchGuard: UIGestureRecognizer {
     var onFirstTouch: (() -> Void)?
     var onMultipleTouches: (() -> Void)?

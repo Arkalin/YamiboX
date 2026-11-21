@@ -4,9 +4,6 @@ import YamiboXCore
 import WebKit
 #endif
 
-/// `WebsiteDataClearing` backed by the shared `WKWebsiteDataStore` — the UI
-/// layer owns the in-app web views, so it supplies WebKit's cleanup to Core's
-/// sign-out and cache-reset workflows.
 public struct WebKitWebsiteDataClearer: WebsiteDataClearing {
     public init() {}
 

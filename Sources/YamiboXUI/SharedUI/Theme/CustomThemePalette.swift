@@ -70,7 +70,6 @@ extension ForumThemePalette {
             pinnedBadgeTint: accentText.hex,
             webText: primaryText,
             navigationBarBackground: prominent.hex,
-            // State colors remain semantic, not derived from the chosen seed.
             warning: isDark ? 0xF5B957 : 0x8A4B00,
             warningFill: isDark ? 0x6B430D : 0xF5C451,
             danger: isDark ? 0xFF8478 : 0xB42318,

@@ -230,8 +230,6 @@ public struct MangaChapterWindow: Hashable, Sendable {
     }
 
     private mutating func rebuildPageIndex() {
-        // Append, reorder and trim form one window mutation. Rebuild only the
-        // committed documents rather than each intermediate array operation.
         pages = MangaReaderPageProjection.projections(from: documents)
         chapterOffsets = [:]
         for page in pages where chapterOffsets[page.tid] == nil {

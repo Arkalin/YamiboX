@@ -92,8 +92,6 @@ public final class NovelReaderViewModel {
     private var currentStableResumePoint: NovelResumePoint? { publishedState.resumePoint }
     private let runtimeAdapter: (any NovelTextLayoutRuntimeAdapter)?
     private let onReaderResumeRouteChange: ReaderResumeRouteChangeHandler
-    // The three package hooks are test seams (assigned, never rendered),
-    // so they stay unobserved like every other non-published property.
     @ObservationIgnored package var runtimeUpdatePreparation: NovelReadingWorkflowRuntimeUpdatePreparation = { $0 }
     @ObservationIgnored package var novelReaderPageDocumentNavigationOverlayPreparation: (@MainActor () async -> Void)?
     private(set) var navigationOverlayRevision: UInt64 = 0
@@ -115,8 +113,6 @@ public final class NovelReaderViewModel {
         }
     }
 
-    /// Offline-download coordinator: owns download/queue state and batch
-    /// operations. Download views bind it directly.
     @ObservationIgnored private(set) lazy var download = NovelReaderDownloadCoordinator(
         operationModule: dependencies.makeDownloadOperationModule(),
         repository: dependencies.makeDownloadOperationRepository(),
@@ -139,9 +135,6 @@ public final class NovelReaderViewModel {
         )
     )
 
-    /// Wayfinding coordinator: owns chapter-catalog browsing and the
-    /// nonlinear navigation history. Catalog and chrome views bind it
-    /// directly.
     @ObservationIgnored private(set) lazy var navigation = NovelReaderNavigationCoordinator(
         reading: NovelReaderNavigationCoordinator.Reading(
             maxView: { [weak self] in self?.maxView ?? 1 },
@@ -250,10 +243,6 @@ public final class NovelReaderViewModel {
         context.threadTitle.isEmpty ? L10n.string("reader.title") : context.threadTitle
     }
 
-    /// Cover menu entries for images opened from this novel's thread. The
-    /// novel reader never supplies a manga directory store, and a novel
-    /// board is never a smart-enabled manga board, so the smart gate is a
-    /// constant `false`.
     var imageBrowserCoverActionsProvider: ImageBrowserCoverActionsProvider {
         ImageBrowserThreadCoverActions.provider(
             tid: context.threadID,
@@ -571,14 +560,11 @@ public final class NovelReaderViewModel {
         }
     }
 
-    // MARK: - Loading
 
     private func performInitialLoadIfNeeded() async {
         await loading.prepareInitialIfNeeded()
     }
 
-    /// Called after the view has initiated restoration, and again when the
-    /// existing vertical restore controller stops concealing the viewport.
     func completeInitialPresentationIfReady(isRestoringViewport: Bool) {
         preparation.completeRestoration(
             hasPresentation: novelReaderPresentation != nil,
@@ -712,7 +698,6 @@ public final class NovelReaderViewModel {
     }
 
     var currentResumeContext: NovelLaunchContext {
-        // Observe text-offset changes independently of the displayed page/chrome.
         _ = publishedState.resumePoint
         return novelReaderPresentation == nil ? context : resumeContext(for: currentProgressSnapshot())
     }
@@ -867,8 +852,6 @@ public final class NovelReaderViewModel {
                 navigation.recordLinearReading(direction: direction)
             }
         case let .promotePrefetched(preferredSurfaceOrdinal, resumePoint):
-            // Consume prefetch only after an explicit turn beyond the document,
-            // not when selecting its last surface, which still needs to be read.
             let didPromote = await promotePrefetchedDocument(
                 startingAt: preferredSurfaceOrdinal,
                 preferredResumePoint: resumePoint,
@@ -947,7 +930,6 @@ public final class NovelReaderViewModel {
     }
 
     @discardableResult
-    // MARK: - Page loads
 
     private func load(
         view: Int,
@@ -997,12 +979,6 @@ public final class NovelReaderViewModel {
         }
     }
 
-    // Internal (not private): the raw resume-point jump primitive, also used
-    // by the navigation coordinator to restore back/forward history anchors.
-    // Does not itself record navigation history — callers that represent a
-    // user-initiated nonlinear jump (see `jumpToLikeAnchor` below) must do
-    // that themselves.
-    // MARK: - Resume points and like anchors
 
     func restoreResumePoint(_ resumePoint: NovelResumePoint) async -> Bool {
         if resumePoint.view == currentView,
@@ -1036,11 +1012,6 @@ public final class NovelReaderViewModel {
         )
     }
 
-    // The Like sheet's `onOpenAnchor` jump path in `NovelReaderView` opens a
-    // synthesized resume point from a liked anchor while the reader for that
-    // work is already open; this is a nonlinear jump like any other (chapter
-    // directory, relative-chapter jump, cross-view jump), so it is recorded
-    // the same way, making it eligible for the chrome's back/forward history.
     func jumpToLikeAnchor(_ resumePoint: NovelResumePoint) async -> Bool {
         let navigationSequence = navigation.beginNavigationRequest()
         let sourceResumePoint = currentStableResumePoint
@@ -1061,9 +1032,6 @@ public final class NovelReaderViewModel {
         return didRestore
     }
 
-    /// Opens a chapter anchor discovered while browsing another web view's
-    /// catalog; returns nil when the reading workflow is unavailable so the
-    /// navigation coordinator can fall back to a plain view load.
     private func openChapterAnchor(_ anchor: NovelChapterAnchor) async -> Bool? {
         guard await ensureReadingWorkflow() != nil else { return nil }
         let revision = await beginNovelReaderProjectionNavigation()
@@ -1212,7 +1180,6 @@ public final class NovelReaderViewModel {
     }
 
     private func flushProgress() async -> NovelLaunchContext {
-        // Closing a failed/unprepared reader must not persist its fallback page 1.
         guard novelReaderPresentation != nil else { return context }
         let snapshot = currentProgressSnapshot()
         let date = Date.now
@@ -1322,7 +1289,6 @@ public final class NovelReaderViewModel {
         }
     }
 
-    // MARK: - Appearance persistence
 
     private func persistApplePencilSettings(_ settings: ApplePencilPageTurnSettings) {
         Task { [weak self] in

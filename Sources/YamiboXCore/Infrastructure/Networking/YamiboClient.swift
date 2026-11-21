@@ -5,7 +5,6 @@ enum YamiboRequestCancellationPolicy: Sendable {
     case completeStartedRequest
 }
 
-/// Construction and decoding only; the required executor owns every attempt.
 struct YamiboClient: Sendable {
     var session: URLSession
     var credentials: YamiboRequestCredentials

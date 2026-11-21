@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// First-level Like list: one row per liked work.
 struct LikeWorkListView: View {
     let likeDependencies: LikeDependencies
     let contentCoverStore: ContentCoverStore
@@ -73,9 +72,6 @@ struct LikeWorkListView: View {
             .listStyle(.plain)
             .scrollDismissesKeyboard(.interactively)
             .contentMargins(.top, 0, for: .scrollContent)
-            // Kept permanently mounted rather than swapped for an empty-state
-            // view — see the matching comment in LikeWorkItemsView.body for why
-            // that swap makes `.searchable`'s search bar ghost during a push.
             .overlay {
                 if !hasLoaded {
                     if let loadFailure {
@@ -179,15 +175,8 @@ struct LikeWorkListView: View {
                 await load()
             }
         }
-        // Appearance-scoped `.task` replacing the removed `.onReceive`
-        // bridge: while this list is visible the reaction is identical, and
-        // a change landing while it's covered (a pushed LikeWorkItemsView)
-        // is picked up by the sibling `.task { await load() }` re-running on
-        // reappear, so the state the user sees is unchanged.
         .task {
             for await changeID in likeDependencies.likeStore.changes() {
-                // Per-instance stream: the guard is kept as the explicit
-                // "only this exact store instance" contract.
                 guard changeID == likeDependencies.likeStore.changeID else {
                     continue
                 }
@@ -224,7 +213,6 @@ struct LikeWorkListView: View {
         titlesByWorkKey[workKey] ?? workKey.id
     }
 
-    // MARK: - Selection
 
     private func toggleSelection(_ workKey: ReadingWorkKey) {
         if selectedWorkKeys.contains(workKey) {
@@ -239,11 +227,6 @@ struct LikeWorkListView: View {
         return !visibleKeys.isEmpty && visibleKeys.isSubset(of: selectedWorkKeys)
     }
 
-    /// Not a true per-item inversion — mirrors `FavoriteLibraryOrganizer
-    /// .toggleSelectAllVisible`/`SystemSettingsViewModel
-    /// .toggleAllDownloadManagementRows`: selects every currently visible
-    /// (search-filtered) work, or clears the whole selection when everything
-    /// visible is already selected.
     private func toggleSelectAll() {
         let visibleKeys = Set(filteredSummaries.map(\.workKey))
         guard !visibleKeys.isEmpty else { return }
@@ -313,9 +296,6 @@ struct LikeWorkListView: View {
             let key = summary.workKey
             switch key.kind {
             case .novel:
-                // Like Items don't persist a work title (unlike
-                // implementation-design.md §1); best-effort resolve it from a
-                // matching favorite, falling back to the raw tid.
                 titles[key] = firstFavoriteTitlesByTID[key.id]
             case .manga:
                 titles[key] = try? await likeDependencies.mangaDirectoryStore.identityName(id: MangaDirectoryID(rawValue: key.id))
@@ -371,9 +351,6 @@ struct LikeWorkListView: View {
                 )
             )
         case let .mangaImage(mangaAnchor):
-            // The smart bit follows the board's *current* configuration when
-            // the anchor recorded its fid (R13); legacy fid-less anchors keep
-            // the pre-R13 smart-on assumption. See LikeMangaOpenTargetPolicy.
             Task {
                 let boardReader = await settingsStore.load().boardReader
                 appModel.requestMangaReader(

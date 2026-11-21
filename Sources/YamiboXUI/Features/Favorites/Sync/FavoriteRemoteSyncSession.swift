@@ -2,18 +2,8 @@ import Foundation
 import UIKit
 import YamiboXCore
 
-/// State machine for one Yamibo remote favorite sync run. The five-phase
-/// engine (`FavoriteYamiboSyncEngine`) does the actual work; this session
-/// owns task lifecycle, background-task extension, and snapshot persistence
-/// through `FavoriteSyncRunStore`.
-///
-/// Library changes are written through the shared `FavoriteLibraryStore`,
-/// whose change notification lets `FavoriteLibraryOrganizer` refresh itself;
-/// this session never touches the organizer directly.
 @MainActor
 final class FavoriteRemoteSyncSession: ObservableObject {
-    /// Runs the sync for one snapshot, reporting progress through the persist
-    /// callback and returning the terminal snapshot. Tests inject a fake.
     typealias EngineRunner = @Sendable (
         _ snapshot: FavoriteRemoteSyncSnapshot,
         _ interruptionReason: @escaping @Sendable () -> FavoriteRemoteSyncWarning?,
@@ -29,13 +19,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     private let libraryStore: FavoriteLibraryStore
     private let runStore: FavoriteSyncRunStore
     private let contentCoverStore: ContentCoverStore
-    /// Backs the sync-time "imported into an already-favorited manga
-    /// directory" warning (smart-comic-mode Phase G, design decision #8's
-    /// remote-sync half). Only explicit batched reads are required;
-    /// `nil` disables the warning.
     private let mangaDirectoryStore: (any MangaDirectoryBatchReading)?
-    /// Backs the per-item Smart Comic Mode board check the same warning
-    /// needs.
     private let settingsStore: SettingsStore?
     private let makeFavoriteRepository: @Sendable () async -> any FavoriteRemoteSyncOperating
     private let makeForumThreadReaderRepository: @Sendable () async -> any ThreadCoverPageResolving
@@ -100,8 +84,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         syncTask?.cancel()
     }
 
-    /// Restores the persisted snapshot; a snapshot still marked running whose
-    /// task no longer exists is downgraded to interrupted.
     func load() async {
         snapshot = await interruptedSnapshotIfNeeded(runStore.latestSnapshot())
     }
@@ -121,8 +103,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
             for waiter in waiters { waiter.resume() }
         }
 
-        // Display-name resolution only; the engine re-validates the category
-        // against its own (throwing) load, so an empty fallback is safe here.
         let document = (try? await libraryStore.load()) ?? FavoriteLibraryDocument()
         guard generation == accountGeneration, !Task.isCancelled else { return nil }
         let categoryName = document.categories.first { $0.id == targetCategoryID }?.displayName
@@ -155,11 +135,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         syncTask?.cancel()
         let runSnapshot = startedSnapshot
         syncTask = Task { @MainActor [weak self] in
-            // If `self` is already gone by the time this body runs, `run()`
-            // never executes, so its `defer` never removes the entry
-            // inserted just below — remove it here instead, or it orphans
-            // `activeRunCancelHandlers` forever and `isRunActive` never
-            // downgrades the stale "running" snapshot to interrupted.
             guard let self else {
                 Self.activeRunCancelHandlers[runSnapshot.runID] = nil
                 Self.activeRunWaitHandlers[runSnapshot.runID] = nil
@@ -196,8 +171,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         await persistHiddenCard(runID: snapshot.runID)
     }
 
-    // MARK: - Run
-
     private func run(startSnapshot: FavoriteRemoteSyncSnapshot) async {
         let runID = startSnapshot.runID
         defer {
@@ -226,17 +199,12 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         }
     }
 
-    /// Merges an engine-produced snapshot with session-owned presentation
-    /// state (card hiding), persists it, then publishes it. Persist-first
-    /// keeps the published state from ever running ahead of the stored one.
     private func applyEngineSnapshot(_ updated: FavoriteRemoteSyncSnapshot, appendingAfter previousCounts: FavoriteRemoteSyncEntryCounts? = nil) async {
         var merged = updated
         if let current = snapshot, current.runID == updated.runID {
             merged.isHiddenFromFavoritePage = current.isHiddenFromFavoritePage
         }
         await persistSnapshot(merged, appendingAfter: previousCounts)
-        // Hiding can arrive during the durable write. Preserve its ownership
-        // without replaying an old UI snapshot's logs/progress into the store.
         if let current = snapshot, current.runID == merged.runID,
            current.isHiddenFromFavoritePage && !merged.isHiddenFromFavoritePage {
             merged.isHiddenFromFavoritePage = true
@@ -283,8 +251,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         }
     }
 
-    // MARK: - Snapshot state
-
     private func retainTerminalFailure(_ details: LoadFailureDetails, runID: String) {
         guard snapshot?.runID == runID else { return }
         terminalFailureDetails = details
@@ -305,9 +271,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     }
 
     private func persistSnapshot(_ snapshot: FavoriteRemoteSyncSnapshot, appendingAfter previousCounts: FavoriteRemoteSyncEntryCounts? = nil) async {
-        // Unstructured task: the terminal snapshot of an interrupted run is
-        // written from the cancelled sync task, and GRDB's async accesses
-        // honor Task cancellation — the write must not inherit it.
         let runStore = runStore
         do {
             try await Task {
@@ -339,8 +302,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
         }
     }
 
-    // MARK: - Background task
-
     @discardableResult
     private func beginBackgroundTask(runID: String) -> Bool {
 #if canImport(UIKit)
@@ -368,8 +329,6 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     }
 }
 
-/// Thread-safe slot for the reason an in-flight run is being cancelled, read
-/// by the engine when it observes the cancellation.
 private final class FavoriteSyncInterruptionReasonBox: @unchecked Sendable {
     private let lock = NSLock()
     private var reason: FavoriteRemoteSyncWarning?

@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Keep text-offset observation out of the expensive reader view hierarchy.
 struct NovelReaderHandoffSource: View {
     let model: NovelReaderViewModel
     let isActive: Bool

@@ -342,7 +342,6 @@ struct SettingsPeripheralSections: View {
         showsCaptureRejectedNotice = false
     }
 
-    // MARK: - Keyboard
 
     private var keyboardConnectionStatusRow: some View {
         HStack(spacing: 12) {

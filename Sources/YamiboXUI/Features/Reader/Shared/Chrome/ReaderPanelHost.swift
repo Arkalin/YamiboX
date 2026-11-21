@@ -4,7 +4,6 @@ protocol ReaderPanelRoute: Identifiable {
     var isCompanionPanel: Bool { get }
 }
 
-/// Keeps reader panels on the device, whether or not the reader is external.
 struct ReaderPanelHost<Route: ReaderPanelRoute, Surface: View, Panel: View>: View {
     @Binding var item: Route?
     @ViewBuilder let surface: () -> Surface

@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// The standard "load failed + retry" state: an unavailable-content layout
-/// with the failure summary as the title, the underlying error as the
-/// description, and a retry button.
 struct LoadFailureView: View {
     var title: String = L10n.string("common.load_failed")
     var systemImage: String = "exclamationmark.triangle"

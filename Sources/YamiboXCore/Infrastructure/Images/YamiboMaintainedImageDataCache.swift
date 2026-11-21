@@ -1,8 +1,6 @@
 import Foundation
 import Nuke
 
-/// Coalesces writes into off-main maintenance windows. Nuke owns staging and
-/// IO; this wrapper owns ordinary image eviction policy.
 final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
 
     private struct PendingMaintenance {
@@ -23,7 +21,6 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
     private let cache: DataCache
     private let queue = DispatchQueue(label: "com.arkalin.YamiboX.ImageCacheMaintenance", qos: .utility)
     private let delay: DispatchTimeInterval
-    // All mutable state, including scheduling and cache mutation order, is locked.
     private let lock = NSLock()
     private var writeRevision: UInt64 = 0
     private var pending: PendingMaintenance?
@@ -34,9 +31,7 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
     ) {
         self.cache = cache
         delay = maintenanceDelay
-        // Its startup sweep must not bypass our IO ordering.
         cache.isSweepEnabled = false
-        // Include cache-hit-only sessions even if Nuke's last sweep was recent.
         lock.withLock { scheduleMaintenanceIfNeeded() }
     }
 
@@ -65,7 +60,6 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         }
     }
 
-    /// Called only with the lock held. A running window still occupies `pending`.
     private func scheduleMaintenanceIfNeeded() {
         guard pending == nil else { return }
         let id = UUID()
@@ -81,7 +75,6 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         defer { finishMaintenance(id: id, revision: revision) }
         do {
             guard isCurrentMaintenance(id) else { return }
-            // Never call flush from Nuke's queue: it synchronously enters it.
             cache.flush()
             guard isCurrentMaintenance(id) else { return }
             try cache.queue.sync {
@@ -102,13 +95,10 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         lock.withLock {
             guard pending?.id == id else { return }
             pending = nil
-            // Writes arriving during IO may not be in the flushed snapshot.
-            // Schedule one more window, never an idle repeating timer.
             if writeRevision != revision { scheduleMaintenanceIfNeeded() }
         }
     }
 
-    /// Runs on Nuke's write queue so files cannot be replaced during eviction.
     private func sweep(id: UUID) throws {
         let entries = try inventory().sorted {
             if $0.accessedAt != $1.accessedAt { return $0.accessedAt > $1.accessedAt }
@@ -121,8 +111,6 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         var removedCount = 0
         for entry in entries.reversed() {
             guard remainingBytes > targetBytes else { break }
-            // A queue alone does not invalidate a sweep after removeAll stages
-            // a clear. Admission and deletion are atomic with that operation.
             let isCurrent = lock.withLock {
                 guard pending?.id == id else { return false }
                 do {
@@ -138,7 +126,6 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         }
 
         guard isCurrentMaintenance(id) else { return }
-        // Recount rather than reporting an optimistic total after IO failures.
         remainingBytes = try inventory().reduce(0) { $0 + $1.allocatedBytes }
         guard isCurrentMaintenance(id) else { return }
         if remainingBytes > targetBytes {
@@ -148,7 +135,6 @@ final class YamiboMaintainedImageDataCache: DataCaching, @unchecked Sendable {
         }
     }
 
-    /// Never silently omit an unreadable entry and evict from a partial total.
     private func inventory() throws -> [Entry] {
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .contentAccessDateKey, .totalFileAllocatedSizeKey]
         let urls = try FileManager.default.contentsOfDirectory(

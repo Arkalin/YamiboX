@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// One event can appear in several locations, but is acknowledged only once.
 struct FavoriteUnreadIndex {
     var favorites: [String: Set<String>] = [:]
     var collections: [String: Set<String>] = [:]
@@ -28,8 +27,6 @@ struct FavoriteUnreadIndex {
     }
 }
 
-/// Progress changes may re-evaluate the root without changing any unread inputs.
-/// Revisions avoid comparing or deriving the full library on those warm reads.
 @MainActor
 final class FavoriteUnreadIndexCache {
     struct Revision: Equatable {

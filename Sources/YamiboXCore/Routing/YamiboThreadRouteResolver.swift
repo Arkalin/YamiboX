@@ -19,8 +19,6 @@ public actor YamiboThreadRouteResolver {
     }
 
     func resolveForFavoriteSync(_ request: YamiboThreadRouteRequest) async throws -> YamiboThreadRouteTarget {
-        // Background imports cannot hand an authentication failure to a web
-        // view; keep the error so the sync engine can stop the run.
         try await resolve(request, allowsAuthenticationFallback: false).target
     }
 
@@ -43,9 +41,6 @@ public actor YamiboThreadRouteResolver {
             do {
                 var locationURL = requestURL
                 if var components = URLComponents(url: requestURL, resolvingAgainstBaseURL: true) {
-                    // Classification may only become known after this response.
-                    // Every native reader uses forward pages, including a plain
-                    // thread reached through contentRoute on a reverse-default thread.
                     var items = components.queryItems ?? []
                     items.removeAll { $0.name == "ordertype" }
                     items.append(.init(name: "ordertype", value: "2"))
@@ -70,8 +65,6 @@ public actor YamiboThreadRouteResolver {
                 baseInitialPage = pageNumber(from: response.url) ?? page.pageNavigation?.currentPage ?? baseInitialPage
                 locationMetadata = metadata
                 locationMetadata?.tid = tid
-                // Only an unfiltered forward touch page can seed the ordinary
-                // reader. A scoped/desktop response still supplies location.
                 let items = URLComponents(url: response.url, resolvingAgainstBaseURL: true)?.queryItems ?? []
                 locationIsForward = items.value(named: "ordertype") == "2"
                 if items.value(named: "mobile") == "2",
@@ -111,10 +104,7 @@ public actor YamiboThreadRouteResolver {
             }
         }
 
-        // All entry points share the location response before classification.
         if request.intent == .nativeThreadReader || request.readerOverride == .plainThread {
-            // A redirect can discard the requested order. Neither its page
-            // number nor its body is safe to use as a forward location then.
             if locationMetadata != nil, !locationIsForward {
                 return YamiboThreadRouteResolution(.webFallback(requestURL))
             }
@@ -151,8 +141,6 @@ public actor YamiboThreadRouteResolver {
             settings: settings
         )
 
-        // An override already settles the classification, so the metadata
-        // round-trip it exists to inform would be pure latency.
         let metadata: YamiboThreadMetadata?
         var classificationHTML: String?
         if let locationMetadata {
@@ -219,15 +207,6 @@ public actor YamiboThreadRouteResolver {
                 initialPage: baseInitialPage,
                 targetPostID: targetPostID
             )
-            // Classification (kind == .manga) picks the manga reader; the
-            // board's smart bit only decides which entry point: detail page
-            // (`.manga`) when smart is on, direct single-chapter reading
-            // (`.mangaDirect`) otherwise. The strict rule applies — an
-            // unconfigured or missing fid never reports smart-enabled. A
-            // per-tap 漫画 override overrides the classification only, not
-            // this bit: it never turns Smart Comic Mode on for a board the
-            // user did not configure that way, so it opens the thread on its
-            // own exactly like an unconfigured manga thread.
             guard settings.isSmartComicModeEnabled(forumID: fid) else {
                 return YamiboThreadRouteResolution(.mangaDirect(payload))
             }
@@ -274,7 +253,6 @@ public actor YamiboThreadRouteResolver {
         for url: URL, fallbackURL: URL, allowsAuthenticationFallback: Bool
     ) async throws -> (metadata: YamiboThreadMetadata, html: String) {
         do {
-            // Probe in the same unfiltered, forward order as the native reader.
             var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
             var items = components?.queryItems ?? []
             items.removeAll { ["ordertype", "authorid", "viewpid"].contains($0.name) }

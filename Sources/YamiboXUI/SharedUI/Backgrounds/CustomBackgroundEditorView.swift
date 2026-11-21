@@ -225,8 +225,6 @@ struct CustomBackgroundEditorView<Preview: View>: View {
             }
             .onEnded { value in
                 guard draft.imageSize != .zero else { return }
-                // Land where the flick was heading (projected momentum),
-                // clamped back inside the croppable bounds.
                 let projection = GesturePhysics.project(
                     value.velocity,
                     decelerationRate: GesturePhysics.DecelerationRate.fast
@@ -317,9 +315,6 @@ struct CustomBackgroundEditorView<Preview: View>: View {
         )
     }
 
-    /// Live-drag variant of `clampedOffset`: edges give with rubber-band
-    /// resistance while the finger is down; `onEnded` clamps and the reset
-    /// transaction springs the overshoot back.
     private func rubberBandedOffset(
         _ offset: CGSize,
         containerSize: CGSize,

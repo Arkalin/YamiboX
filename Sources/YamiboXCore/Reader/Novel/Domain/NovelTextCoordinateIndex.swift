@@ -1,6 +1,5 @@
 import Foundation
 
-/// The two coordinate spaces deliberately cannot be implicitly interchanged.
 package protocol NovelUTF16Position: RawRepresentable, Hashable, Sendable, Comparable,
     Strideable, ExpressibleByIntegerLiteral where RawValue == Int, Stride == Int, IntegerLiteralType == Int {
     init(_ rawValue: Int)
@@ -27,8 +26,6 @@ package struct NovelSegmentUTF16Offset: NovelUTF16Position {
     package init(_ rawValue: Int) { self.rawValue = rawValue }
 }
 
-/// One immutable index per text value, shared by all of its rendered ranges.
-/// Character ordinals are a legacy storage/user-counting boundary, not a layout coordinate.
 package final class NovelTextCoordinateIndex: Sendable {
     package let utf16: [UInt16]
     package let characterBoundaries: [Int]
@@ -93,7 +90,6 @@ package final class NovelTextCoordinateIndex: Sendable {
     }
 }
 
-/// Runtime styles are UTF-16; source projection styles remain Character-based Codable values.
 package struct NovelRuntimeTextSemantics: Sendable {
     package var chapterIdentity: NovelChapterIdentity?
     package var textSegmentIdentity: NovelTextSegmentIdentity?
@@ -114,7 +110,6 @@ package struct NovelRuntimeBlockTextStyle: Hashable, Sendable {
     package var range: NSRange
 }
 
-/// A segment's extent in the composed document (not a range inside the segment).
 package struct NovelDocumentTextRange: Hashable, Sendable {
     package var segmentIndex: Int
     package var startOffset: NovelDocumentUTF16Offset

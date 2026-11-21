@@ -68,7 +68,6 @@ final class ForumThreadRateSheetModel {
 
     func clearError() { errorMessage = nil }
 
-    /// Returns true when the rating was submitted and the sheet should dismiss.
     func submitRate() async -> Bool {
         guard !isSubmitting, !isLoadingOptions, optionsFailure == nil else { return false }
         errorEventID = UUID()

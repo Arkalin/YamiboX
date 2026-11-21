@@ -96,8 +96,6 @@ public final class NetworkLogToken: @unchecked Sendable {
     }
 }
 
-/// Transport callbacks never wait for disk, retain credentials, or throw because
-/// of logging. All retained token state is already sanitized.
 public final class NetworkLogRecorder: Sendable {
     public static let shared = NetworkLogRecorder(store: .shared)
     private let store: NetworkLogStore

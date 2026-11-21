@@ -2,8 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// Session owner for repository/workflow creation, prepared content and load
-/// follow-ups. Closing or replacing a request prevents late state publication.
 @MainActor
 @Observable
 final class NovelReaderLoadingCoordinator {
@@ -201,7 +199,6 @@ final class NovelReaderLoadingCoordinator {
             try await preparation.waitForInitialDisplay()
             try Task.checkCancellation()
             guard preparation.isCurrent(sequence), !isClosed else { return }
-            // Drain geometry changes before admitting the first presentation.
             while preparation.isCurrent(sequence), !isClosed {
                 try Task.checkCancellation()
                 let layout = preparation.requestedLayout
@@ -370,8 +367,6 @@ final class NovelReaderLoadingCoordinator {
             title: context.threadTitle.isEmpty ? L10n.string("reader.title") : context.threadTitle,
             forumID: context.forumID, reader: .novel, authorID: context.authorID
         )
-        // A completed visit is durable work, not speculative loading. It finishes
-        // independently of closing the presenting reader, without retaining it.
         Task { [history, context] in
             do { try await history.recordVisit(visit) }
             catch { YamiboLog.reader.warning("Failed to record novel browsing-history visit for thread \(context.threadID, privacy: .public): \(error)") }

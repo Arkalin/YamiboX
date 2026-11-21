@@ -10,13 +10,10 @@ public protocol ForumThreadPageFetching: ThreadContentUpdatePageLoading {
     ) async throws -> ForumThreadPage
 }
 
-/// Fresh canonical pages for content timestamps. Separate from reader caches:
-/// desktop date tooltips preserve seconds that relative mobile labels omit.
 public protocol ThreadContentUpdatePageLoading: Sendable {
     func fetchContentUpdatePage(thread: ThreadIdentity, title: String, authorID: String?, reverse: Bool) async throws -> ForumThreadPage
 }
 
-/// Feature-facing capabilities, shared by app assembly and presentation.
 public protocol ForumThreadPageLoading: ForumThreadPageFetching {
     func cachedThreadPage(
         context: ThreadNovelLaunchContext,

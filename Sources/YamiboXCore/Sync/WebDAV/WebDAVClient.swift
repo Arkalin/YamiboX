@@ -32,8 +32,6 @@ struct WebDAVClient: Sendable {
         let statusCode = try statusCode(from: response)
         if statusCode == 304 {
             guard let reusable else { throw WebDAVSyncError.invalidResponse(statusCode) }
-            // A cached body is usable only with the validator that identifies it.
-            // Fall back to a full read if a server gives us a different validator.
             if let etag = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "ETag"), etag != reusable.etag {
                 return try await fetchPayload(settings: settings, fileName: fileName)
             }
@@ -46,8 +44,6 @@ struct WebDAVClient: Sendable {
         return WebDAVRemoteFile(data: data, etag: (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "ETag"))
     }
 
-    /// Ensures the remote sync directory exists. Callers batch this to once
-    /// per sync round rather than once per uploaded dataset.
     func ensureDirectoryExists(settings: WebDAVSyncSettings, namespaces: [String] = []) async throws {
         let config = try configuration(from: settings, fileName: "")
         try await createDirectoryIfNeeded(configuration: config)
@@ -81,8 +77,6 @@ struct WebDAVClient: Sendable {
         guard statusCode != 412 else { throw WebDAVSyncError.writeConflict }
         guard statusCode != 401 && statusCode != 403 else { throw WebDAVSyncError.notAuthenticated }
         guard 200 ..< 300 ~= statusCode else { throw WebDAVSyncError.invalidResponse(statusCode) }
-        // A successful PUT's validator identifies the stored request body.
-        // Missing/weak validators (or merely accepted writes) require a full GET.
         guard [200, 201, 204].contains(statusCode),
               let etag = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "ETag"),
               Self.isStrongETag(etag) else { return nil }
@@ -91,14 +85,11 @@ struct WebDAVClient: Sendable {
 
     static func isStrongETag(_ etag: String) -> Bool {
         guard etag.count >= 2, etag.hasPrefix("\""), etag.hasSuffix("\"") else { return false }
-        // Reject weak tags, combined header values and invalid opaque-tag bytes.
         return etag.utf8.dropFirst().dropLast().allSatisfy {
             $0 == 0x21 || (0x23...0x7E).contains($0) || $0 >= 0x80
         }
     }
 
-    /// A strong validator alone does not prove the server enforces it. Probe
-    /// a unique disposable resource, never an existing user dataset.
     func verifyConditionalWrites(settings: WebDAVSyncSettings) async throws {
         let name = ".yamibox-sync-probe-\(UUID().uuidString).json"
         do {
@@ -122,7 +113,6 @@ struct WebDAVClient: Sendable {
                 throw WebDAVSyncError.unsafeConditionalWrite
             }
         } catch {
-            // Cleanup must outlive cancellation of the sync that created it.
             await cleanupProbe(name, settings: settings)
             throw error
         }

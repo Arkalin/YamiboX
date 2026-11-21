@@ -1,18 +1,11 @@
 import SwiftUI
 import YamiboXCore
 
-/// Presentation state for the star button's long-press "choose favorite
-/// location" sheet — mirrors Android's collection picker dialog.
-/// `initialSelection` is the target's current locations, pre-filling the
-/// checklist exactly like Android's dialog (empty when not yet favorited).
 struct FavoriteLocationPickerContext: Identifiable {
     let id = UUID()
     var document: FavoriteLibraryDocument
     var initialSelection: Set<FavoriteLocation>
     var isFavorited: Bool
-    /// Carried alongside the snapshot so the presenting view doesn't need to
-    /// separately expose its dependency just for this sheet — every view
-    /// model already resolves its store when building this context.
     var localFavoriteLibraryStore: FavoriteLibraryStore
 }
 
@@ -22,17 +15,6 @@ private struct PendingCollectionDraft: Identifiable {
     let draft: LocalFavoriteCollectionDraft
 }
 
-/// Multi-select category/collection checklist for filing a favorite —
-/// created new or, for an already-favorited item, re-pinned to a different
-/// set of locations. Confirming with every checkbox cleared on an
-/// already-favorited item is a deliberate way to unfavorite (mirroring
-/// Android); the caller routes that case through the normal remove flow
-/// since `onConfirm` here only ever reports the raw selection.
-///
-/// Owns its own category/collection creation (via `localFavoriteLibraryStore`
-/// directly) so "新建分类"/"新建合集" can be answered inline without a round
-/// trip through the presenting view model — newly created locations are
-/// selected automatically.
 struct FavoriteLocationPickerSheet: View {
     let context: FavoriteLocationPickerContext
     let onCancel: () -> Void

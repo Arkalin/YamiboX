@@ -1,7 +1,5 @@
 import Foundation
 
-/// Shared by every service using one settings store. Actor isolation alone
-/// does not serialize operations across network suspension points.
 actor WebDAVSyncCoordinator {
     struct RunToken: Sendable {
         fileprivate let id: UUID
@@ -51,10 +49,6 @@ actor WebDAVSyncCoordinator {
         }
     }
 
-    /// Cancels and joins every queued or active sync run, then holds the
-    /// barrier while the caller publishes a new connection. The epoch is
-    /// advanced before the barrier is released, so an operation that retained
-    /// old settings cannot be admitted merely because it was queued earlier.
     func beginConnectionChange() async throws -> ConnectionChangeToken {
         guard !isResetting else { throw CancellationError() }
         try Task.checkCancellation()
@@ -110,8 +104,6 @@ actor WebDAVSyncCoordinator {
         verifiedConnection = connection
     }
 
-    /// In-memory bodies never cross connection/account boundaries or survive a
-    /// reset. The coordinator is shared even when a caller creates a new service.
     private func prepareCacheScope(_ settings: WebDAVSyncSettings) {
         let connection = WebDAVConnectionIdentity(settings)
         guard cachedConnection != connection || cachedReceiptScope != settings.receiptScope else { return }

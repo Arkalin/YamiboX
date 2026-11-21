@@ -23,7 +23,6 @@ enum YamiboCheckInPage: Sendable {
     case unavailable(LoadFailureDetails)
 }
 
-/// Scoped to one account snapshot, including validation on every check-in request.
 protocol YamiboCheckInRemoteOperating: Sendable {
     func loadPage() async throws -> YamiboCheckInPage
     func submit(at url: URL) async throws

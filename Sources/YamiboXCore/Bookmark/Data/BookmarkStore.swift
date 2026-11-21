@@ -1,21 +1,12 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Persists the local-first Bookmark Library: user-placed position markers,
-/// independent of both the Favorite Library and the Like Library.
-///
-/// Bookmarks are pure navigation: no content, no image bytes, and no relation
-/// to the automatically saved reading position.
 public actor BookmarkStore: ReaderBookmarkMutating {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
-    // One immutable, lightweight work index. Its revision is checked in the
-    // same read snapshot as the winning row, including writes by other stores.
     private var positionIndex: BookmarkPositionIndex?
     private var positionReadEpoch: UInt64 = 0
 
@@ -31,7 +22,6 @@ public actor BookmarkStore: ReaderBookmarkMutating {
         self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
-    /// Every live bookmark for one work, in book order.
     public func bookmarks(for workKey: ReadingWorkKey) async throws -> [BookmarkItem] {
         try await database.read { db in try Self.fetchBookmarks(workKey: workKey, in: db) }
     }
@@ -47,10 +37,6 @@ public actor BookmarkStore: ReaderBookmarkMutating {
         return fetched ?? 0
     }
 
-    /// The live bookmark that already marks the place `anchor` points at, if
-    /// any. This is the whole of the toggle's "is the current position already
-    /// bookmarked" test — see `NovelBookmarkAnchor.neighborhoodCharacterRadius`
-    /// for why the novel neighborhood is deliberately narrow.
     public func bookmark(marking anchor: BookmarkAnchorPayload, in workKey: ReadingWorkKey) async throws -> BookmarkItem? {
         positionReadEpoch &+= 1
         let epoch = positionReadEpoch
@@ -62,8 +48,6 @@ public actor BookmarkStore: ReaderBookmarkMutating {
                   let revision = try String.fetchOne(db,
                     sql: "SELECT revision FROM bookmark_position_revisions WHERE work_kind = ? AND work_id = ?",
                     arguments: [canonicalWork.kind.rawValue, canonicalWork.id]) else {
-                // Minimal injected schemas and empty/reset works retain the
-                // authoritative query rather than reusing an untracked cache.
                 return (nil, try Self.fetchBookmarks(workKey: workKey, in: db)
                     .first { $0.anchor.marksSamePlace(as: anchor) })
             }
@@ -88,15 +72,10 @@ public actor BookmarkStore: ReaderBookmarkMutating {
                     arguments: [id]), let item = try Self.item(from: row) else { return (index, nil) }
             return (index, item)
         }
-        // Reentrant reads can finish out of order. Every caller gets its own
-        // snapshot result, while only the latest admission retains a cache.
         if epoch == positionReadEpoch { positionIndex = result.0 }
         return result.1
     }
 
-    /// Adds a bookmark at `anchor`, or removes the one already marking that
-    /// place. Idempotent by position: a place holds at most one bookmark, so
-    /// pressing the button twice always returns to the starting state.
     @discardableResult
     public func toggle(
         workKey: ReadingWorkKey,
@@ -126,8 +105,6 @@ public actor BookmarkStore: ReaderBookmarkMutating {
         }
     }
 
-    /// Soft-deletes a bookmark (WebDAV tombstone): the row stays, marked
-    /// `deleted_at`, so a stale remote snapshot cannot resurrect it on merge.
     public func delete(id: String, date: Date = .now) async throws {
         try await delete(ids: [id], date: date)
     }
@@ -139,15 +116,10 @@ public actor BookmarkStore: ReaderBookmarkMutating {
         }
     }
 
-    /// Every bookmark including soft-deleted rows, for WebDAV export.
     public func allIncludingDeleted() async throws -> [BookmarkItem] {
         try await database.read { db in try Self.fetchAllIncludingDeleted(in: db) }
     }
 
-    /// Replaces the entire local Bookmark Library with a WebDAV-merged
-    /// snapshot. Items may carry `deletedAt` to persist a tombstone alongside
-    /// their known data; the merge logic lives in
-    /// `BookmarkLibraryWebDAVParticipant`, not here.
     public func replaceAll(_ items: [BookmarkItem]) async throws {
         try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
             try db.execute(sql: "DELETE FROM bookmarks")

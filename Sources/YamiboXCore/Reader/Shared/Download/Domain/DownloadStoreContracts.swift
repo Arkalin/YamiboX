@@ -6,10 +6,6 @@ public protocol DownloadUpdateObserving: Sendable {
 
 public protocol DownloadImageAssetStoring: Sendable {
     func offlineImageData(for imageURL: URL) async -> Data?
-    /// Whether a downloaded copy of `imageURL` exists, without loading its bytes.
-    /// "Is this image already downloaded?" checks used to go through
-    /// `offlineImageData(for:)`, which reads the entire file into memory just
-    /// to discard it — per image, per reconciliation pass.
     func hasOfflineImage(for imageURL: URL) async -> Bool
     func saveOfflineImageData(_ data: Data, for imageURL: URL) async throws
 }
@@ -17,8 +13,6 @@ public protocol DownloadImageAssetStoring: Sendable {
 public protocol DownloadManagementStoring: DownloadUpdateObserving {
     func downloadedAttachmentURL(id: DownloadEntryID) async throws -> URL
     func downloadManagementSnapshot() async throws -> DownloadManagementSnapshot
-    /// A read-only, work-level projection for entry surfaces. Unlike the
-    /// management snapshot, this excludes queued and failed download work.
     func downloadedWorks() async -> [DownloadedWork]
     func removeDownloadGroup(_ id: DownloadGroupID) async throws
     func removeDownloadEntry(_ id: DownloadEntryID) async throws
@@ -44,15 +38,10 @@ public struct DownloadQueueSummary: Equatable, Sendable {
 }
 
 public protocol DownloadQueueStoring: DownloadUpdateObserving {
-    /// Empty means no work, never a failed database read or queue recovery.
     func downloadQueueWorks() async throws -> [DownloadQueueWorkProjection]
-    /// Badge/summary read without materializing work targets or completed image URLs.
     func downloadQueueSummary(readerKind: DownloadReaderKind?) async throws -> DownloadQueueSummary
-    /// Nil means absent work, never a failed read or queue recovery.
     func downloadQueueWorkCount() async throws -> Int
     func containsDownloadWork(id: DownloadWorkID) async throws -> Bool
-    /// Records one completed target without replacing either image list. False
-    /// means the work or target is no longer current; never recreates a work.
     func recordCompletedDownloadImage(id: DownloadWorkID, imageURL: URL, targetIndex: Int, currentBytesPerSecond: Int) async throws -> Bool
     func nextDownloadProcessingWork() async throws -> DownloadProcessingWork?
     func downloadProcessingWork(id: DownloadWorkID) async throws -> DownloadProcessingWork?
@@ -106,13 +95,9 @@ public protocol DownloadStoreCore:
     DownloadImageAssetStoring,
     DownloadQueueStoring,
     DownloadManagementStoring {
-    /// Called after the shared identity transaction commits. Wrappers must forward
-    /// this invalidation to the same stream consumed by their observers.
     func notifyIdentityMigrationCommitted()
 }
 
-/// The full capability surface of the shared offline download store, as assembled
-/// by the composition root and consumed by reader/library/account features.
 public typealias DownloadStoring = DownloadStoreCore
     & ForumAttachmentDownloadStoring
     & MangaDownloadStoring

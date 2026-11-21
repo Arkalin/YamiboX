@@ -50,10 +50,6 @@ final class UserSpaceViewModel {
 
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any UserSpacePageLoading
     @ObservationIgnored private let accountUIDProvider: @Sendable () async -> String?
-    /// Independent generations for the two state axes this view model writes:
-    /// `profile` vs `content`/`currentPage`. A shared counter would let a
-    /// sub-page switch turn a still-relevant in-flight profile response
-    /// stale (and vice versa) even though the two never conflict.
     @ObservationIgnored private var profileGeneration = 0
     @ObservationIgnored private var contentGeneration = 0
 
@@ -158,7 +154,6 @@ final class UserSpaceViewModel {
         if selectedSubPage == .profile {
             if profile == nil { await loadProfile() }
         } else {
-            // List endpoints depend on uid, not the profile response.
             await loadSelectedSubPage(page: currentPage)
         }
     }
@@ -184,10 +179,6 @@ final class UserSpaceViewModel {
 
     func selectSubPage(_ subPage: UserSpaceSubPage) async {
         guard subPage != selectedSubPage else { return }
-        // The switch itself rewrites the content axis, so it must invalidate
-        // any in-flight content request even when no new request follows
-        // (switching to an already-cached profile) — and then also clear the
-        // spinner that doomed request can no longer clear.
         contentGeneration += 1
         isLoadingContent = false
         selectedSubPage = subPage

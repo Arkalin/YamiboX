@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// Durable user files, separate from regenerable reader caches.
 public actor ReaderFontFileStore {
     public static var defaultDirectory: URL {
         YamiboDatabase.defaultRootDirectory().appendingPathComponent("ReaderFonts", isDirectory: true)
@@ -31,7 +30,6 @@ public actor ReaderFontFileStore {
         let data = try Data(contentsOf: source, options: .mappedIfSafe)
         guard !data.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
         let id = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        // Reimport can repair a missing file even if its external extension changed.
         let path = try load().first(where: { $0.id == id })?.relativePath ?? "\(id).\(ext)"
         let url = try fileURL(path)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

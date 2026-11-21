@@ -117,7 +117,6 @@ struct NovelDetailBodyView: View {
             VStack(spacing: 0) {
                 NovelDetailHeader(
                     summary: header,
-                    // Metadata can fail while the reader's offline content is available.
                     canReadStart: !isLoading,
                     hasReadingProgress: hasReadingProgress,
                     onFavoriteTap: onFavoriteTap,

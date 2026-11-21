@@ -10,7 +10,6 @@ enum ForumKeyboardSelection {
     }
 }
 
-/// Focus belongs to the result collection, never to the search field or reader.
 struct ForumKeyboardBrowser<Content: View>: View {
     let threadIDs: [String]
     let onOpen: (String) -> Void

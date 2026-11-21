@@ -1,6 +1,5 @@
 import UIKit
 
-/// Generated from the icon's original vector contours by split-app-icon.cjs.
 struct AboutIconGeometry: Decodable, Sendable {
     let canvasSize: CGFloat
     let layers: [Layer]
@@ -21,8 +20,6 @@ struct AboutIconGeometry: Decodable, Sendable {
             for command in commands {
                 switch command.kind {
                 case .move:
-                    // SVG fill implicitly closes each subpath. Close explicitly
-                    // so SceneKit also extrudes the seams and preserves holes.
                     if !path.isEmpty { path.close() }
                     path.move(to: point(command.values, at: 0))
                 case .line:

@@ -1,8 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// WebDAV sync participant for the local favorite library. Owns the payload
-/// format and CRDT-style merge semantics for favorites.
 struct FavoriteLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
     var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
         MangaIdentityPayloadStrategy(normalizePayload: FavoriteLibraryWebDAVPayload.normalizingMangaIdentities)
@@ -31,8 +29,6 @@ struct FavoriteLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
 
     func mergeAndExportSnapshot(remoteData: Data?, updatedAt: Date, accountUID: String) async throws -> WebDAVExportSnapshot {
         let remote = try remoteData.map { try decoder.decode(FavoriteLibraryWebDAVPayload.self, from: $0) }
-        // Atomic update: merging against the same document state that gets
-        // overwritten, so local edits landing mid-merge are never lost.
         let merged = try await store.update { document in
             let local = FavoriteLibraryWebDAVPayload(
                 updatedAt: updatedAt,
@@ -54,38 +50,17 @@ struct FavoriteLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
             requiresUpload: result.fingerprint != (try WebDAVSyncFingerprint.make(payload.library.rebuiltPreservingTombstones())))
     }
 
-    // Hashed rather than base64-of-full-JSON (unlike AppSettingsWebDAVParticipant):
-    // a favorite library can grow large, and the fingerprint is persisted inside
-    // the (already UserDefaults-backed) WebDAVSyncSettings blob. Fingerprints the
-    // locally stored document — including its deletion tombstones and each
-    // item's per-field clocks, both genuinely local state now (see
-    // `FavoriteLibraryDocument`'s and `FavoriteItem`'s doc comments).
     func readLocalFingerprint() async throws -> String? {
         try WebDAVSyncFingerprint.make(await store.load())
     }
 }
 
 struct FavoriteLibraryWebDAVPayload: Codable, Equatable, Sendable {
-    // Still v2 after FavoriteItem dropped coverURL (covers moved to the
-    // content_cover table), after deletion tombstones moved from a separate
-    // `FavoriteLibraryWebDAVTombstones` wrapper field (which never had
-    // anything writing to it) into `library` itself, and after this same
-    // envelope's `clocks` field was dropped once `FavoriteItem` grew its own
-    // per-field `locationsUpdatedAt`/`tagIDsUpdatedAt`/`displayNameUpdatedAt`/
-    // `remoteMappingUpdatedAt` (see `FavoriteItem`'s doc comment — the old
-    // `FavoriteLibraryWebDAVClocks` had the identical "never actually
-    // written from local state" flaw as the old tombstones field): decoding
-    // tolerates the removed keys. Category and collection `updatedAt` fields
-    // are also backward-compatible nested additions, so no format break is
-    // needed.
     static let currentVersion = 2
 
     var version: Int
     var updatedAt: Date
     var accountUID: String?
-    /// Monotonic per-dataset sync revision, stamped into the envelope by the
-    /// sync service after export; nil for payloads written before revisions
-    /// existed (decode falls back to `updatedAt` comparisons then).
     var syncRevision: UInt64?
     var library: FavoriteLibraryDocument
 
@@ -150,9 +125,6 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         )
         let (tags, deletedTagIDs) = mergeTags(local: local.library, remote: remote.library)
         let (items, deletedItemIDs) = mergeItems(local: local.library, remote: remote.library)
-        // Internal 8-param initializer, not the public one: the public one
-        // always starts a document with no tombstones, which would silently
-        // drop every one of the three sides' deletions computed just above.
         let mergedLibrary = FavoriteLibraryDocument(
             categories: categories,
             collections: collections,
@@ -176,11 +148,6 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
         local: FavoriteLibraryDocument,
         remote: FavoriteLibraryDocument
     ) -> (items: [FavoriteItem], deletedItemIDs: [String: Date]) {
-        // `uniquingKeysWith` rather than `uniqueKeysWithValues`: Codable
-        // decoding bypasses the document initializer's normalization, so a
-        // payload written by an older/buggy peer (or edited by hand) can
-        // carry duplicate target ids — that must degrade to keep-newest, not
-        // crash every future sync round.
         let localByID = Dictionary(local.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
         let remoteByID = Dictionary(remote.items.map { ($0.id, $0) }, uniquingKeysWith: Self.newerItem)
         var deletedItemIDs = SyncDeletionState.mergingTombstones(local.deletedItemIDs, remote.deletedItemIDs)
@@ -190,20 +157,6 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
             if let remoteItem = remoteByID[targetID], localByID[targetID] == nil {
                 item = remoteItem
             } else if let localItem = localByID[targetID], let remoteItem = remoteByID[targetID] {
-                // Each of these four fields merges independently by its own
-                // dedicated clock, not a shared decision keyed off the
-                // item's overall `updatedAt` — otherwise a device that
-                // legitimately only edited (say) `tagIDs` could have that
-                // edit silently overwritten by a peer whose only, unrelated,
-                // but chronologically later edit touched `locations`, and
-                // vice versa. This is last-writer-wins, not a union: a value
-                // removed on one device (e.g. moving a favorite out of a
-                // category) must actually disappear from the merged result,
-                // not get re-added by the other side's stale copy — see the
-                // git history for why a naive union-plus-tombstone design
-                // (where the tombstone was never actually written) silently
-                // undid every such removal on the very next sync round.
-                // Ties favor local, mirroring `newerItem`'s tie-breaking.
                 item.locations = localItem.locationsUpdatedAt >= remoteItem.locationsUpdatedAt ? localItem.locations : remoteItem.locations
                 item.locationsUpdatedAt = max(localItem.locationsUpdatedAt, remoteItem.locationsUpdatedAt)
                 item.tagIDs = localItem.tagIDsUpdatedAt >= remoteItem.tagIDsUpdatedAt ? localItem.tagIDs : remoteItem.tagIDs
@@ -218,16 +171,7 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
                 item.updatedAt = max(localItem.updatedAt, remoteItem.updatedAt)
             }
             if let deletedAt = deletedItemIDs[targetID] {
-                // `>=`, not `>`: every other tie-break in this merger favors
-                // survival/local on an exact timestamp match (`newerItem`,
-                // each per-field clock comparison above), so a resurrection
-                // racing its own tombstone to the same instant should
-                // resolve the same way.
                 guard item.updatedAt >= deletedAt else { return nil }
-                // Resurrected after the deletion (the same thread was
-                // favorited again — `FavoriteItemTarget.id` is content-
-                // derived, so it reuses the old id): the tombstone no longer
-                // applies and must not keep suppressing this id forever.
                 deletedItemIDs.removeValue(forKey: targetID)
             }
             return item.locations.isEmpty ? nil : item
@@ -253,10 +197,6 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
             return nil
         }
     }
-
-    // Category/collection/tag ids are random UUIDs that are never reused
-    // (unlike an item's content-derived target id), so once tombstoned an id
-    // is excluded permanently — no resurrection reconciliation needed.
 
     private func mergeCategories(
         local: FavoriteLibraryDocument,
@@ -288,12 +228,6 @@ struct FavoriteLibraryWebDAVMerger: Sendable {
             remote: remote.collections,
             updatedAt: \.updatedAt
         )
-            // `deleteCategory` only cascade-tombstones the collections it
-            // knows about; a collection a peer created (under the same
-            // category) concurrently with — but never synced before — that
-            // deletion has no tombstone of its own. Falling back to "its
-            // category still exists post-merge" catches that case too,
-            // mirroring `normalizedItem`'s location-validity filter.
             .filter { deletedIDs[$0.id] == nil && validCategoryIDs.contains($0.categoryID) }
             .sorted {
                 if $0.categoryID != $1.categoryID { return $0.categoryID < $1.categoryID }

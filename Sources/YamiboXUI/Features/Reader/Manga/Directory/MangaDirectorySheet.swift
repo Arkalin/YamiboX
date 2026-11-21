@@ -277,9 +277,6 @@ struct MangaDirectorySheet: View {
         )
     }
 
-    /// Batch removal destroys every selected chapter in one tap, so it asks
-    /// for confirmation first; single-chapter swipe deletion keeps the
-    /// standard no-confirmation iOS behavior.
     private func deleteSelectedChapters() {
         let selectedTIDs = selectedChapterTIDs
         guard !selectedTIDs.isEmpty else {

@@ -2,7 +2,6 @@ import Observation
 import SwiftUI
 import YamiboXCore
 
-/// Presentation-only failure handling shared by reader and Like surfaces.
 @MainActor
 @Observable
 final class AnnotationOperationState {

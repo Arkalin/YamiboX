@@ -1,8 +1,5 @@
 import Foundation
 
-/// Everything the Forum feature UI (home, boards, search, thread reader,
-/// user space, messaging, blogs, in-app browser) needs from the composition
-/// root. Cross-feature destination packages belong to ForumNavigationDependencies.
 public struct ForumDependencies: Sendable {
     public var history: BrowsingHistoryDependencies {
         BrowsingHistoryDependencies(
@@ -23,7 +20,6 @@ public struct ForumDependencies: Sendable {
     public let blacklist: ForumBlacklistWorkflow
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let readingProgressStore: ReadingProgressStore
-    /// Shared with the other reader surfaces, including in test compositions.
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let composerDraftStore: any ForumComposerDraftPersisting

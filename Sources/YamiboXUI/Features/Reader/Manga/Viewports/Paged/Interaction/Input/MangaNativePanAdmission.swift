@@ -1,7 +1,6 @@
 #if os(iOS)
 import UIKit
 
-/// Scoped interception for the curl backend. Collection view keeps its own delegate.
 @MainActor
 final class MangaNativePanAdmission: NSObject, UIGestureRecognizerDelegate {
     private weak var recognizer: UIPanGestureRecognizer?

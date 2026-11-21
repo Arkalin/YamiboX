@@ -48,9 +48,6 @@ struct ReaderChapterCommentsContent: View {
                           eventID: failureEventID, clear: clearFailure)
     }
 
-    // Keep this as a ScrollView rather than a List: `scrollPosition(id:)`
-    // (needed for drift-free controller scrolling) only works here with
-    // `scrollTargetLayout`.
     @ViewBuilder
     private var content: some View {
         switch state {
@@ -547,7 +544,6 @@ struct ReaderChapterCommentsSheet: View {
     }
 
     private func handleControlEvent(_ event: ReaderControlEvent) {
-        // Presented content owns input; closing must not dismiss this sheet underneath it.
         guard threadOverlayItem == nil, composerTarget == nil, imageBrowserRequest == nil, profileItem == nil,
               !showsFilterSettings else { return }
         switch ReaderControlCommandResolver.commentsCommand(for: event) {
@@ -656,13 +652,6 @@ struct ReaderChapterCommentsSheet: View {
         }
     }
 
-    /// 查看原帖 opens the original post as a full-screen cover above this
-    /// sheet instead of tearing down the reader underneath: closing the cover
-    /// returns to the comment list, closing the sheet returns to reading.
-    /// The cover root hardcodes `isDiscussionView: true`, keeping parity with
-    /// the old `.readerDiscussion`-sourced jump — this companion view of the
-    /// work must not write its own browsing-history row (browsing-history
-    /// decision #14).
     private func openOriginalPost(_ url: URL) {
         threadOverlayItem = ForumThreadOverlayItem(url: url, title: target?.title)
     }

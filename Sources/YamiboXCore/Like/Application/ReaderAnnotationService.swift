@@ -1,6 +1,5 @@
 import Foundation
 
-/// Owns annotation mutations and the ordering between metadata and retained files.
 public struct ReaderAnnotationService: Sendable {
     private let likes: any ReaderLikeMutating
     private let images: any LikeImageWriting
@@ -15,7 +14,6 @@ public struct ReaderAnnotationService: Sendable {
     public func removeLikes(_ items: [LikeItem]) async throws {
         guard !items.isEmpty else { return }
         try await Task {
-            // Never discard retained bytes before their metadata deletion commits.
             try await likes.delete(ids: items.map(\.id), date: .now)
             try await images.delete(ids: items.filter { $0.kind == .image }.map(\.id))
         }.value

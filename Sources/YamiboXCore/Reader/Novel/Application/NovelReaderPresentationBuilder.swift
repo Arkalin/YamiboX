@@ -1,13 +1,6 @@
 import Foundation
 
-/// The pure snapshot→presentation mapping, split out of
-/// `NovelReadingWorkflow` so the workflow keeps only state ownership and
-/// sequencing. Everything here is a static function of its inputs — no access
-/// to workflow fields means a presentation can never observe half-committed
-/// workflow state, and the mapping is testable without a live workflow.
 enum NovelReaderPresentationBuilder {
-    /// Builds only for a new content/layout generation. Candidates remain
-    /// transaction-local until the corresponding runtime commits.
     static func makeStructure(
         snapshot: NovelReadingSnapshot,
         layoutResult: NovelTextLayoutResult?,
@@ -121,8 +114,6 @@ enum NovelReaderPresentationBuilder {
         )
     }
 
-    /// Use the pending settings and viewport, not the workflow's committed
-    /// values, so rotation and font changes share the same spread decision.
     static func usesPagedSpread(
         settings: NovelReaderAppearanceSettings,
         layout: NovelReaderLayout

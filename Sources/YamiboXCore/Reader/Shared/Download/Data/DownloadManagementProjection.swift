@@ -27,8 +27,6 @@ extension DownloadStore {
         var builders: [DownloadEntryID: DownloadManagementEntryBuilder] = [:]
         var groupTitles: [DownloadGroupID: DownloadManagementGroupTitle] = [:]
         let mangaIdentities = try downloadMangaIdentitySnapshot(in: db)
-        // Preserve the old scalar Int fetches' SQLite conversion, including
-        // imported values that strict cached Row decoding would reject.
         var mangaBytes: [Data: [Data: Int]] = [:]
         for row in try Row.fetchAll(db, sql: """
             SELECT CAST(owner_name AS BLOB) AS raw_owner, CAST(tid AS BLOB) AS raw_entry,

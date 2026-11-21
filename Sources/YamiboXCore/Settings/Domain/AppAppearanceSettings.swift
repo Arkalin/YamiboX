@@ -1,6 +1,5 @@
 import Foundation
 
-/// Palette rendering modes; user-visible themes live in `AppThemeLibrary`.
 public enum AppThemePreset: String, Codable, Hashable, CaseIterable, Identifiable, Sendable {
     case classic
     case custom

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Portable identity information accompanies every manga-bearing dataset.
 public struct MangaDirectoryIdentitySnapshot: Codable, Equatable, Sendable {
     public var names: [String: String]
     public var legacyIdentities: [String: String]

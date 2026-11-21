@@ -65,8 +65,6 @@ struct NovelReaderSheetPalette {
 }
 
 extension NovelReaderSheetPalette: ReaderSettingsPalette {
-    /// The Novel sheet has no dedicated card stroke; its cards have always
-    /// been outlined with the divider hairline.
     var sectionStroke: Color { divider }
 
     /// Selected controls share the application accent while the reader

@@ -76,16 +76,10 @@ public struct MangaDirectorySeed: Hashable, Sendable {
 
 public protocol MangaDirectoryRepository: Sendable {
     func loadDirectorySeed(for threadID: String) async throws -> MangaDirectorySeed
-    /// `allowedForumID` scopes the tag list to rows belonging to that board
-    /// (the launching thread's board fid, pluggable-reader-config decision
-    /// #6) — tag pages mix threads from every board, so rows from other
-    /// boards are dropped.
     func loadTagDirectory(tagIDs: [String], allowedForumID: String) async throws -> [MangaChapter]
     func searchDirectory(keyword: String, forumID: String) async throws -> [MangaChapter]
 }
 
-/// Captured with directory content before an asynchronous network refresh.
-/// Source IDs are provenance, not aliases, and must not follow redirects.
 public struct MangaDirectoryRefreshSnapshot: Sendable {
     public let directory: MangaDirectory
     public let contentIdentityIDs: Set<String>
@@ -99,7 +93,6 @@ public struct MangaDirectoryRefreshSnapshot: Sendable {
 public protocol MangaDirectoryPersisting: MangaDirectoryRenaming, MangaDirectoryReading, MangaDirectoryChangeObserving {
     func directoryRefreshSnapshot(id: MangaDirectoryID) async throws -> MangaDirectoryRefreshSnapshot?
     func saveRefreshedDirectory(_ directory: MangaDirectory, from snapshot: MangaDirectoryRefreshSnapshot) async throws -> MangaDirectory
-    /// Atomically adopts an existing discovery identity or persists a new seed.
     func resolveOrCreateDirectory(_ seed: MangaDirectory) async throws -> MangaDirectory
     func resolveDirectoryID(legacyName: String?, legacyIdentity: String?, chapterTID: String?) async throws -> MangaDirectoryID?
     func directoryIDs(containingTID tid: String) async throws -> Set<MangaDirectoryID>
@@ -109,8 +102,6 @@ public protocol MangaDirectoryPersisting: MangaDirectoryRenaming, MangaDirectory
     func deleteDirectory(id: MangaDirectoryID) async throws
 }
 
-/// Replaces a directory identity and its persisted references atomically.
-/// A failed rename must leave both identities unchanged.
 public protocol MangaDirectoryRenaming: Sendable {
     func renameDirectory(id: MangaDirectoryID, cleanBookName: String, searchKeyword: String?) async throws -> MangaDirectory
     func mergeDirectories(sourceID: MangaDirectoryID, targetID: MangaDirectoryID, cleanBookName: String, searchKeyword: String?) async throws -> MangaDirectory

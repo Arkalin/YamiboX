@@ -102,7 +102,6 @@ final class MangaPagedPageCurlNavigationAdapter {
             .compactMap(coordinator.parent.sequence.leafIndex(matching:))
         let selection = coordinator.parent.sequence.selectionIndex(forLeafIndexes: indexes) ?? coordinator.selectionIndex
         let pairedIndexes = coordinator.parent.sequence.leafIndexes(forSelectionIndex: selection)
-        // Leaf ordering is physical; reading-order conversion has already happened in Core.
         if edge == .left, let first = pairedIndexes.min() { return coordinator.parent.sequence.leafIndex(before: first) != nil }
         if edge == .right, let last = pairedIndexes.max() { return coordinator.parent.sequence.leafIndex(after: last) != nil }
         return false
@@ -112,7 +111,6 @@ final class MangaPagedPageCurlNavigationAdapter {
         guard recognizer.state == .ended, let coordinator, !coordinator.isPageTurnInProgress,
               let view = recognizer.view else { return }
         let parent = coordinator.parent
-        // Admission was decided at began. Completion retains the native distance/velocity thresholds.
         guard let delta = ReaderPagedBoundaryPageTurn.boundaryDelta(selectionIndex: coordinator.selectionIndex,
             itemCount: parent.sequence.pageCount, translation: recognizer.translation(in: view), velocity: recognizer.velocity(in: view),
             viewportWidth: view.bounds.width, horizontalNavigationDirection: parent.settings.pageTurnDirection.horizontalNavigationDirection) else { return }

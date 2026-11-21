@@ -19,31 +19,8 @@ public struct MangaLaunchContext: Hashable, Identifiable, Sendable {
     public var directoryName: String?
     public var directoryID: MangaDirectoryID?
     public var downloadFavoriteID: String?
-    /// When true, this reader session must not persist reading progress,
-    /// resume route, or Favorite Library recency. See Reader Preview Mode in
-    /// docs/contexts/reader-navigation/CONTEXT.md.
     public var isPreview: Bool
-    /// Whether the forum board this chapter belongs to currently has Smart
-    /// Comic Mode on. Computed by the caller (forum routing or the
-    /// favorites open-target resolver — both know the `forumID`) at launch
-    /// time; the reader itself never looks this up independently
-    /// (smart-comic-mode design decision #15). Every production caller
-    /// stamps this explicitly from a `BoardReaderSettings` query or an
-    /// existing snapshot; the init default exists solely for test-construction
-    /// convenience (pluggable-reader-config R3).
     public var isSmartModeEnabled: Bool
-    /// Snapshot of the forum board (fid) this chapter was launched from,
-    /// scoping directory search and tag-list row filtering to that board
-    /// (pluggable-reader-config decision #6). Also recorded into
-    /// browsing-history rows so a later history-click can re-evaluate the
-    /// board's mode with the same `isSmartComicModeEnabled(forumID:)` rule
-    /// favorites use (a missing fid reads as smart-off under the strict
-    /// one-rule semantics). `nil` means the launch origin had no board
-    /// context (e.g. the My Likes list, R4); the reader view model's
-    /// configuration construction then substitutes "30" — the single
-    /// UI-side fallback point — preserving today's behavior for such
-    /// launches. Like `isSmartModeEnabled` above, this is a launch-time
-    /// snapshot stamped by the caller, never re-queried by the reader.
     public var forumID: String?
 
     public var id: String {
@@ -130,14 +107,7 @@ extension MangaLaunchContext: Codable {
             directoryID: try container.decodeIfPresent(MangaDirectoryID.self, forKey: .directoryID),
             downloadFavoriteID: try container.decodeIfPresent(String.self, forKey: .downloadFavoriteID),
             isPreview: try container.decodeIfPresent(Bool.self, forKey: .isPreview) ?? false,
-            // Existing persisted routes (reader-resume route store) predate
-            // this field; treat them as mode-on, matching the field's own
-            // default and every pre-Phase-B launch context.
             isSmartModeEnabled: try container.decodeIfPresent(Bool.self, forKey: .isSmartModeEnabled) ?? true,
-            // Persisted routes written before this field existed carry no
-            // board snapshot; decoding them as `nil` lets the reader view
-            // model's configuration fallback substitute "30" — exactly what
-            // those launches did when they were written.
             forumID: try container.decodeIfPresent(String.self, forKey: .forumID)
         )
     }

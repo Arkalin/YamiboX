@@ -1,7 +1,5 @@
 import Foundation
 
-// Category mutations of the favorites library document. Split from the
-// former monolithic FavoriteLibrary.swift; method bodies moved verbatim.
 extension FavoriteLibraryDocument {
     public mutating func createCategory(name: String, date: Date = .now) -> FavoriteCategory {
         let category = FavoriteCategory(
@@ -42,10 +40,6 @@ extension FavoriteLibraryDocument {
         let defaultLocation = FavoriteLocation.category(defaultCategory.id)
         categories.removeAll { $0.id == id && !$0.isDefault }
         deletedCategoryIDs[id] = date
-        // Every collection under this category is cascade-deleted too, and
-        // needs its own tombstone — otherwise a stale peer that still has
-        // one of them (but already knows the category is gone) would revive
-        // it referencing a category id that no longer exists anywhere.
         for collection in collections where collection.categoryID == id {
             deletedCollectionIDs[collection.id] = date
         }

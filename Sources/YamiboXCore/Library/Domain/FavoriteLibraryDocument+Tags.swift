@@ -1,7 +1,5 @@
 import Foundation
 
-// Tag mutations of the favorites library document. Split from the former
-// monolithic FavoriteLibrary.swift; method bodies moved verbatim.
 extension FavoriteLibraryDocument {
     public mutating func createTag(name: String, color: FavoriteTagColor, date: Date = .now) -> FavoriteTag {
         let tag = FavoriteTag(

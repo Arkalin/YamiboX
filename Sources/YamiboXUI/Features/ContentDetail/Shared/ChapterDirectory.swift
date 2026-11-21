@@ -75,7 +75,6 @@ struct ChapterDirectoryItem: Identifiable, Equatable {
     }
 
     func outlineWidth(for layout: ChapterDirectoryLayout) -> CGFloat {
-        // Reading fill and bookmark take precedence when both states coincide.
         guard !isCurrentRead else { return 0 }
         return isFocused ? 2 : (layout == .grid ? 0.5 : 0)
     }
@@ -112,8 +111,6 @@ final class ChapterDirectoryScrollAnchor {
     }
 
     static func topAnchor(toolbarHeight: CGFloat, viewportHeight: CGFloat, itemHeight: CGFloat) -> UnitPoint {
-        // ScrollViewReader's top anchor does not reserve pinned section-header
-        // space. Offset the target below that header instead of hiding it.
         UnitPoint(x: 0.5, y: min(1, max(0, toolbarHeight / max(1, viewportHeight - itemHeight))))
     }
 }
@@ -122,8 +119,6 @@ struct ChapterDirectory<Prelude: View>: View {
     @Environment(\.forumTheme) private var theme
     @ScaledMetric(relativeTo: .body) private var itemHeight: CGFloat = 48
     @Binding var layout: ChapterDirectoryLayout
-    // Visibility is bookkeeping, not rendered state. A reference avoids
-    // invalidating the entire lazy directory for each item crossing the toolbar.
     @State private var scrollAnchor = ChapterDirectoryScrollAnchor()
     @State private var lastFocusedID: String?
     @State private var scrollRequest: ChapterDirectoryScrollRequest?
@@ -230,8 +225,6 @@ struct ChapterDirectory<Prelude: View>: View {
             .refreshable { await refresh() }
             .task(id: scrollRequest) {
                 guard let scrollRequest, !Task.isCancelled else { return }
-                // Scroll after the geometry transaction has completed. Scrolling
-                // from its action recursively changes the geometry being measured.
                 proxy.scrollTo(scrollRequest.id, anchor: scrollRequest.anchor)
             }
             .accessibilityIdentifier("forum.detail.directory")
@@ -361,8 +354,6 @@ private struct ChapterDirectorySectionView: View {
                             .id(item.id)
                             .onGeometryChange(for: Bool.self) { geometry in
                                 let frame = geometry.frame(in: .scrollView(axis: .vertical))
-                                // A pinned toolbar occludes content but does not
-                                // reduce SwiftUI's scroll-target visible rectangle.
                                 return frame.maxY > visibleTop + 1 && frame.minY < visibleBottom
                             } action: { isVisible in
                                 onVisibilityChange(item.id, isVisible)

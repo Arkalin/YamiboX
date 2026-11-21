@@ -113,7 +113,7 @@ bash scripts/check-architecture.sh
 
 然后按改动影响范围选择 Local 构建和必要的模拟器操作，详见[验证指南](../tests/README.md)与[核心流程回归清单](../tests/regression-checklist.md)。当前 package 和工程没有测试 target，不使用旧项目的 `swift test` 或旧 UI 测试宿主替代验证；新增单元测试需要用户明确批准。
 
-[Swift CI 工作流](../../.github/workflows/swift.yml)目前执行架构检查，自动选择可用 iPhone 模拟器，并使用 **`YamiboX` Scheme 与禁用签名的编译检查**。它不安装或运行 App，也不证明本地论坛、Keychain 或交互流程通过。这是现有 CI 事实，不是本地开发的 Scheme 选择规则；本地开发继续使用签名的 `YamiboX-Local`。
+[Swift CI 工作流](../../.github/workflows/swift.yml)目前执行架构检查和 [Swift 注释减量检查](comment-ratchet.md)，自动选择可用 iPhone 模拟器，并使用 **`YamiboX` Scheme 与禁用签名的编译检查**。它不安装或运行 App，也不证明本地论坛、Keychain 或交互流程通过。这是现有 CI 事实，不是本地开发的 Scheme 选择规则；本地开发继续使用签名的 `YamiboX-Local`。
 
 ## 常见环境问题
 

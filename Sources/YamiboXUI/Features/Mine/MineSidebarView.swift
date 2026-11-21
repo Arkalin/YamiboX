@@ -66,7 +66,7 @@ struct MineSidebarView: View {
         .task(id: appModel.mineNavigationRequest?.id) {
             guard let request = appModel.mineNavigationRequest else { return }
             switch request.target {
-            case .login: break // The enclosing Mine view owns the login sheet.
+            case .login: break
             case let .settings(destination):
                 _ = appModel.claimMineNavigationRequest()
                 navigation.setSidebarPath([.settings])
@@ -160,8 +160,6 @@ struct MineSidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        // Keep the native tab accessibility probe inside the column; wrapping
-        // the split view changes its navigation-bar safe-area layout.
         .messageUnreadTabAccessibility(count: appModel.unreadCount(for: .mine))
         .navigationTitle(L10n.string("tab.mine"))
         .navigationBarTitleDisplayMode(.inline)

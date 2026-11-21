@@ -5,17 +5,6 @@ import Observation
 import UIKit
 import YamiboXCore
 
-/// App-wide game-controller and hardware-keyboard listener. Translates
-/// `GCControllerLiveInput` element changes and `GCKeyboard` key changes into
-/// the same logical ``ReaderControlEvent``s and delivers them to the top of a
-/// consumer stack (reader below, comments sheet above). The settings page can
-/// preempt either source's dispatch with a capture session to bind buttons or
-/// keys.
-///
-/// Listens to every connected controller and the coalesced hardware keyboard
-/// at once; the readers gate on their own presentation state, this class only
-/// gates on each source's own master switch (``GamepadSettings/isEnabled``,
-/// ``KeyboardSettings/isEnabled`` — independent of each other).
 @MainActor
 @Observable
 public final class ReaderPeripheralInputManager {
@@ -32,9 +21,7 @@ public final class ReaderPeripheralInputManager {
     }
 
     public enum CaptureFeedback: Hashable, Sendable {
-        /// A bindable element was pressed; the capture session has ended.
         case captured(CapturedElement)
-        /// A fixed/system element was pressed; the session keeps waiting.
         case rejected
     }
 
@@ -43,10 +30,6 @@ public final class ReaderPeripheralInputManager {
         public let localizedName: String?
     }
 
-    /// A captured keyboard key, mirroring ``CapturedElement`` for the keyboard
-    /// capture path. Kept as a separate, parallel type rather than unified
-    /// with the gamepad one — keyboard bindings persist an `Int` key code,
-    /// not a `String` alias.
     public struct CapturedKey: Hashable, Sendable {
         public let keyCode: Int
         public let displayName: String?
@@ -58,23 +41,16 @@ public final class ReaderPeripheralInputManager {
     }
 
     public enum KeyboardCaptureFeedback: Hashable, Sendable {
-        /// A bindable key was pressed; the capture session has ended.
         case captured(CapturedKey)
-        /// A fixed/system key was pressed; the session keeps waiting.
         case rejected
     }
 
-    /// Vendor names of every connected controller, for the settings page.
     public private(set) var connectedControllerNames: [String] = []
 
     public var isControllerConnected: Bool {
         !connectedControllerNames.isEmpty
     }
 
-    /// Whether a hardware keyboard is currently connected. `GCKeyboard.coalesced`
-    /// merges every connected keyboard into a single logical device with no
-    /// per-device identity, so unlike ``connectedControllerNames`` there is
-    /// nothing to enumerate here — just a boolean.
     public private(set) var isKeyboardConnected: Bool = false
 
     @ObservationIgnored private var settings = GamepadSettings()
@@ -111,10 +87,6 @@ public final class ReaderPeripheralInputManager {
         }
     }
 
-    // MARK: - Consumer stack
-
-    /// Registers `handler` as the active event consumer, stacking above any
-    /// current one. Returns a token for ``removeHandler(_:)`` on disappear.
     @discardableResult
     public func pushHandler(_ handler: @escaping (ReaderControlEvent) -> Void) -> UUID {
         let token = UUID()
@@ -133,12 +105,6 @@ public final class ReaderPeripheralInputManager {
         return true
     }
 
-    // MARK: - Binding capture
-
-    /// Suspends event dispatch and reports the next press instead. Bindable
-    /// presses end the session; excluded ones emit `.rejected` and keep it
-    /// alive. Works regardless of the master switch so the settings page can
-    /// always rebind.
     public func beginCapture(_ feedback: @escaping (CaptureFeedback) -> Void) {
         captureHandler = feedback
     }
@@ -147,8 +113,6 @@ public final class ReaderPeripheralInputManager {
         captureHandler = nil
     }
 
-    /// Looks up display metadata for a persisted alias on the currently
-    /// connected controllers, so bound rows can render real glyphs.
     public func displayInfo(forElementAlias alias: String) -> ElementDisplayInfo? {
         for controller in GCController.controllers() {
             guard let element = controller.physicalInputProfile.elements[alias] else { continue }
@@ -160,17 +124,6 @@ public final class ReaderPeripheralInputManager {
         return nil
     }
 
-    // MARK: - Keyboard binding capture
-
-    /// Suspends keyboard event dispatch and reports the next key press
-    /// instead. Bindable presses end the session; excluded ones (Escape, the
-    /// arrows, modifiers, etc.) emit `.rejected` and keep it alive. Works
-    /// regardless of ``KeyboardSettings/isEnabled``, the same way
-    /// ``beginCapture(_:)`` works regardless of the gamepad's master switch.
-    ///
-    /// A separate, parallel API from the gamepad capture pair above — kept
-    /// independent rather than unified because the two persist different
-    /// value types (`String` alias vs. `Int` key code).
     public func beginKeyboardCapture(_ feedback: @escaping (KeyboardCaptureFeedback) -> Void) {
         keyboardCaptureHandler = feedback
     }
@@ -179,23 +132,6 @@ public final class ReaderPeripheralInputManager {
         keyboardCaptureHandler = nil
     }
 
-    /// Best-effort human-readable name for a key code, used both to label a
-    /// just-captured key and to render already-bound keys in the settings
-    /// list — mirrors ``displayInfo(forElementAlias:)`` returning `nil` for
-    /// an unknown alias and leaving rendering to the UI layer.
-    ///
-    /// GameController has no static code -> name lookup independent of a
-    /// live keyboard, unlike `GCPhysicalInputElement.localizedName` for
-    /// controller elements. This implements the first two tiers of the PRD's
-    /// three-tier fallback chain (docs/issues/keyboard-control/prd.md
-    /// decision 7): it tries the connected keyboard's own button first, then
-    /// falls back to a small hardcoded table covering the common bindable
-    /// keys (letters, digits, punctuation, F-keys, Return/Enter), then
-    /// returns `nil`. The third tier — displaying the raw code (e.g. "Key
-    /// code 21") — is a UI-layer concern for whoever renders a `nil` result,
-    /// same as an unknown gamepad alias falls back to its raw string today.
-    /// This is a known soft spot: real-device and simulator validation may
-    /// reveal a better system API than `localizedName` for tier one.
     public func displayName(forKeyCode code: Int) -> String? {
         if let liveName = GCKeyboard.coalesced?.keyboardInput?
             .button(forKeyCode: GCKeyCode(rawValue: code))?.localizedName {
@@ -203,8 +139,6 @@ public final class ReaderPeripheralInputManager {
         }
         return Self.fallbackKeyDisplayNames[code]
     }
-
-    // MARK: - Controller monitoring
 
     private func startMonitoring() {
         for controller in GCController.controllers() {
@@ -252,11 +186,6 @@ public final class ReaderPeripheralInputManager {
                 self.refreshKeyboardConnectionState()
             }
         })
-        // `settingsStore` is captured directly (not through weak `self`) so
-        // the stream subscription can outlive `self` until deinit cancels the
-        // task — the same lifetime the old NotificationCenter loop had. No
-        // changeID guard here, as before: every settings change through the
-        // store this manager holds should reload, own writes included.
         monitorTasks.append(Task { [weak self, settingsStore] in
             await self?.reloadSettings()
             for await _ in settingsStore.changes() {
@@ -289,8 +218,6 @@ public final class ReaderPeripheralInputManager {
         }
     }
 
-    // MARK: - Keyboard monitoring
-
     private func refreshKeyboardConnectionState() {
         isKeyboardConnected = GCKeyboard.coalesced != nil
     }
@@ -300,8 +227,6 @@ public final class ReaderPeripheralInputManager {
         keyboard.keyboardInput?.keyChangedHandler = { _, _, keyCode, isPressed in
             MainActor.assumeIsolated {
                 Self.forEachManager { manager in
-                    // UIKit delivers window-owned presses for scene models; the
-                    // coalesced keyboard has no window identity and must not duplicate them.
                     if !manager.usesWindowKeyboardEvents {
                         manager.handleKeyChange(keyCode, isPressed: isPressed)
                     }
@@ -309,8 +234,6 @@ public final class ReaderPeripheralInputManager {
             }
         }
     }
-
-    // MARK: - Event translation
 
     private func handleElementChange(_ element: any GCPhysicalInputElement, controllerKey: ObjectIdentifier) {
         guard allowsEvent(isCapturing: captureHandler != nil) else {
@@ -327,8 +250,6 @@ public final class ReaderPeripheralInputManager {
             return
         }
 
-        // Thumbsticks surface as direction-pad elements too; only the real
-        // pad carries fixed directional semantics (sticks stay ignored).
         if let dpad = element as? GCDirectionPadElement,
            dpad.aliases.contains(GamepadElementAlias.directionPad) {
             let cardinals: [(ReaderControlDirection, any GCPressedStateInput)] = [
@@ -381,8 +302,6 @@ public final class ReaderPeripheralInputManager {
         guard settings.isEnabled, let handler = handlerStack.last?.handler else { return }
         handler(.dpad(direction))
     }
-
-    // MARK: - Keyboard event translation
 
     private func handleKeyChange(_ keyCode: GCKeyCode, isPressed: Bool) {
         guard allowsEvent(isCapturing: keyboardCaptureHandler != nil) else {
@@ -441,12 +360,6 @@ public final class ReaderPeripheralInputManager {
         handler(.bound(action))
     }
 
-    /// Hardcoded fallback for ``displayName(forKeyCode:)`` when no live
-    /// keyboard button name is available. Covers the common bindable keys a
-    /// user would realistically bind: letters, digits, common punctuation,
-    /// F1–F12, and Return/Enter. Keyed by the same USB HID usage IDs as
-    /// ``KeyboardKeyCode``; see the "Keyboard/Keypad Page (0x07)" of the USB
-    /// HID Usage Tables.
     private static let fallbackKeyDisplayNames: [Int: String] = {
         var names: [Int: String] = [:]
         for (offset, letter) in "ABCDEFGHIJKLMNOPQRSTUVWXYZ".enumerated() {

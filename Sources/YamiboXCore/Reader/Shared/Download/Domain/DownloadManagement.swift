@@ -157,17 +157,11 @@ public struct DownloadManagementSnapshot: Codable, Hashable, Sendable {
     }
 }
 
-/// The concrete reader route that can be reconstructed from an on-disk download
-/// entry when no newer reading-progress record exists.
 public enum DownloadedWorkLaunchTarget: Codable, Hashable, Sendable {
     case novel(threadID: String, authorID: String?, downloadedView: Int)
     case manga(threadID: String, chapterTitle: String, chapterView: Int, forumID: String?)
 }
 
-/// One work with at least one fully downloaded source entry. This is intentionally
-/// narrower than ``DownloadManagementGroup``: it has no queue state or
-/// destructive-management concerns, so reading surfaces can safely use it as
-/// a gallery data source.
 public struct DownloadedWork: Codable, Hashable, Identifiable, Sendable {
     public var id: DownloadGroupID
     public var title: String

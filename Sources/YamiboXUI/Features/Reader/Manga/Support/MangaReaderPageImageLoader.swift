@@ -5,8 +5,6 @@ import YamiboXCore
 import UIKit
 import Combine
 
-/// Page-keyed image access for the manga reader viewports: maps a page
-/// projection to its `YamiboImageSource` and forwards to the UI pipeline.
 @MainActor
 final class MangaReaderPageImageLoader {
     private let imageSource: (MangaReaderPageProjection) -> YamiboImageSource

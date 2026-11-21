@@ -6,8 +6,6 @@ struct WebDAVRemotePayload: Sendable {
     var etag: String?
 }
 
-/// A format upgrade runs inside the same sync coordinator as the enclosing round.
-/// Policies own their bookkeeping; transport and conditional writes stay in the engine.
 protocol WebDAVSyncMigrating: Sendable {
     func prepare(
         settings: WebDAVSyncSettings,

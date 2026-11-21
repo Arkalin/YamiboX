@@ -3,8 +3,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import YamiboXCore
 
-// Shared form interactions; business screens choose the composer form, while
-// document-only pages never install editing, upload, or submission state.
 struct ForumFormPageView: View {
     let model: ForumPageSession
     let document: ForumPageDocument

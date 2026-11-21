@@ -6,8 +6,6 @@ public protocol YamiboOrdinaryImageCacheClearing: Sendable {
     func totalDiskUsageBytes() async -> Int
 }
 
-/// `@unchecked Sendable`: holds only immutable references to internally
-/// thread-safe Nuke objects.
 final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecked Sendable {
     static let defaultDataCacheLimitBytes = 512 * 1024 * 1024
     static let defaultDataCacheName = "com.arkalin.YamiboX.OrdinaryImageDataCache"
@@ -51,11 +49,9 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         do {
             dataCache = try makeDataCache()
         } catch {
-            // Regenerable image bytes must not prevent the app from launching.
             YamiboLog.persistence.error("Image disk cache unavailable; continuing without disk caching: \(error)")
             dataCache = nil
         }
-        // Disable the startup sweep before constructing the network loader.
         dataCache?.isSweepEnabled = false
         dataCache?.sizeLimit = dataCacheLimitBytes
         self.dataCache = dataCache
@@ -64,8 +60,6 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
         configuration.dataCache = dataCache.map { YamiboMaintainedImageDataCache(cache: $0) }
         configuration.dataCachePolicy = .storeOriginalData
         configuration.isResumableDataEnabled = true
-        // Nuke's original-data key ignores Cookie/Referer. Core single-flight
-        // now owns coalescing using the actual request context instead.
         configuration.isTaskCoalescingEnabled = false
         self.pipeline = ImagePipeline(
             configuration: configuration,
@@ -87,8 +81,6 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
     }
 
     func cachedData(for source: YamiboImageSource) -> Data? {
-        // Explicit lookup also permits promoting existing reader bytes for a
-        // cover. Cover network requests themselves never use this disk cache.
         dataCache?.cachedData(for: source.cacheKey)
     }
 
@@ -107,8 +99,6 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
 
     func totalDiskUsageBytes() async -> Int {
         guard let dataCache else { return 0 }
-        // Nuke stages writes and deletions. Flush off-main before measuring so
-        // a refresh immediately after clearing cannot report the old files.
         return await Task.detached(priority: .utility) { [dataCache] in
             dataCache.flush()
             return dataCache.queue.sync { dataCache.totalAllocatedSize }
@@ -164,8 +154,6 @@ final class YamiboImageDataPipeline: YamiboOrdinaryImageCacheClearing, @unchecke
                 return LoadDiagnosticError.mapping(error, to: YamiboError.underlying(urlError.localizedDescription))
             }
         }
-        // Only transport errors need translation here. Preserve other errors
-        // without making the image pipeline recognize each feature's types.
         return error
     }
 }
@@ -204,9 +192,6 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
         completion: @escaping @Sendable (Error?) -> Void
     ) -> any Cancellable {
         let task = session.dataTask(with: request)
-        // Chunked delegate delivery (instead of one-shot `data(for:)`) is what
-        // lets Nuke accumulate the partial data required for resumable
-        // downloads; the task retains its delegate until it completes.
         task.delegate = StreamingDeliveryHandler(
             request: request, attempt: attempt,
             logToken: NetworkLogRecorder.shared.begin(request: request, source: .image),
@@ -247,8 +232,6 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
         private let logToken: NetworkLogToken
         private let didReceiveData: @Sendable (Data, URLResponse) -> Void
         private let completion: @Sendable (Error?) -> Void
-        // URLSession delivers a task's delegate callbacks serially; these are
-        // only touched from that serial context.
         private var validatedResponse: URLResponse?
         private var validationError: Error?
         private var duration: TimeInterval?
@@ -279,8 +262,6 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
             didReceive response: URLResponse,
             completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
         ) {
-            // A redirect rejected as a challenge can still deliver its 302
-            // response here. Do not overwrite that error with a generic one.
             guard validationError == nil else {
                 completionHandler(.cancel)
                 return
@@ -292,8 +273,6 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
                     validationError = challenge
                     completionHandler(.cancel)
                 } else {
-                    // Quarantine challenge bytes from Nuke/cache. Only a fully
-                    // received, bounded document may be handed to the verifier.
                     challengeResponse = httpResponse
                     completionHandler(.allow)
                 }
@@ -350,8 +329,6 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
                         validationError = error
                         dataTask.cancel()
                     } else {
-                        // Ordinary successful content is not a challenge just
-                        // because its MIME type warranted prefix inspection.
                         self.challengeResponse = nil
                         validatedResponse = challengeResponse
                         didReceiveData(challengeBody, challengeResponse)
@@ -426,7 +403,6 @@ final class YamiboURLSessionImageDataLoader: DataLoading, @unchecked Sendable {
     }
 }
 
-/// Cache-only Nuke requests may omit an attempt, but must never reach the network.
 private final class MissingImageAttemptLoader: DataLoading, @unchecked Sendable {
     func loadData(with request: URLRequest,
                   didReceiveData: @escaping @Sendable (Data, URLResponse) -> Void,

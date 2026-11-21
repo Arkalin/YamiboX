@@ -1,0 +1,924 @@
+{
+  "Sources/YamiboXCore/Bookmark/Application/BookmarkLibraryWebDAVParticipant.swift" : {
+    "44a5ba17d38863676a81804ac25b496182edb1e6998896d9d2ae48ec0ac5425e" : 1,
+    "48b97b4bf59a33fa96122419884569b62a956619b498f7777ecf1edbd188ce3c" : 1,
+    "89a35d98e103a54ea251b8a7e55450ac149feb3621d368bd69373ff5b631bcae" : 1
+  },
+  "Sources/YamiboXCore/Bookmark/Data/BookmarkStore.swift" : {
+    "1f81d4669b73bae4950b37c8fb7d3b23028d105b9a6acba65fbe7be93936ada8" : 1,
+    "5aaea2b5a23fec8c35f693c3ba9a9891429c8e1ee38ca8ffe68401639e01f1f2" : 1,
+    "a23ad7b6e808c9e4f6ddab5b2a3b08acd91e06dca06347b16d47bce8cb43a508" : 1
+  },
+  "Sources/YamiboXCore/ContentDetail/Application/MangaDetailDependencies.swift" : {
+    "2b6a522e152cacf5080e57ec14f55ca8c24e9ddecabd1aefeb0718454cd15f95" : 1
+  },
+  "Sources/YamiboXCore/ContentDetail/Application/NovelDetailContracts.swift" : {
+    "90de9d7ec074e0f512b877c4e54b68d702f9fbb8348294830fccadff20b4d571" : 1
+  },
+  "Sources/YamiboXCore/Forum/Application/ForumReaderContracts.swift" : {
+    "1c25652ff6e7a78734a002c4067559dc399a4da64e4b5ae0f4abf04ac3b04411" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/Composer/ForumComposerMarkupParser.swift" : {
+    "14869cf2b89da5b8aa70dcf53426360173854e16da7b18e11e246889825eaaad" : 1,
+    "4932b612702dec2fe24dbf00a1781e561731618a79fdae28fded4af7b13c681c" : 1,
+    "b06e79517235b54be412de6c722bec4df81541603490948080951192ae6e6810" : 1,
+    "e78fff986b2b53f811ba38a11612f7286fc500f513fe0a5a3168c2673ce39359" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumAnnouncementParser.swift" : {
+    "a5a3dddc0a3e7b8524107bc705be3b6d0bc5c960cda0630d57a73fba2440585d" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumAttachmentDownloadStore.swift" : {
+    "48f66cd549eab25ed2b67003a4d6e8a0b6b4d79d9feb109b8a7427e3f4bf7710" : 1,
+    "625bb27f94583e9761e494c37e409da157978adde2125d2f91c5980f98c1ab0b" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumBlacklistStore.swift" : {
+    "5e030046b0601133980c196aeb31a42afca7edd2dfcc44d1b26da69ae4e784c2" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumFormPageParser.swift" : {
+    "0d8d1e613dd59dd54742175796f10dd1973149aee1fe13c56bd540c1bf579b37" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumHTMLParser.swift" : {
+    "1c11a4ca30c8031fcde8707011ba1006b53e51250552176d5ebdd90afdedec62" : 1,
+    "b2ef1540201745b06e0cd00b69d46c4f92c24107d55b12757ae509025f99e528" : 1,
+    "b46e651740beb1e776e568a22898269045853235ee3cc65a5ecddf88b1140c22" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumPageRepository.swift" : {
+    "bd0f6a39c168221af8479ad97004227b633587c4875b9347c26f396a1e95e59d" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumTagHTMLParser.swift" : {
+    "3a2084b0382d0d9c51cf57d1923765940916290594dfd64ec4c1555afc9bfd08" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadAttachmentParser.swift" : {
+    "16fe34eba84129fc31b066f9e6bca4e516d7a4b9647731e6546f60311a6749aa" : 1,
+    "7d648aefdb59b0fbb86beaa921427c880c8f6c126ec8888edc8bd8bad7ec170d" : 1,
+    "bedc11f5bd874da03e7cf437113c430828eddce4247c2823034c7865053449ce" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadBlockBuilder.swift" : {
+    "76dedfdfdc9975bdccf0b34830593856d406d4434465ab70acf1364511ea9f69" : 1,
+    "985527663546cbe354af792ca1ef279212e9ca220f41d7802d0bc11715b928ca" : 1,
+    "bbe902a9f2af331df2ee6c9541f74c601fc4180dd1fc314fb6ef52dcd9871246" : 1,
+    "beba05fbf7f57587e9d6132910f873b69352e8adf49ad27db40968fc4e8826dc" : 1,
+    "c0ee87522ce7d2e61ae9d3155837350eb9173bc96b0d24986a86ddb79b4c615d" : 1,
+    "d1d4a40e7a30aaef5bd512c12138d3717d1b880853b81a3347f8df09b7476e6c" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadCommentParser.swift" : {
+    "3ab840fa3e4514edf784b9f4e03d24b8ea22be85a04654fe921dac3740414d15" : 1,
+    "8eec38faa93a94774d5b87c6c3ff120344b9260df81ba57031d920361d6c1f20" : 1,
+    "a8800d60dd6fb377d0788d6bcd2503173b3724168aea896d205da7f25028d26e" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadPageHTMLParser.swift" : {
+    "020d28095f31793c6fb93b0e6d1c70d66823c2bb0544dd1ef90123421357d866" : 1,
+    "e119c561e294eead2b9f710734c331c0174d2b6939b2d541a109ef08223df10b" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadPageMetadataParser.swift" : {
+    "92f577d6a55b8d91c567abcc23033d31c18e1c205f31bd0bf785ceb1a5ad62f6" : 1,
+    "a8f9bd1e3d78c6d84ddd4a7985e42a730be054c3edfdb5bcf025da94e135a8bb" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadPollParser.swift" : {
+    "17a3631a92af27690010a0ba037ba689719cc3e3eea0463f2fb8f4e1fad2538a" : 1,
+    "25a5810c933794d962d6e5beabb418ec459ab84de0e2de9207f36d89611bd32a" : 1,
+    "4e645497210a26e66ac42681071b2876224f033bd807efe5cb540bf772d32bd7" : 1,
+    "e771ee3fb6ca33ab6b28f5828ee130b36adddbb3e0edafa549cd9e573b34f34a" : 1,
+    "f32acf3abf2fc9e067ee93b4b0d9c7ac2ab7092e5d263920e982303eede9d3e4" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadPostsParser.swift" : {
+    "21e0ab5fb46689cb28a18fcfd5d5a114c4b98ff3fee49c3e9128eee4d427444f" : 1,
+    "45d035895fa7e63a312f7dc618f0e0caa8aa638b57e42fba5ef3e111cc8adab4" : 1,
+    "4a4a054d2f3088d0988651519f545ed3deca97db8e017526ec72bddac5638f95" : 1,
+    "4f5f10dc6b14c7c26e3c6a4018fa745d6fdc6abcd122c870e0d6f56fc15ae156" : 1,
+    "4fafb3a0bbad330b4853756d8b2455d86fbd5590540f6e6010bed3a5770f411d" : 1,
+    "6c63e4f6fbf1bb77414d20f7c19731f2450b5dd128d2a989dd78b9ee65c43744" : 1,
+    "9995813a3db5c50d1baf695fcaccab86a0cd55995beb5f578fc0855770dea102" : 1,
+    "d634008425569913dceec77c478caf0e4884344a3bac993fa24ddc26ad1059db" : 1,
+    "d89b49cec888219d373597d82b9d5fc5b284ba4f18c5d480e0e17e4c68ed9173" : 1,
+    "daa4efd20dcd52bff87f088107ca8e22a7b3c98ff878fba0595ab6a029ae76b9" : 1,
+    "e6465a5f78566a1ecb70a98d79f8d21008124d420a28fdc0c82dee6c3b16a375" : 1,
+    "f26a826404e65081f209eeb83085190c63ffde6ceb9ddd361aeb834c18ae43cc" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumThreadPage/ForumThreadRatingParser.swift" : {
+    "a23138496fe1671f5a7c0aab931c4958d304c6883cf2cd39d3900ba7b5ffbcdf" : 1,
+    "b90f3669c40c873d801edc6e68d08db8c5811adb1520c32113050d045526717d" : 1,
+    "e80501ead194162c6f480a949e4433910937bbea072e3a00220903e2a82c932a" : 1,
+    "fde6a6e8577c5cdb98567d8ddfcd51ad5cce8f36a3b1f64f3972f1ae43a3d4e9" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/ForumUploadParser.swift" : {
+    "7d1086d737818d0f27010fae2d3ca342e4bc7526b85d68b0f875e43235423e1e" : 1,
+    "8f1a662ea0785b3eafcfaa67dcc0acc594d2fae1c32540ae02c10e890f6f35a8" : 1,
+    "bcfb078df043df19fc9d6edf1328ddb5bfd4deababe7c13befad38d9af190339" : 1
+  },
+  "Sources/YamiboXCore/Forum/Data/UserSpace/UserSpaceHTMLParser+Credits.swift" : {
+    "2d22a263937af88189a573326a068207495e27017deb512672933adac4d409dd" : 1,
+    "62aad45910589f7b5270dc40e0f41c81aa16b704c6792163690e8a75ccd83250" : 1,
+    "e30fcba8ba76fd09d77a410d88296a41ccfbef8a718d7ff1c6a2a3bfe63b72b5" : 1,
+    "ec9675a68ca2e0e75e1b44ea4635ea3ae0eb5d00b8cb118b62662c5f6fd76ced" : 1
+  },
+  "Sources/YamiboXCore/Forum/Domain/ForumAttachment.swift" : {
+    "1114729ca2bb8343cbbae5592bf256b527eebe916e694233da3b326d3c695453" : 1,
+    "1ce0978057e043a1c50a447ef0dbac06c844c5e46e91bad4bfca5126fe14b3a8" : 1
+  },
+  "Sources/YamiboXCore/Forum/Domain/ForumComposerDocumentParser.swift" : {
+    "3163c457588a80fe610616f855ee6f7c49b9dd5b0e2b99245acc7a0ed20d582e" : 1,
+    "694c26fad2ce6499d6c24b2b5fa3f504f05d73a29cff64ee4f27ccdec80e03b1" : 1,
+    "ab4305966ba933b10f2fee9ffb1a8187d9bf01f99e6c1949ba67dffb377094d4" : 1,
+    "d625c6e21b7929de40f8018cbd3669bd47cedf140880c83ca698384aca576708" : 1
+  },
+  "Sources/YamiboXCore/Forum/Domain/ForumEmoticon.swift" : {
+    "921bf813a4752c8201527eaf7ff75dc8508c6d60228aa460cd0a7bc942608d57" : 1,
+    "d93eff281194e2293e4d9dbf004f1f9230444fd9eebd8d260ff0ddf9c0090d9b" : 1
+  },
+  "Sources/YamiboXCore/Forum/Domain/ForumTextStyleRules.swift" : {
+    "25f0d115f061d868870ce5eea65b57462dd744c664203dd9500c10e6dfe4f8d6" : 1,
+    "3d5b4eb0a3daebf3bcff0d89be7f741c63b02b4eb9bf80bcb47ca50825b68c8a" : 1,
+    "4d38d78c8dd73248dd4d4ad645ad8ef7197081a659a40838fc18913b75c65eec" : 1,
+    "52d40b5062110686ed9b8a2b8069b64c4b851969716cfbb4fb59997bfcff0ef7" : 1,
+    "c1111869e83cf27c095706959f41970dfd223adbcfb8e3d3d1ce408bf2ffc2b8" : 1
+  },
+  "Sources/YamiboXCore/Forum/Domain/ForumThreadPageModels.swift" : {
+    "0b988ed4c0d434b882f202bc1757d2836aecb5052254a6d30fd5e57ad28c9e16" : 1,
+    "22483328cd94c3f3a90e18a9028f2978be76df5b7369b1b64c56bb332afb6984" : 1,
+    "6d09eba367b2145272920c2fa96a2ff06616011b75c3460fa48cf821cccc2bd9" : 1,
+    "a348a0926f2f38e17112e897e50e00f67313d89dcb2640ec0cbfbd74b395daa5" : 1
+  },
+  "Sources/YamiboXCore/History/Data/BrowsingHistoryStore.swift" : {
+    "2d07c967afbc8343e6d185c84bcea6f2639ac59ea74b81ec008c24d584792074" : 1,
+    "5217ad6a7e6846fa809b8852abe3b4513280c49e9eb6864719d070bbdbea0abd" : 1
+  },
+  "Sources/YamiboXCore/History/Domain/BrowsingHistoryEntry.swift" : {
+    "2fc05995a7b65af27edbbb7564cc9bcf3cfcbe5974b1087fb50aebffc86f3608" : 1,
+    "7d9ab2ac7d0c6a8c98a17365f48a2ba4e176ee364aae527bff1aa1d6e56e07e2" : 1,
+    "9c75d21816c79139425e7a0415f8cdc5c077ad67b4097f029bb8545919ebdb65" : 1,
+    "c1062443419060b3d467ca45b1e5c0ec667394499e89c09cf29c896898d9f112" : 1,
+    "decc21fa396a5b7fc5af15e50921c09b3e83d21a9e2e1bacdded77ca80eb773b" : 1
+  },
+  "Sources/YamiboXCore/Library/Domain/FavoriteLibrarySettings.swift" : {
+    "01a2bb8f20f4121a51bc3bca1b05f9c353a5a1264a830ba2d9df2fee52dffded" : 1,
+    "060ddf04250376ee538a54418a69a9f5bdc27ad62d6d18652ced45a8a67175c3" : 1,
+    "07cc218c7ea631d66a6b376146a7c2b965ea16eab6ec895293f2b067e102b467" : 1,
+    "19d0de45364d94a906c9bd8d42d03dcb90b96e1e9415014e0796bf6f68c073a9" : 1,
+    "1e4701b810d98d773b2331360054aca5c6b8b0d8948ea62aaa05e767e436e010" : 1,
+    "1e75c09494bcd1813dbd611d343410e49942a36f21bd72cb7806744fd85a9427" : 1,
+    "2321626b33755deb3fd563bfd71649848d39be9a147b4a00397aee8819482d2e" : 1,
+    "2b3a017dfecae410f469167ec71b69e8aee2fcee8d9ae6377322d7de96750ef2" : 1,
+    "2f3c9b2ba26113efee56d1a6b72f3d9c70d0a88b38d46da502b1b231a98902b2" : 1,
+    "424f1614633f2c3e988c78e6b456363d5810f8d69f0055cd23ca8931147e19fc" : 1,
+    "52a8933110ebb908f4779251998ef6b9871af80f50c0e0ecdc0264b214eaaaae" : 1,
+    "5db8e63ed5e653d584e4369b4cd84ccca66562cbf5a62dc2d02a97e488da484b" : 1,
+    "63662a8fdeeaea424a7b8ee5328765ecf7c965ccc06ef8403d25a1753382df0e" : 1,
+    "6b9cff0f458680fd16b48b902d221da000c02f2bbffa7953478314e213a4d291" : 1,
+    "6e8534609226f53936d499f13235947fb286b23b145370af4601dcb71187f957" : 1,
+    "b8e60368966eca53478de4a3ce01cce5b7a4bf5e81c2b5d0d64de0208c7b0c17" : 1,
+    "bd59bcad4e6ffa8862cf5c2281f4eee62a7efc2a08044258a1d4058e3d64808f" : 1,
+    "c805b8eae8f0f3434ce0ac8ee67d9cd1819364f28c94ca6b66c3e9dc675d9a5f" : 1,
+    "d694903ed0bedd3c608477b98f3b4c8033235f64889db3da4b5d20ad056d8182" : 1,
+    "fea813b9ed8f3a095cc53507fae0824f96b4e0f2e44f1949beee8a5eccf6f228" : 1
+  },
+  "Sources/YamiboXCore/Library/Domain/FavoriteThreadProbe.swift" : {
+    "07d0f6e59138cc6e5f98ccd4f52d77207defd5734b084883b638781a311995c6" : 1,
+    "45259535063f29ec42e95ffe98ba28dd5b662d6a43d25cf0e884b1ae55413111" : 1,
+    "85cc408ada078c84be506158f8dfda11d5bbb5cc5a16e4a6655ad809bd996d1c" : 1
+  },
+  "Sources/YamiboXCore/Library/Domain/FavoriteUpdateModels.swift" : {
+    "7fee71e43309de26713872d3e40094b1ea38b228f7b960c0bd9d6ee4d9dbd699" : 1,
+    "b862cdc9f0cca6416b0bed3b350d044d798cd53c0ae438190502c9b3300dfc50" : 1
+  },
+  "Sources/YamiboXCore/Persistence/Identity/MangaDirectoryIdentityDatabase.swift" : {
+    "d0a3b228da36bbb8f9d0e5a15984f51bbfcdab9042e8b9fb5b832a2e86af19ee" : 1,
+    "fc7836a541ed0a84811cfcc2355852e86ac84de98bd99aefc3d0cee6358b31a7" : 1
+  },
+  "Sources/YamiboXCore/Persistence/SyncDeletionState+Persistence.swift" : {
+    "5824cdbbce508a9524defe0f1b9abe326ba6072adbcab8d385dc2815d40b9444" : 1
+  },
+  "Sources/YamiboXCore/Persistence/YamiboPersistenceError.swift" : {
+    "a99703584ea75a5231f6961358017f46530111b34ea2c19adb2ec88d691c1d20" : 1,
+    "ae0b472f9d2649783bf0babf082453f11ed60ce8eba9e4039e7c201bf30773a8" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Application/MangaChapterDisplayFormatter.swift" : {
+    "3bdb2028be61e291bf1a0bf79a23994204387c5a90fc0f004c9867409e0492c5" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Application/MangaDirectoryReadContracts.swift" : {
+    "00e639269222aa3436eef625dbb538debd6ce19a0d376f21334fe61f393653e9" : 1,
+    "058eeab16bb14b1ed9377d23d9f85fd3cd0248fcc611ff66174995606b588fd6" : 1,
+    "1a351a8bc8ad863432e9c6959ed054993ba61e0bbd937097585be158b2d33f2a" : 1,
+    "909e867919fa72d4ce317ec0b39d783782687c0e0069aa1cf39eb6febbe8bd28" : 1,
+    "ba62ea22d5309847b7f9630636a77e42f8a189763fa9fc4f9a33b249ec48aa57" : 1,
+    "d289385bcbab9b0320a461de7864ca8c65b050c263d5121a0c6f25a41bf4c963" : 1,
+    "e4a3b70e873ba2a16c4d97db13dcf40a7002e7a548e01ff7089197f3ef840af7" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Application/MangaDirectoryWorkflow.swift" : {
+    "b340986744759325e089d51bcbfaf3f609bf1345cfdb5fba24259b511be87b74" : 1,
+    "c789413a7f774abcaa2c078e055225ee25cb0177fc32a2466bd624f4b9d745c0" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Application/MangaReadingResumeResolver.swift" : {
+    "679e07fda7977a0c0ad135c906fdbb82197517f2087ccfd251b29901075ad14f" : 1,
+    "c462e6805e3439ceaf6205ca42eb65dc9c8d043b9c78f2bb3f5ad85b9b3a88db" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Data/MangaDirectoryStore.swift" : {
+    "295cadbe322569cb9c995dd35e6868467e0bfea90731c954abca72aea0a21e5c" : 1,
+    "838e50ba71d769e943cc90de9ea5611c964c1367fd6c4e15cdd8d3b4091c9899" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Data/MangaHTMLParser.swift" : {
+    "069fb1e0d7939604d22b69920b1581136d155417edcacae8954ec55f7738fafd" : 1,
+    "15c5ea140d0d0cf2082438783bf44d9f2f2d54fb63b82ca35cfb0f275b940e04" : 1,
+    "3edc383641a411cc0ee87dddb508990838fbfbac4aa5d3caf11b8e1fe098f750" : 1,
+    "7745def45bf513bab524345a6e42e25965574f6c624ae9705453ee1a575aab2e" : 1,
+    "85c73db5c4c5a26f0b8414185aee089d1b05d6e59595f6f6eccdb27f74e66a71" : 1,
+    "b84a6f07009503b93f6d8230dac80f82b1b5e9f21960a6ffdf4afc19e26821b6" : 1,
+    "c40d3649474184ee359399cb7beaf067c422c02f4ad3df1899bccd7f7a10992e" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Data/YamiboMangaDirectoryRepository.swift" : {
+    "02a524a1dc631c1beafd35a6d2bb4613aa29e6a6dd10d57a1ccf91ea5bdec964" : 1,
+    "416f34b162dd9831ad138af62d51898014740cc7a42053537b9d2b6b0e4100e5" : 1,
+    "6e146d19120062ceef2da8ecc7943e6042f66337391ad9b5a67c4164b456e5b1" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Domain/MangaDownloadStoreContracts.swift" : {
+    "384592fcf20b960e00307073b8f1b4842b88794ce348e3be39bbd3dd36273fe5" : 1,
+    "b6cc43963d1f2e4f9e2af9f44164fec813a0ce3814fd7afc1494e5e19240f09e" : 1
+  },
+  "Sources/YamiboXCore/Reader/Manga/Domain/MangaReaderSettings.swift" : {
+    "1648171c276ebf29b7883cf077679cd241fd9cbd15d52173326012939b870a4c" : 1,
+    "1b8d95663c86c565fc5ce5c4a957f9103aef369c67f5540e309d79773583628f" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Comments/ChapterCommentBodyParser.swift" : {
+    "32173a022b53fd84a61b025eeb94aab3a7827cdf49dacdfb081da0e4bd2f8c28" : 1,
+    "c9f113ede24b8ad5155e7d344270919047b818b70100953be014fe6114f58e61" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Comments/ChapterCommentFilter.swift" : {
+    "4135d30f7057dcad147e6ea2c74d315c11d6bcba9ca7dc71b0280bd10bb50651" : 1,
+    "b5e9f1cf5848e09137df0212c43c621dd29eea74a8ce75ba24fb95fe44783e7c" : 1,
+    "ea55537eb9c81da1c75ac5fd2ee36abec0c05277c49e12e574479b1df24f2825" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Comments/ChapterComments.swift" : {
+    "94f8c2c0f3f29a49116e85cffea4119309ba84fdc871653ede599d8b75d1f442" : 1,
+    "95124f1d5c55ed9d7711cf34a3aa3d17715f27f61433877f19c254bce7bc5aea" : 1,
+    "a6a1db677a642ff56acb9249b0afe6f5ae740755cefb5f6ccb0ed84ced893c0d" : 1,
+    "b08a0337365b3df08b80ce95c93d91a15ac02c1497a40feb975b27ff0ac23664" : 1,
+    "eb43f09f80811c5b2bbc1d66b0cddce3a352c6ef65932956abb96b443f50f3a0" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Comments/ChapterCommentsHTMLParser.swift" : {
+    "0ae00969dcfaa93e635391b5d36e0c033331dc28bf8bffb73ba030f4f9bcb3c2" : 1,
+    "6d491407f3a6b221d64ee3604e6652d7368ca49b5ec1c2b789b8ffa2597ac9fb" : 1,
+    "8c3d4680bf5fa8c915e9173068bc5f8d6fa82eb50ab460a80939c72aeff7f043" : 1,
+    "913080bf246bbcd0b00dfcda5f87d0eb151e6c6d92ca31527e843422663aff01" : 1,
+    "be4fd60efbca5909a09254a83902c553c225983fbef79a98cfaaedf6f43252f6" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Comments/ReaderChapterCommentsModule.swift" : {
+    "0128f23f9c8b604e09e82662a9b9d12001c3d93053a26762b13b401d0d0b1d1f" : 1,
+    "55137a87550b941d84ecadcfe68f4f79101586711a76b91f1e177e6c961ecf8d" : 1,
+    "7a2a4c4d11d458fbc717b6668d567d6e09e55bc4f61a934079f74dc8d3e99c13" : 1,
+    "c07664e11a3313e6d20c443a6a5d3fc79b49b11a33b29ee415b9b2215264e8f7" : 1,
+    "c67cbcd82f47789905535b83dec194a5fc98f9e3124121e7734877bf64c2878a" : 1,
+    "e4d83f82f01f696836a6c19e298528914af7480449e5fe9eb32b8baad688ab90" : 1,
+    "e6e1c02225dcee369b260eb50b3721229c22ee282431194fde1a9efe81eebf68" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Domain/ReaderGestureRegionLayout.swift" : {
+    "1c737fbcc96c592a31247bd82d36eb40c4d60f3e31bb193e55ecf0dafaa99bc0" : 1,
+    "bc74128e77553d5139518c1656f1dd388815b545dbb53b19707ae9119bd801bc" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Progress/ReaderPageProgress.swift" : {
+    "0093c17b547674c3f4cc4c9289138a6b7aceadfa3fa582d2d71938d8a6bab1f0" : 1,
+    "2f370591713479887423d544c5db6cd8a9943c51971e8e1ba10b3e62acc1d351" : 1,
+    "e1ea21be0950152caf5ca9a22574876fd09b7b62f083767a9339f838f35c54c1" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Progress/ReadingProgressIdentityRemapping.swift" : {
+    "517b2bcfb73317b067e93b09de887fe0d2ca39afb6bfcf661667795cdd10f8f1" : 1,
+    "5a3b9cf78a6f3f9a2e93a6db3faeac9c7cc840b4493718edee0d8742824f07f0" : 1,
+    "aba7a97c293a451d3f3e24b236b0a5c96a9cd0c94a84bbf15aeec4c6c5f90af0" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Progress/ReadingProgressPresentation.swift" : {
+    "3337592ad3dcc9271d066aa7163b9d72ef10ef4600a022ea3c32362d2146bb69" : 1,
+    "5e4c7e7cfbdbeaa1666eaa36bfcefd45818281961a8e273774580d5da296e6a6" : 1,
+    "ad36ee4c3d0016ae58e55732e68a5b7b9a5ce47ff82269c08bbeac90f07f1a52" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Progress/ReadingProgressStore.swift" : {
+    "0c0025257bfb4ecd4da019d32003cf0dc866ed64176578e0911661a6e257cc48" : 1,
+    "109b9e6c5ad60acbe24157dbcbe8182019e3de2ad7a6166afac9cb1b93ca2983" : 1,
+    "17062664b5da1d3affa4169213ff1e3f27b923041dae55a472e8be3d6b800753" : 1,
+    "19def58f584e7e70d4250b270924c181478c5e2df20ec847b77974ab706ae82b" : 1,
+    "1a73c92ea1269fe5e7b6f5aa21f5bd8b705f1294e49071c52218e63c36cb4999" : 1,
+    "5a47b0327b7b33607bc469d23ac4da3b3d78cab098da25b6d45a58329ef710e2" : 1,
+    "665134543d7506441fda8b75d6b5759456ed73321be37e0d7542a3b6b8306d79" : 1,
+    "7f2644b615d789a55feb2b9c2bd4ce30ad21bcd93907b1ae0c9586a70c28c3e1" : 1,
+    "b487f6fb0dc3dbcbdf0cc22c9ba73098b6bf529f551a078ede160d9299bc0611" : 1,
+    "b7f981f2a7561a07911f1118e8f26a2057ca4961afa3a6276236ac8373522119" : 1,
+    "bbaa44b01297026f6a25c03ce3115d14c32caff1a8cbfd7420a3ebdaede6361b" : 1,
+    "bc3e14f1c297bb0ae011d3b4614cc88ac0fa60c4c45dba307a470d946add4eac" : 1,
+    "ca244bd99675a78a2e87048353fcd582afc76433770d84c680362f79c0e01351" : 1,
+    "cf0332e26b4f829146569c27e758a1946169887c9fe47d7d37d1d604feb5eb3e" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Progress/ReadingProgressWebDAVParticipant.swift" : {
+    "44a5ba17d38863676a81804ac25b496182edb1e6998896d9d2ae48ec0ac5425e" : 1,
+    "48b97b4bf59a33fa96122419884569b62a956619b498f7777ecf1edbd188ce3c" : 1,
+    "89a35d98e103a54ea251b8a7e55450ac149feb3621d368bd69373ff5b631bcae" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/ReaderModeLaunchResolver.swift" : {
+    "17077441fe6a097257feaeb465185113764f890bf7d7031cf16781c239dbf5ff" : 1
+  },
+  "Sources/YamiboXCore/Reader/Shared/Routing/ReaderNavigationLinearReadingExpiration.swift" : {
+    "0b63029dae341991c36bbee459943f397eeee5af3dc77bc7f2b878a430f1295b" : 1,
+    "3c6f3f087d36595d5824a95a31f435d1d7bf2ce34cd3d682d0d5637e106bcdf6" : 1,
+    "42654556b2b6675560094ed5e1b859a4c5b16fb86ad6f9bfda3a2203a50a2418" : 1,
+    "72100b13db967f230e0392e689bc9feea3033970fa88d640b3542e64821039b5" : 1,
+    "726bccb70ea67919e7223da1d8dcc2dda3334923648ce21336703604815d44e8" : 1,
+    "737c72fa676a8076fc4bc8f100c203baac3e1c4df64f5358e707d171d114196d" : 1,
+    "c60c532b40df45c7df261dec0349e3a20cdd2098a76135295d8e405f0de23c3c" : 1
+  },
+  "Sources/YamiboXCore/Routing/YamiboHandoffPayload.swift" : {
+    "4be19f12f4a5de48426ef7ca3f0be9490138eaeb7d84727563ce0221991a6309" : 1,
+    "98511d900b54363b9c83ed20a6ac08493c17dbbebc82b10fc5838244c327da07" : 1,
+    "d69f5039eecd3d51613bb0a2d1b59c573e99ccc38dc13d632d1ababf555c434a" : 1
+  },
+  "Sources/YamiboXCore/Sync/WebDAV/MangaIdentityPayloadStrategy.swift" : {
+    "502034e6481231c15eedc9c4bcb39ad8c93ed2f31dc67475e75bbd379ce46829" : 1
+  },
+  "Sources/YamiboXCore/Sync/WebDAV/MangaIdentityWebDAVMigration.swift" : {
+    "4e7bdd5537a8ff7b6007a8d749ba51d26af75c1370188d34a892e71d84bcb72d" : 1,
+    "f337f1a094a9ebfa680c419ee9aa8fd56b44540f6e66feb80c471229d66fd85d" : 1
+  },
+  "Sources/YamiboXCore/Sync/WebDAV/WebDAVSyncParticipant.swift" : {
+    "3a13b0c3dc1d1ec83d7aee287b1eb61442c95f667d97de258657f27d2796229a" : 1,
+    "8f289cd741f9f6735a5302af164371fd7fc9fe69f6b83e9f4595b73baf122d04" : 1
+  },
+  "Sources/YamiboXCore/Sync/WebDAV/WebDAVSyncService.swift" : {
+    "40fd1df61a2709988407fa83c14fb8b36f1b3cdd2d6ccf993067ba168d6ad8b4" : 1,
+    "44bb152c81e30399a88c98b4972903f6725633af4ae0d9135aee08cf06920a4c" : 1,
+    "92c8f72521443586f021bb1397ecf53679e627ecb1d505fae05d2b8854414eb4" : 1,
+    "ac227c9d36461e4b1787282e4e77d6fcb2f82f5689647626b6f0b8217c3c3fc8" : 1,
+    "e7fd1a317a3564e858765b31cb843389c33dda60723222df9f9abdbadf761ef9" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/FavoriteUpdateBackgroundScheduler.swift" : {
+    "1ddb95b9d4cd2b05bd58ef6418cbd432e1e644b8ecda50225911b7d18d88085c" : 1,
+    "2c441c5b4d65af21930fe6b69311825d99a7cdd4a2c99ed5ce9f31ee68f7d69b" : 1,
+    "577742470b694590336d7e97f3c744eb9b493c7febc01e47695d6c8bd4ac301b" : 1,
+    "6dc5e8054d001216d8cfc9c118c1a987408d120627cf10e7e8dad2ca56b00465" : 1,
+    "78d2a995cae0796310d7d61f21feb125b73395fdbf7a69fa56ee8498d35d2b17" : 1,
+    "81f28bdd001183830fb8c730df04cbc6075afd11f5629b7757e4744d738747b6" : 1,
+    "9d035a83bad9b8c08166173bb6a605e9d3d3714fa3953c250499719f9d9daaaa" : 1,
+    "b9beb1b0268fe7b286bbe252bb46bdfdaaa3a6d906ffdfe6c63fa0049a569734" : 1,
+    "d83dfbb54e0f6759d6bdb94f341a1e5937be9ec86f033aeccfc2d829307e63b9" : 1,
+    "dff924cb114c0abdc461e1aa03770ab356cbfaa5bba9b17020c15563baac0f61" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/ForumWebSessionCoordinator.swift" : {
+    "55f6b123166648ee6dc0b443618d0353d514dd4b3bab4c0f6245d095293e94d2" : 1,
+    "b25ec4e16a4bc261a4f34581d5dcf22055ac4025947431d18beb0be3825c869c" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/OptionalTabRootView.swift" : {
+    "7ee11ad31018082f7a289854c80db923902431606484c4429355ebcbe6ebe7e0" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/ReaderExternalDisplayCoordinator.swift" : {
+    "e942b4c8505f388190e6da3f53e0f54cc160f9d4a7b609269b2583091f0f9b00" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/ReaderExternalDisplayScene.swift" : {
+    "cc8f58d61bb8f06035e38d85aad8463989d99b07648e99b6d1a4f8d82fefdc34" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/RootTabView.swift" : {
+    "35f6c2f669888b7cbce6a1fce8941291f1f21a5dcb8599b69b0e4113648f437f" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/YamiboAppModel.swift" : {
+    "0323a197fbaa88e65a5149cb96eb862cb4ff7e11535a675a32c8cdfceb8a9b51" : 1,
+    "0a552cf8c3a10961f5e10093c4994144429859e6e23bf410d9226c7879740e54" : 1,
+    "84f721d49eaa93eab6e2a05de6694e61820c0da5f411157b19c607b22967a0fa" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/YamiboWindowCoordinator.swift" : {
+    "3826fafdb764be1283421397a56a8d62c2bf3c39af4b7b20c30c0f1862cafd7c" : 1
+  },
+  "Sources/YamiboXUI/AppEntry/YamiboWindowInputHost.swift" : {
+    "448091a8736b8ae802090e0f544189432064ab2a1c55dda09930e0a0209698de" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Cards/LocalFavoriteCardMetadata.swift" : {
+    "155ff3533b84d5e9682ea5f43e4fa6190a0167c40ef17f0db63c54edb1cbbf23" : 1,
+    "2d6792c97b6fc45df76d7c2e81ce9ffd5b1a497442e3d7777a79dd72cebf60fd" : 1,
+    "ab3dfffa25d56c59472c195f35dfadcc7269d7304b87938911ad1460d1ee7875" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Engine/FavoriteCoverCoordinator.swift" : {
+    "7dc7962a8948c88007d490b8ae12eacb96679674ab94ad7b813c1ec05458ba10" : 1,
+    "cf2122cd49c3a426120fd8eb16a37dcc931ee7746ab3b8769c3f44ab16ce0d85" : 1,
+    "d4285b0c357cac62d5218bfc7af01067cd4b9b0efbe9ea8a3836ee7c416e0dca" : 1,
+    "d52d200c361f777b6e2c672e9987659cbf6f3844cd3798701f6d1d060064ec2a" : 1,
+    "e094b5be9aede4e259e586590e7f52737362135f9e9b99749beec0a8dcb78602" : 1,
+    "eabbaa57b369e4e9b2bafce92b6677673e6a1e70eb146f516a4f953b46eefbe1" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Engine/FavoriteSourceFilterLabels.swift" : {
+    "13c328de6d225e6146f5d0c22acd41da4d1e86e6ecf16fa1a499874488cb9ade" : 1,
+    "2ac89d0b59377b3bd74d3386c8b51b97c6c47a19a6d1034c39912a6c2970d59f" : 1,
+    "2df9c629ce1542ace95b4cc0c18fc503464dce3b17424499fa39bcebbc0f6cb5" : 1,
+    "bdb6d96a1641ce054d9ea4824ff5a3cb6be4e891acd9773fd1c1ee77db168e5c" : 1,
+    "d61711c482b9369f95de1b113cca6b0ba1b60eba4d6514cce900140f714f63a6" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Engine/LocalFavoriteLocationMembershipSnapshot.swift" : {
+    "5ca97961c75ab0a588c1b8a59b53b9c58fc52e81d8020ce4b072a6c1dfe2cc13" : 1,
+    "a25b1429bf0b3c97903d05894f95ff606038f0419d70aac37d17f4950f3bf8a5" : 1,
+    "a486c635a5b659be6f7744aa3c86cc06f1bdf0c3ecdc907a4454e3767815f1f9" : 1,
+    "fe6ee591460d4a30235b017dcf60d8bec1441a4e6a2d360bd786267ea357dab0" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/FavoriteBoardListViewModel.swift" : {
+    "061705bbf9cc8d8d337d273e01230a33b0069775ceef3405bc6ea0e382625c1f" : 1,
+    "48e8cbdb19e6635a30acb626338b681f65c3e537008c3b1cb216138dab84352e" : 1,
+    "9841d9388b31c41b58eabee828ddcf06d7d3e0879b43c02746ad4080fecd57bd" : 1,
+    "9efcd90e9bf56d452749689d437f2486ec5f71a7fbf446fb63772420556ad91f" : 1,
+    "b7896bbea7d92de0358258175d33408b3e3981bfb6d36a8290fce5a118c586db" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Organization/LocalFavoriteCategoryTabBar.swift" : {
+    "01cead39a37e823cc6766acad47285bde964de6be3cccdfbce3d4a0abb132748" : 1,
+    "29a60939b7ef606a8f00022575ab9b4f424f33d08d506e27c630c870d76291d7" : 1,
+    "367e82e873a9e9b7337504cda8274a8468cff2e61ce006a32881394efac8597e" : 1,
+    "4002c88ba35eb4cbdad253e6ce10d439040e9904e825b76b75a515467c7a92f5" : 1,
+    "6dae967201ccd22305ddcf3d637b11aa140eed6ebf686f9e516217d6f9a1ecf2" : 1,
+    "9ea3a9e4cd5c0592f253f54d517a706db9b0b4589af430c5ca9047f820ac488b" : 1,
+    "a3a5ff2c2aa39b676d0bd58899e97bbce3648285b3fc850f7ed1f4bd867b4402" : 1,
+    "ae5e2c49889cfd9516878738a9aff81f562f13c31afd48b5c10febdc3b15ed88" : 1,
+    "b05ee82b0ca7034545f00010fe2bc11202f002a336a8b501d5fa8a03554fda13" : 1,
+    "f1b98d29a6cce6e6d7f752715b18cf3fe6592bc9c371718e1f28695d9702cc4c" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Organization/LocalFavoriteGridContent.swift" : {
+    "030e2dd8a57430f72abf0523875921dcb884c49a813bc6577e26756614e08689" : 1,
+    "06be601fab8b143ee67a73797f5bc1c216242a1d45188a51ec9397b444037c4b" : 1,
+    "0891b8f174785566a76bb10d97a219604c29342de1b62a514b8d875c1035579a" : 1,
+    "096fe0ee3a4380931618dcf304c2d49299703c03060820be6ac9369e423e0823" : 1,
+    "198c5ad74b0df77777da9dcbe8043e002ab20e2124d20ff2602ada53a6256129" : 1,
+    "1d9c3e618587449e242b954c61f4d1765cfa96445dba79c815ed40729a7ac3a9" : 1,
+    "22697c8e94b8a0d1d0116896c022c5b3ed95b8609927d6768843f493a0435549" : 1,
+    "2b91813beaf20ebf3c094b617e7ad66706d6c5fc6e16eb415d878fdf8a9954dc" : 1,
+    "34f8a64a88f8594899af1f6d0713e05f1646b8a53feac83e4fe5cda171554a31" : 1,
+    "369a3526c4da1ac2c84dc20c449592559765dd64abe640d2e2a75c02d82af1aa" : 1,
+    "48eed6013f31742dc99ccd439e7f32309f150bfb20b6b9a996a8f263559681e8" : 1,
+    "4a5f4fde16c84636008271d6abbc22b1d8c96e81e99751416599b5016cf9965e" : 1,
+    "574794947cc1ec8eb8fd8a86259a9e2a56c634e6dc490248232fcaf9e587b1f7" : 1,
+    "5794051fa28077e5eb06aa46f84e4d851326a27ab5c638c3ed9e065cc929f0f0" : 1,
+    "58b7c0289a30ae6039013f81aae169d593cac0b1be12819358023b4e52d49234" : 1,
+    "8df64ed74ab867d70fef1db6389587cb8dc07892236094485c727568e87b3199" : 1,
+    "93fca3bffb76af5ebe575dd5af55b633103d65a8092ef5cb2e2625a998ec97ca" : 1,
+    "99c436397e01176ac8e3643cfd8ef3da3e832c611343a2b8a1bf1869bc199a9b" : 1,
+    "9d689c63020dcb5812132606ff52086c7c4caff1def6f996a6b5e1f9a4ddc1cd" : 1,
+    "b4288956977052da329b06a2fbf373bf6abe935cbab48efc4db1495daa22e7cb" : 1,
+    "bcb5cdfa0dfbd6b15ff3a6a08d3276b0cdbd5f6d06c5ce19c704dbdd065ca36c" : 1,
+    "c736092ccceed73402bfe0aa71d54d03bf410069d69f4913789a701e1b959eb5" : 1,
+    "c9f91e2eac1b1738edd3d3839cc0ccae983594003f3516be2d2c147fdfdba793" : 1,
+    "cfee8c56b689fb2d082f9b14fca3ea0bd9f8c5c12d4e929de06ea5444efca2ca" : 1,
+    "db7e053fba8083b863c77cf35512e70111ec42788f137c74a4aff955d95b5a2e" : 1,
+    "dcdae1be7fc6becd37db6fa6e70e563237ecd5f602873f132ca46dfe1b78c68a" : 1,
+    "fb0a2af39b186567893fd31ddc8b337ec10b3db6d257962f9791fc9265e4077d" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Organization/LocalFavoriteKeyboardSupport.swift" : {
+    "009125268962516d619fe5de073bc05c0102fabc23becbc831beba999bafc18c" : 1,
+    "e069b009413649bbef331c661daa28cc26cfe00b366366b2e8a9e609880ad210" : 1,
+    "f234612d42932348da3881f884accbcb7ee6ba10c2614d0f2e36f32a79f1b6ab" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Organization/LocalFavoriteViewOptionChips.swift" : {
+    "30f8590d98bd7986268625f173d4356f22e5aaf72d88dda855fe528f69bb76ea" : 1,
+    "e2621173ed2adecf9bb6065f8a42cd47d58bf7969d238b20dacca96816aa25fb" : 1
+  },
+  "Sources/YamiboXUI/Features/Favorites/Organization/LocalFavoritesOrganizationView.swift" : {
+    "295524157073c850478631079d9c86c026485f5094f7d03bc06d281ab587d8a3" : 1,
+    "47b30ec3703c4b2f5661568e3b9a477fd4682e24e189bf5985d0311719a8bdd7" : 1,
+    "483052113c5ee67237bd5c70a1f945d56c0605a2c67b7aa4a2ec6685029d8102" : 1,
+    "573f9027ed1f54ad0fd1d3a2ed12fd15dae9e2374f39d7ca64019b6ed730150a" : 1,
+    "615f0d65821d47625eeb61a9fad7e823bd3e2cda825d4b78d76d5fa3e907cc7b" : 1,
+    "732c4e9711639ed1436dd90d3951ca347d737084fc0cea250eed823bef07d0f1" : 1,
+    "8b48e3d7be29c0edaa44ab534b5bb7055bb82c31db26ffd37caa553d9ba3f48e" : 1,
+    "91e45553525e1b83fd4c0d79df9716fe0154c09156d559d49c59ece65930b74a" : 1,
+    "a187648d9ac2024fda76eb10f3c30b5d7c20a4fbaa966cedcf29952f6ec386ea" : 1,
+    "a4f15033888d9d6b5066fe3f0d49a5eec9f5eca7fc92d9b8c3558cdfb4404605" : 1,
+    "dd5d4416faf4251259d918b76028fd285cbdc630ed6c7a1e4304d03c21bb0550" : 1,
+    "fc2fe910b28814a87db9d346167e4cd8bb9ef72b3f1ae89b0c531b6af0dfe5f6" : 1
+  },
+  "Sources/YamiboXUI/Features/Forum/ThreadReader/ForumThreadPollView.swift" : {
+    "5c2be2df628bc6f39a7fe134eab51a895c7e6cff3e9017c1adae00f5afeadafd" : 1
+  },
+  "Sources/YamiboXUI/Features/Forum/ThreadReader/ForumThreadReaderView.swift" : {
+    "fa1b4606a19a0d4076ba5fc8e0d6f533989fbd11b301a7dcd8434a848f5e43ec" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Manga/Chrome/MangaReaderBottomChrome.swift" : {
+    "54f04484d0d0a8e78ae04d04f31c88ee8770bc0d75a4f160b6ff5913d795955b" : 1,
+    "785058ccf10d3fc8d2ba3743becb248693bc4f172ef17f7cbf23524a4b748ccf" : 1,
+    "add935d2c9ffbab071f7bfc9ce76d31c27b6126f806dd147d0055a4d6ef05770" : 1,
+    "d7cd7dea5f30787c89cb8e2eb040e1cf1bdd4cfe39bdc13504934ecc9039bc97" : 1,
+    "d887a6e1547420b63c157fa270a64a43a438d537fc7fe6df792c3375198b1e9c" : 1,
+    "f083c1b7fe939d8aca1590ffd1cfe106948d6c17b76357acf351f80fb5c87579" : 1,
+    "fc12bab96eeb6eb7fa4e6de6ae77a9fb277c1cb15bcaf5cbce292ec0fdc1b7b7" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Manga/Chrome/MangaReaderTopChrome.swift" : {
+    "63ccafaeaf9955167a0530d79b33c08f8317828a7c0a768025340d68c5c9ae0d" : 1,
+    "ba4dcd6f75225f36a777acbff26ad59dc5431d44fea217630a51c4218efe6bc6" : 1,
+    "dd1bee981c59f7f9827cdf0c0290ec414dadf4384eb2241128f3ae9ed6752f19" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Manga/Directory/MangaDirectoryCorrectionSheet.swift" : {
+    "5202e7d6d94c96696686b918574c77af052900a5fff92a512293c8cea54e6440" : 1,
+    "a318582fafb00d1a65de46428e7a11cb5464fedc29b8f07429e4e996e549cff0" : 1,
+    "ac1267389b4bea0056cda05d4ac98659f4fbee47967bc55fbfc9cc98f63ccdbe" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Manga/Download/MangaReaderDownloadModule.swift" : {
+    "20161d2539c7b76a2bbf8030f30eec225cfce6b2fad5b17b1e87ab6e1d72a309" : 1,
+    "453531048a84cae6142a49941664712147ed0347324d951e2ed7a41fbac77e68" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Manga/Root/MangaReaderDeviceImageActions.swift" : {
+    "76916da50fa57905e62f8c073d3f778bfb44a07b311d123cb8b1155c67827324" : 1,
+    "85c8989efab189ac9bf6a8f263889e5d1d03efc3255abb890dde4c126176ff53" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Manga/Settings/MangaReaderSettingsSheet.swift" : {
+    "47472f494e6a20e98d401dff9e15c038a6731ea29ac4b1d4762a3231b64c2a95" : 1,
+    "55fb94f161b5838b0bc1ff53cc99c3b96e7dc4141c2a110b427d426d6a723c23" : 1,
+    "96a79971ac9f7f86ddef0220bd9286020db60c6c47449c747c9d42d356c327cf" : 1,
+    "e3f0c3cf47e31216809ae437d45f2080927a3afe1ae40e96bca3cb7fe5694885" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Chrome/NovelReaderBottomChrome.swift" : {
+    "32747406e42c2eec3575978a806f1e3b86d3fa07aa08028898b08c2a5700c296" : 1,
+    "356e885707070923d3def28dd74481258e84f1314283ed42131a89f89fc5f644" : 1,
+    "56e01cc9705ebfd04431f3d800124602ea75b62284027a4c75cdc6672f9f5013" : 1,
+    "6d934fb8ad3b6e62665b4d5afa7062b499fea9bf375899c0d4c5a2ea2c161f49" : 1,
+    "8d045079540cad76e1b01659c28d94d05f3e68b76eab246412e338ce8206f1b1" : 1,
+    "90fa8a1d0ffd0bbcf69e447acd0fe2ffa679096674dc68f2ae47c96e2fbbbf54" : 1,
+    "bd6ef916eca3bdaf0a6037bc2f6c529a7c2b44b1429d317675f2e20aa5fbfe66" : 1,
+    "d48bf4e2763876528bd48cf5559cf524ca9dc35503c1338d45faa500e976d014" : 1,
+    "d7cd7dea5f30787c89cb8e2eb040e1cf1bdd4cfe39bdc13504934ecc9039bc97" : 1,
+    "d887a6e1547420b63c157fa270a64a43a438d537fc7fe6df792c3375198b1e9c" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Chrome/NovelReaderChromeProgressSnapshot.swift" : {
+    "5b30390212b239c5ca8346a6649f1b54cbc77ad32c0c66b3b10cb33f993c0a97" : 1,
+    "aaf3da620af15fac4eb5a4e471c783d576495a47354a87e9ed08a2ef329e8ce4" : 1,
+    "d109b6c782596a34fd832f7993eda8ec7a2f0709524f9ccccf904de07057743f" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Directory/NovelReaderChapterCatalogSheets.swift" : {
+    "577bdebe9338e1ad0f199ead053118d44653055e9dbb2be8e7b34040afa778d1" : 1,
+    "b253dbdc4d8748e78e453b8a187293b8f0eba524117a0a8a62ae3ed1afdb995c" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Download/NovelReaderDownloadViews.swift" : {
+    "2bdce4b46fdd40cddb5f0b242f9a77d6cd7eb41c116878e36d3bbf8f88b485e9" : 1,
+    "39a13f132bce11875492d23b45f75e3f432fd1f0ad974af9cb4b2f1498ee8211" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Root/NovelReaderAnnotationCoordinator.swift" : {
+    "1f96b143cb43198dcf8dc75fab2b50c0dc1b9a1cf093f0ab0d8e6b5a9e7bdbfb" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Root/NovelReaderImagePrefetchPlan.swift" : {
+    "29ae6d28d7388123173376e0917a36b818db730889f929651e372c96cc42c973" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Root/NovelReaderVerticalRestoreCoordinator.swift" : {
+    "67d21ef9ca6b72be5b8babc30991ddab332fa149714e3da52d0b93cdedc1c58e" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Root/NovelReaderView.swift" : {
+    "25996b9cc67ec967530bae9e486aa8755e2f341000898d33212a490f95cc6663" : 1,
+    "2fd449467991613346d0a598ba1bf94fb84c2e84fea35d6004b37a91f6ca825f" : 1,
+    "38eda887b4ce1fbc9ebae00cac8364c5705727b1d77c3be196cda04db4cb4a11" : 1,
+    "3cce2500756f28c015d1063c7db4906c1ff5529614fc3cbc28cbc05a10277cb3" : 1,
+    "430b6f864535c4fc21cf25eb5bca2fcafb186848f83d235338733176ab1e4592" : 1,
+    "61c3a6f623791953a0faa2a2736202d2420c39b66ffaef6eae3cc8bb2b7afebc" : 1,
+    "98a1493f61c2d2402f997b53c96b0b98453e4df5d3dcd47765685c75beb5f51e" : 1,
+    "b0809ee5e5883b3665ee5c2105fde0af67205c14da14ae4c526d5826f6ab4808" : 1,
+    "d3c69fb2a3760edbddc4ce4c687b9f7d353183f11f85aee2f305f145a60c86e5" : 1,
+    "de9e4a034a8521c755d86c2d24c7a41408a6909ab0b068d948db2d9e81b19be4" : 1,
+    "ee365cb19b71fce8cbfaa19fc57dd66d5a6d7f90a807dc3970bafdca45a5fe6f" : 1,
+    "ef7dd65ca22e957e407fe15527ddd27f6e1ffceb17a6af22c2c2220a027f3b83" : 1,
+    "effbb1ab9ea2e253c8b77cdd6c6259425226d7b3e5495f8b8782ae7cb90a658a" : 1,
+    "f270a699960369cec198df54a0f47e2de913e772bced86692ae5cd251fedd8f8" : 1,
+    "fa828b4004480aadeebe1de2a77f5b1b1f7ba50e5f4952f406a57d8742e5ba18" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Root/NovelReaderViewModel.swift" : {
+    "0b1cda2696cfcfbe2b908b2be2e06674ffb6fe1c076446a6e6af882db0459b55" : 1,
+    "266dc11000d438981edee76cb80790ef4e1717b5f3f84c4749f6ac6af3730985" : 1,
+    "34b1d4bd6a2015cba94dfc721c1fdefcbe3ab13206c6671427c7220263d2d542" : 1,
+    "515c45f9561f918fd2b17a7c4dd0f0108846a663e4ec7fae03e651d36ee1a692" : 1,
+    "5f6c96e2c8b605774eed67e03311b4df187d9e19a60d538a5354d367368403d9" : 1,
+    "82ff2f605dfcd39550cef29ea195795182a3f7ff5a4fbc40f0c01afc6658c56d" : 1,
+    "9044c1f7b6066eb26a4216b6d79cdba5facb7a032776f8defc0ac81efca02a09" : 1,
+    "953e032c67e36ccf272adeaf0732c240ce4b6e41b8284e5404caa8ee463d93de" : 1,
+    "ce5d05eb5c2e476eb2471a185df79f136e6bfc448fef48deb5401c1e8ce34dd3" : 1,
+    "d632af1180094638f44b7d47eda89a2be0ffa224f246ee7e76f18d3df1b512fb" : 1,
+    "ebf4bdd22cc297e44af9ad6bcdf541e46bad1c0be64414f009d2e63abdc1e992" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Root/NovelReaderViewSupport.swift" : {
+    "10e49ab40f9e735638f31d0c266e8f5106a679923688251604ce088c7b8b7b7d" : 1,
+    "3d76b9b3f218c6a30c87ce5e80926c1c9132117132239175bf8ae5d9c505e16c" : 1,
+    "3db15cf11073713a920c991eead0d0546074c82d22ba1c314d008d654a14790b" : 1,
+    "582d009a96e7e1c2860d25a012d84c335306bf636caf5968be8f9b383bbabf74" : 1,
+    "747b0d4308081415aee7e5ac37234e1e2bcd19317c7c5f6eb91a79cbcdc82b1f" : 1,
+    "8859323d9a334829305c259f1874996bad9257eacc60c38fa4d28c1ebaeef4f6" : 1,
+    "ec5f08d1359aee003de73681c4e44530b06c18149fb4a16dde5b504bda7ba5ad" : 1,
+    "fecd772d66d35d11e61e34055294c44fb152fba18fc128f9ae8d8afec8687286" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Search/NovelReaderSearchView.swift" : {
+    "91ae1a54d1e9ecd0bda997d31db659073865d925026f149644dd418846d51684" : 1,
+    "cb2aac7ea206af1e9c6dacc0a338727bc4827b5463040589702f53bfd57a8168" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Settings/NovelReaderSettingsPalette.swift" : {
+    "06ffba1ef62d26006c35c5176cdb4861daa5b4a6d5d7358f0215be24e79c38d2" : 1,
+    "bb502437662d4168c5587d7fe05f9523def57e6695b2b7732b40f14ad57513a1" : 1,
+    "d84c6a3ca3ce5f83fec9582aee881e5eedf9e2b10aee547fd4886103fe1068a2" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Settings/NovelReaderSettingsSheet.swift" : {
+    "9b473fb7b1d1d608069ac85b342f1f6c50c1e13060a5f33b288d685f13ed5b58" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Settings/ReaderFontDocumentPicker.swift" : {
+    "325face5ec62bee4ede63eeb4665f9acced67af2c892d0e262c4997efb8da8cf" : 1,
+    "eea5bed072319dbdf443b54d9f15bbfb2625437eb1686bb07e3d84672bece9c3" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Support/NovelTextDisplayAdapter.swift" : {
+    "0b1d1447ace5dd863f40eb4a10fc59f4d8e8e90851a678e6cf46a5016a89f63c" : 1,
+    "31decae184fe23b5b71a7dee641de50c758cfc031cb3885286ef6870b6bccdc6" : 1,
+    "3d7c90fcc93ce1918b24dc0b61062595814be7ccd10e07b536fc704ca160c0c9" : 1,
+    "98f2d223a960ff46cd8cbbc56db73e87af0635cff85413110dbd5aafc82273fc" : 1,
+    "af6054a39484d29f2be0cd4c2d2fb8c0916c6b536de2bb5c7e3e1b44d6c6c8c6" : 1,
+    "bc345fa05d4bdd99cc5c738d4790a6954edc6f53c3b7a0126ea4c1672c2bdff8" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Viewports/NovelReaderPagedContent.swift" : {
+    "3bda3cdf60cbaea812659585510374261e0d188ee78fd08c2bb3ff781c1e3267" : 1,
+    "650fda2f737ba89117845293d99478ef1a218e3b7404cac1c820458fdc6b9c2a" : 1,
+    "8024b8a7e28f97720cc6909123f066010c3c99cd7387d985740e348e6196d23a" : 1,
+    "c7b21282f4fba2be233f5e4ead2d1942ea2fada08b4b61094856fcc864c7eb74" : 1,
+    "cc323d89914dca0397c731feae7be243e65040113c991ffaa4495f9cde7b1e61" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Viewports/NovelReaderPagedPageCurlViewport.swift" : {
+    "023331670e73111bd5524c046be8d712cf29aac33f63ebfacb68065606fd347e" : 1,
+    "4ec765f19f124612e9e02b89c2e254181ed3a79ed6a8ff7bd0a422449396fa0e" : 1,
+    "944b52baa15f48db5a228b3f669cc6c309f8826de8f91ba06accdfc12ea0c7c2" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Viewports/NovelReaderPagedViewport.swift" : {
+    "9dda4ee8a330301c4676ed6ca1845861997f1dba9d6b96758ef88474cc596edc" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Viewports/NovelReaderVerticalViewport.swift" : {
+    "2d6cfd186616e7a5904272e7353ba24b5304f735b0eb00d36e872b1dab56c217" : 1,
+    "9d74518ae6bffc43f1b269c35457877e67546afcaf143f9d224c262a49c873e1" : 1,
+    "c20216cb24afb475231ff0705fd25b1e47c18abfeba684905a49ed8dc91b6772" : 1,
+    "c5cd4a4135aec1ca52f7392da617d58d20f0eac525de62887dd16901132bb272" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Novel/Viewports/NovelReaderViewportSupport.swift" : {
+    "34cfa471a358f083092bf0a15fb197cbc757a877b258b447ac8cf247226181f7" : 1,
+    "3efe7f628ade8dd7059b6cf58647a4e9cc056613a21dc7c04ee27f52a9cb8164" : 1,
+    "43425b23be02df598ef33b8f408fb8097d3ccb43d2ed50fdf9469ebe32b35c77" : 1,
+    "70115d3437fb329ade8b6f53231f9fdf4dfc7e19257dd46248d3ccfa9270cc0d" : 1,
+    "70e3642f413f4ca46f90c45b8b44a86684554ede1091dd673780a8e115f2b44e" : 1,
+    "93175d9a4564077c37d1b584ce190a88cfa2762257ba193cc5279c142818afea" : 1,
+    "a8fefff6db3418dca06f710c0bec43bd0407c824c0d7e2f4b29b649f1facf3ab" : 1,
+    "e2a7229180979d5b9b1674b8bc439a6f18820de2199ee6e09c29182e6a13304f" : 1,
+    "ebc868753c5c0d4bdb8516442a3dbd82fc6bd0d456c0f845a9728f2d02bea42e" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Annotations/ReaderAnnotationPanel.swift" : {
+    "1ddedc571112997ffa8ec7ba4f2d2a5edb693e0df34273bde3f77a8c2caadb6c" : 1,
+    "2ade976e5ae0ebd0ac796cad48f4122fe9543b07cfa34c8fa521e2ac3d51c304" : 1,
+    "54672a0806008f8ad0a3f39d33fdf8abba5c2d2e8411b74f22389f7886ebd2be" : 1,
+    "e70c312ef92efdc2a7f1bd3c3398d0d31891bd7260c71f7e3c29e8a505c178b1" : 1,
+    "ea490b6ad9b855f98cf77107927780b54c2dfbd0587e616e39446289623d67be" : 1,
+    "eef5230270e035403ae4ecefa3ec21675947137d3faea136e4c06a48463e56fc" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Chrome/ReaderAttachedPageInformation.swift" : {
+    "0a18dfd5566ec6efabb8fd8fa2f7ad8cc9853ed18b0afa2a19fb151f272c4ef5" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Chrome/ReaderChromeControls.swift" : {
+    "4f4f2350472ee345dbafca6f80b453b469dc8dc18e96a49f8cf282ab922737f7" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Chrome/ReaderInformationAnimation.swift" : {
+    "6b8e0e9d3d9b1cd49f49595bb54b6adfb3cbd773d638231b57d8b9fd0f0aa558" : 1,
+    "d0a7984fcf8b71db1dbcb18075d41a30eb43ab3458100dddc967478322fd9c4f" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Chrome/ReaderProgressCapsules.swift" : {
+    "3ecf76da166656a1b6b53e4da4508f6776a7e3ea4bf147e11180c10c74194638" : 1,
+    "5572d4189d6e6e2ad9996bbf0e0f913709c106cfb958e1136bb1972dcc6102fb" : 1,
+    "63b337ae86815d7f63ae3bf7c8cf328da85e306a48bfc1f20501aa3876600c25" : 1,
+    "879f8e37ba747461ec566e0b68edc205972c9a7d0b77c788b6e3a8273d590f42" : 1,
+    "acd603df7f418eae5adb86c7f6365763a0a09c2e01d1914f96fdff882289c2b7" : 1,
+    "adb379f94ecc81b163d73568ce49ce1efdd6aa38b2e073d21852080314abed43" : 1,
+    "fcc4443ffb9b0e4ec5cfe11b9615f2ed9fae75f931509b0e904df90f21281002" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Chrome/ReaderToolbarStyle.swift" : {
+    "7cbf559c33a169428fa5da06c5253daa813f4bc6113ae183a03944fab2804fb8" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Comments/ReaderChapterCommentsViews.swift" : {
+    "e28beda2eae26991659e1eac7c1f636f92a65113487ac440a5dada8a684cb3e9" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Download/ReaderDownloadQueueToolbarButton.swift" : {
+    "1925aa3e4714ae938fab1eeead17765af677790539fac2b9787dea771f98a6b1" : 1,
+    "2781bdf9db1119939dccb15b6b3bcc1f42c4806ce3a21463b6ce249c091a5a15" : 1,
+    "5f184f365a6813e85b878aea6344d9cc56e8686570dd2e4abae0bac7b021d7c0" : 1,
+    "b5b170b8004fee7310a40929e1cb9cabb44a89376cbedc473c14f78f903ed1d9" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/Download/ReaderDownloadSelectionSection.swift" : {
+    "4d7c67ba8efcadd430d3a44f1d278d6ac2b413f60177ed7f04de92d4e437b437" : 1
+  },
+  "Sources/YamiboXUI/Features/Reader/Shared/ExternalDisplay/ReaderExternalInput.swift" : {
+    "d78a4c1f6008b409f0d97903443e01af30632b7e6fb5c165e9429b1e5a991181" : 1
+  },
+  "Sources/YamiboXUI/Features/Settings/SystemSettings/ChapterCommentRulesView.swift" : {
+    "8d5421828c16fe81ea27bd58bc9dc040b568a156e7444a1251e3df77cb9b142e" : 1
+  },
+  "Sources/YamiboXUI/Features/Settings/SystemSettings/SettingsForumView.swift" : {
+    "22a85efd75da9d056ea35e420fa40517a86b912e22ca8956268f16bda0c95036" : 1
+  },
+  "Sources/YamiboXUI/Platform/BackgroundTasks/AppBackgroundExecution.swift" : {
+    "22c47940be0f3916eada1e4cc5746dba5de8f25622eb35dca47d68f64bb2dc85" : 1,
+    "66a747eeebb7e01b8462cf878b2b11c8d93a18f9e8d13dbcd21e715fcc00469e" : 1
+  },
+  "Sources/YamiboXUI/Platform/Images/YamiboAnimatedImage.swift" : {
+    "0bab481f1a4e420165a4975b0cf7ebac3619671da5e9f0a267875be184b3751e" : 1,
+    "d07abf394e35ce1850957782a1220d429f4c847d6e4f45feed2ea3b31b3ba3d7" : 1,
+    "e402c5b1e672d90efe615ed66801df5adbdbabc098c0d04977a74e910c19568b" : 1,
+    "fa8b934e9b3ab644ae6779b848400425b0644d2c87da52c0cd71fa891d78df5e" : 1
+  },
+  "Sources/YamiboXUI/Platform/Images/YamiboUIImagePipeline.swift" : {
+    "20ce1bfbd4b8f121f0a43ff57781fb4c7b0796f2c436d81d5afff036803800d9" : 1,
+    "535f688986e3c79f4c32a5b20f27ea9a1dfbda9c2ad0dd95e768bae7a896c5d2" : 1,
+    "7f5b98da37707701d3ebe79673dce185ddf17f01ef82d2da234dd85385a5ce30" : 1,
+    "cd6e6fc7f018c454c6198303f6b555221823248cfc8c6dae52fd094784eba60f" : 1,
+    "d30020c1d5ff9c2785354a389c26070e84f37694475a08676a445f728309a11d" : 1
+  },
+  "Sources/YamiboXUI/Platform/UIKit/NativeZoomScrollView.swift" : {
+    "91af41c4f0751c5cd1eb9b65bb58881ac12044608477da2f4f783cc892bcadd0" : 1,
+    "a3673116af8b6c17723cf5f1f6d153824d32b4f9fc680692a107d285a850ae6d" : 1,
+    "b375476b1207eae84f979b46a83161e43d5dec0b307b8c0a0a20c7f3ae7dbb24" : 1,
+    "b6a9b3b2cfb5fab1c1116bf4d796d017fb7a09d501bbf7279871986440d2de3e" : 1,
+    "cee0e82de403cb218c40eccacb31fdb6f27257f8efeba0f691bdfdea9efa1baf" : 1
+  },
+  "Sources/YamiboXUI/Platform/WebKit/ForumWebCookieBoundary.swift" : {
+    "4ffddec7d8a338f94acca17386537cfaa8e60a6d87606a454a1f43e1a0a2e589" : 1,
+    "e45fefa9710f89b7f206a7aca4c559029f97ded28608ff0728d65e8bca024056" : 1
+  },
+  "Sources/YamiboXUI/Platform/WebKit/ForumWebWAFBridge.swift" : {
+    "35a176e18fd0bcf8e15efa564aeef15a8d6170328d1e32389db88258bd167935" : 1,
+    "712af931a1031d7f953e9727dff2b0e644a0ddde56cdba8910adf14df85df8bb" : 1,
+    "8001d137c04b01452bc3c0582d6d2a417cff77a9a2549e2816443215688630e3" : 1,
+    "be3d7d2fe8b5ee1017c4af6e97d3eb372121b39d41612465aa8bd35ed626e768" : 1
+  },
+  "Sources/YamiboXUI/Platform/WebKit/WebKitSilentForumVerifier.swift" : {
+    "368cef2dad1c0a31b3d65c2b00e2bd5061d7021efafc218790d11a72436db610" : 1,
+    "3a0dd690cbdb636d6bbe56ed743ae5de871fd04d9848582e39b5e6f36e552821" : 1,
+    "49e36042a68f2d973854ada658195fbaaef679b9d109f266a1b2703779ce7040" : 1,
+    "751be3db4ea77c2e87c607c0adca10886105d3f9324400e3fe5c7ef03b35ad9b" : 1,
+    "7f5a72eb87ed7400c955a461e1edcf020d5dfe79e7b979052b5a7f65a9ffc3bf" : 1,
+    "869fd4262052890e82fec9d1a81c67dcddf8317cec31d49fa0519a808db2dbc0" : 1,
+    "93024922ef3b161f42e0b4db6bdac12583be257eb57fbd3b46b6b52baa146000" : 1,
+    "96c8fb6499f9e195bcb4392d96e83bf97d87f6aaf4d51e9cc2000ce9c6b8cb6a" : 1,
+    "aaade7c3eaca18d7457819e9316f8c444956f367b5c04359d2fdd72a4fe7b4ba" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Annotations/ReaderAnnotationSegmentNavigationState.swift" : {
+    "65ddecc8f5e6bc8f12470659652c7ba95041f023c664cba0e9d897f2403e2212" : 1,
+    "732c4e9711639ed1436dd90d3951ca347d737084fc0cea250eed823bef07d0f1" : 1,
+    "dcfe8c81d97bea83585f1c975fc8a237225461972c41421fdb5340cd529acd8f" : 1,
+    "f137d0fd425f46b77b7cf804f8cd80b56ece65313cb34190561dc51ea440c153" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Backgrounds/BackgroundTextContrast.swift" : {
+    "78d839cdcdd32d6817f3aba5672377c611f47d82b00a340720cc3ec74fd104e2" : 1,
+    "e3d905cc749c1bcf841fb67d269362ee029f07a81c8a5c8c80cbf55ff5b242bd" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Backgrounds/CustomBackgroundEditorView.swift" : {
+    "0b8f952401b697434e5a489c4694da275216538f7cdf8d827aa6ff5527482147" : 1,
+    "59a10239eb062f8129657db3f55a5c773785f461220397b219aee4329274dc7f" : 1,
+    "6e1da0c65fa50c052e1bbf2d05a477503a01fcb3b4c9bf24abaea07c0c0ce8f6" : 1,
+    "999b1f77aa98b94052e52e060586d327b62354c6ee9144c5e378ec151c7cd68f" : 1,
+    "bed883e5bab8ad245869f4668f0a2fb45591e2f7b18237fe5332dab04aa8dd1c" : 1,
+    "dca8023287c599273299f0212254e5d55cb3fc51aadc36e760492f100df1fae2" : 1,
+    "e1095c56087b996d0f833e2db9d8c92992b42b7c328ffeca10776df6ac7abd7f" : 1,
+    "f0fde36ebdf806a44f32a0df529a1e182ab30d107aeee2263e95b8e216541c48" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Backgrounds/CustomBackgroundSettingsRow.swift" : {
+    "5a25a47f516277b81e08d173fee880e5fde60030411cbe15dd0ac776142b93fb" : 1,
+    "8a7d59420c2c36a6a95a28246a6b06f470359946d1b9bc50f601ce08bf24302d" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Backgrounds/CustomBackgroundState.swift" : {
+    "7703c9b98bd84f39acc211f085c75a3695845caf770c4449865171d808056f06" : 1,
+    "b5f6dfa78925c1d02e543bb815fb08faee2490eaf9c90abc79c60fd0a438df63" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/DestructiveConfirmations.swift" : {
+    "1130c8913329a5d95f245489a476796c9a52dfbbb71ea1a353e416c187e31af2" : 1,
+    "a71052220197c6f9a8f603ca5409dc154b3972f3107c26212d5f5cf6dace0a44" : 1,
+    "ee7fa6d059ef4414d3d87de0c332e84898daab97d0b9965a9625b7c7adf55026" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/FailureAlert.swift" : {
+    "799f8068ae53e14c2bb149198baadedaef55e00ad40f3cba1eb4e039352fbace" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/FormSubmitButton.swift" : {
+    "0cd111cacf2fafdd2b8f02ee0f541a4405fe2a017f8202101dabb614c1aef0af" : 1,
+    "0d53cfa7355e3d698d93b54bd2d2b10336d66053baa395a7ecfc5436ea0d7b34" : 1,
+    "1b74f7b12c144946bdc638803ab61cbd3114f1ed808853a941e236c7cf97a634" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/HitTargetModifiers.swift" : {
+    "03067a197831a3d8e4f1065d4b70b2f9cd0e7bc08162f3783d52df823ddb7bbb" : 1,
+    "061123460c57d9422294c1095357f27dad91b46da2888906d43acfd010bba3ed" : 1,
+    "2771af00d8f5f47081044fec9db6e75a8bec56fe9be94624a6cfdd0e5247b6d9" : 1,
+    "28957ae80762c62d9fd4d91b45662b84c3b73a226da8c2f017a2bb6023fea553" : 1,
+    "3588ed1ead60d96b0ad43691f01842f15dffbd18d8fd2bfeb85ba492da15d44d" : 1,
+    "4f9c73074a5c34a2b2fef69a98b380992c4e8ae5115e8ad515b2dbe9fd27dcae" : 1,
+    "511f5937c524e67039c154d42385591cbf2d31169a95aa56708fcf956d066618" : 1,
+    "834f00d0172aa40b3ce5f316663f652ecb5e781c46c634da54724fd82c52640f" : 1,
+    "949950327407b6e2e6831537630117e9b6033aefed348f87521ea5191fb76889" : 1,
+    "d9c433ee337a7391c8a1065326e0143d3fd6d098839c7fc8dfc06ac60e5495cf" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/LibraryPageNavigation.swift" : {
+    "11d62a2535082c2ce6bc6659a3e3951a54252c975625cfd860d3a39e1293318f" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/PressableCardStyle.swift" : {
+    "03cca185e2db99c6cd2daef514c37b82643f2714b8938aba35251691f4c9c31b" : 1,
+    "049861ac16062f836cda4577c73f460a2f02463907d5fa3c52d85b3cf7fc4433" : 1,
+    "302e3fc9f15e6ee933390a8aaa106eee3989b25aaec9aadac3e721d128798312" : 1,
+    "3ec4e65e099a36cc800163fe5b533810b167f4bd5e081a2d107f7a5c70d3347e" : 1,
+    "8006e1a5861307b364103c3322648ce9e471dbce034210eba85f33723f8625df" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/SelectableCardRow.swift" : {
+    "5d20cb953b651ecf8a0ea61165818102aadd4b7ba9d37bdb66d58ede5b565987" : 1,
+    "bf033082211a41e8bb3293f2226db27cfe438362022d4a19490f8258f24b77c2" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/SelectionBottomToolbar.swift" : {
+    "09c11d1a013eaa488edf4876cbf2668f10e2fd381e91485ad2e4335b56756c6f" : 1,
+    "19e6f2380176234f9aed754a01d4d689b7de477093f813bcde6a62e00708f503" : 1,
+    "472570de9e623d92f49115219776ab9152c610b75d69288e4b26e173bd012eda" : 1,
+    "57f6056a12a5eacb649e4ff369b10908cb677f91d2e8ff034a62698835e8f8c2" : 1,
+    "80ed8c825de36e0c0a70521f629f2497f873c94974f70f2a017d1e48ca4e0c09" : 1,
+    "cce2a6e783b918e152826b85901fdb24e77756840f9e3132544d30671d561e22" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/SelectionToolbarButtons.swift" : {
+    "2218b69f752512c05c16bdd798768f7c04ee9e7f144ff743d81f48917c389819" : 1,
+    "4ba327fb32eb1af4b01e0167f9263de406e6d3647a84d78ab319eb5787d4fc36" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Components/SidebarCategorySelection.swift" : {
+    "6f388af6fe76d17f06eb1ab767e857171b0fab690386d809b6e9f04c99e2f6f8" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Support/CompactLandscapeLayout.swift" : {
+    "3c94516a10294881759246772aab53158da097d2e63cce0ee99cb5133adee3fd" : 1,
+    "439fd3b6fae2054af2eedce54e079581bcf6170bb999fe123a81d762d523ade1" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Support/GesturePhysics.swift" : {
+    "325c7c679eb70ce7a72835684543dfb9f9a368092cff234111e8c49bbd2dfe81" : 1,
+    "37f2fb3e998a388972a675f405d51c92a11db5fbb9dc48c74042f42eb98ef5f5" : 1,
+    "3aefd95f33cc88f6dc2c96a4590be737191dea275d1463f72a2dc7b074a85240" : 1,
+    "4762adc6523986190b8843e92df2f82935723c8ef84ac13d59fdda1dd2c0f3d1" : 1,
+    "4b12f3ae15748d1384001e0377845faa5b886eebba31e7158a0657f82f0883d8" : 1,
+    "4c6f57a4bae7cea9a389facb1e45949d2deb60f20f7e512e056b7d382ec6e20c" : 1,
+    "5515f3d3688b7f7071db140e4e9b34f38e9260dce585d7953d85ee6611292c74" : 1,
+    "653d47303fa49d778f9da9ec8b0915c73b6279e00a0b28d344c3916f82e22871" : 1,
+    "7fc0320f715951dca3c4e071206c7a0780e938519bdea477ca5638821ecd272e" : 1,
+    "9716deb02fa2b6cf80ffede3364d8a2bcbd60089e9913c8b778d3f30011effc1" : 1,
+    "9c9266dfe427d64eaf79336b94a851127a948541e4464e57df1dff343805e586" : 1,
+    "b7411a3883f0485b490820bca557688be8db2669ac720c564f814a613fde008b" : 1,
+    "b9d5d63b8a0fb195a537c3369a2e1db92a9f2b810a2c6ad45fbb3806c19a401b" : 1,
+    "c5b4f9b9e9decbc1ff3d979ec4d596320b2990558ca2bc9bc23b3cc3644a0b69" : 1,
+    "cc2a997ed6f7ac3b07466c164cf8d4a3f0ffb531820a0493989a2567fb56b51e" : 1,
+    "df33088a3c9eb07df10a50076646e0c81ee6ba57533f8ef490aec717d1901296" : 1,
+    "e058b6f6a0d4c3367a1b29a66246efa00e9a8d5d827ca7dab93bca681653ab17" : 1,
+    "e9c56001e853ad8fdddce52d8000b2417e782b2420475f6287c65f53053446b6" : 1,
+    "f012465819c26860ad3fd954530a48e1484030c8c980cbb2f82a1111c5ba82ff" : 1,
+    "f3c6b6930f9c6ce67cad5b61f3821d086cdcb62d5421ba5d95a26a3ca2544d8e" : 1,
+    "f40c6c8c303d3b53a65590555236dbe55df243330a6cc4b3cb181183a1f68b8a" : 1,
+    "fb0c53797354854d378a2ea841d1a9bdd838086a8bf96ce128f46f0c8d03f45d" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Support/StoreChangeObservation.swift" : {
+    "0589eade5ffb8beb2867a25189a456d2e9f288664002352acccf7c7a9e00c5a7" : 1,
+    "130bcc6cf0a4a9192d37a3c8bd989c0cac9027d64e64b0daadca34fca96af062" : 1,
+    "22625f5f2cdbcf6eb1c8b0e8bd4d61a2a330a3b9160daeb254be45bd7f5b38a6" : 1,
+    "50975b123bd0a38b8cd7e9679b8f0cf7f3924208028da20f0b2613f8ec1d1625" : 1,
+    "568dea54f4fa545c016a9d943171ff476456e4d6a8212f4d270ea7b1a4b1a8a9" : 1,
+    "655a1e52ed56f249c489f3c524e35f8bbb01b94a2841c63b8fe3d0b1f7e42fbb" : 1,
+    "732c4e9711639ed1436dd90d3951ca347d737084fc0cea250eed823bef07d0f1" : 1,
+    "78bc12620b7327d75b3c131257847405fcde52d3e8a49bc633889ac81913b8f4" : 1,
+    "8f3f7591c49351bd9512357ead09c6003c34ddbb30d768ebf306dbcecf506ede" : 1,
+    "b62354267256f947f738463d46821919a1dcf085f4f6200b228c77580913fcdb" : 1,
+    "bb375ee25349b8545d9244126708dbadafd3dd00ac59bb5b0189ab74f6766ca8" : 1,
+    "bd5dc2ee3e4c8ead8d185c4a282c2c3be6d3ecf6736fbc768a807818f5ab1429" : 1,
+    "e90167aedc2f69e34276e1f584fcfa05cedf8b12fd3098634c89929601466028" : 1,
+    "f28b7ea57a5b6866e283abb7699bd8591e8c36b2b6534f6bc0e6679ec2a42445" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Support/TransientFeedback.swift" : {
+    "b682a9a71c0963c95e99b3f8b6b0d1abdc61b411a832d047f6379c0842ecea6a" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Support/WebNavigationLogCapture.swift" : {
+    "07126255544101345233dab8f026375bef51439996be09a160a8840d3ae77912" : 1,
+    "0818668140f1f6d392f2b2a2755077ba7b40cf93a96b836b4909931bb35979f2" : 1,
+    "41497d367bce1fb0166212fe83db04a9e6d6dd9d8110cc260c6f39d79d73ff14" : 1,
+    "7a528630082a95d2860fae8badb232988fa447d68cad88f64ac1ea717ffef9d0" : 1,
+    "8675bc90e6e6b15d4f949f0fcd8ced532f9cb9682784eb42ab4be5f5b138a95d" : 1,
+    "ce1550ccacae09d75636f488f6307d33e7e2a244ec5321b1559648d8ec5635f7" : 1,
+    "d26decf9c652210e7b0d66a07be8a8200cc2afbc88bcd2c5e885ed4805516656" : 1,
+    "f72462f2ededb29174243e130219ce8e1eaeef8ff97064c264d8d9558e6d3d8e" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Theme/AppTheme.swift" : {
+    "39c20216d5ac854407b934172bfa43bff5261e364e48e4c01b7c8ce3758061d5" : 1,
+    "6d8abdb2e8dcebf8087c9eda17adbabf3bb6ae5abb8d321060951055b6c42080" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Theme/AppThemeControls.swift" : {
+    "00e5cbf27b47c4a477c23ab53544b7579fdf9e303a20bd5b6de61f6ce4f4709d" : 1,
+    "3940cd815a2d17ebce6314779609b71748358b325342ece114f5277dce3c89fc" : 1,
+    "6bb340be222165fabbf33ce4ffce4821d559202212fdf257b03b2d7035380ec9" : 1,
+    "6cd0e8d26d80bd89732f347f5c700ca4cf5333fb551dcf2a883c41665b34b077" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Theme/CustomThemePalette.swift" : {
+    "1cec8b44f9e2b1508ef9f4f231311cae97458d1534ff5a1e730a0718eb24ac20" : 1,
+    "3c96f6c00d4e2e0ea2248d0cd0cb5205dfae56d911e86451d19322ceac65c6f3" : 1,
+    "4ef13bd6e67446b2abdedb4e3619dc1f906f7a01fa91cbc8b2d185323244c23d" : 1,
+    "5f56477a8ff465feb4269fb3dbd936e9ef381295434c9b0375b7e57cbce0b1ba" : 1,
+    "62042ecb8ee19481b392275ab995d8ecbf50b3335f6ac5a1def19f998e6cc282" : 1,
+    "bc45d19c58c4085d7c486d0a873f9808ea32a514cbedecf3c3f205f19a0578b6" : 1,
+    "fb91029e73ac639b9790ca5426dc1dca9f1ef40cb33a56af2c24b8ae3cf191f0" : 1
+  },
+  "Sources/YamiboXUI/SharedUI/Theme/ForumTheme.swift" : {
+    "1efe1661da3e54f55701e936bfc8e042bb50d01073114119ead561ef842445da" : 1,
+    "2842c9585b79f3342df870e868f873d5c6ce867005c7d0e5f59869d8d79916fc" : 1,
+    "32d4ce03a910f7346e581aa844e5c603b5308f2af9270d01c873a81b90c72e78" : 1,
+    "43ac3de658a8c8f60e4d002790cf3e199a53918a8bcf3a4981b80ff4c990322a" : 1,
+    "491120f92579389d81d977ebff2ea21447961c0930b36a1879eeec473d494aa0" : 1,
+    "4d1c1b039d69d948a9f5635ffb6d5068ddc4e092cf65e6fabb18677ad83bf07a" : 1,
+    "54ee36b3d43e346ca13ea2bb045a260fbee18d639d544096ca8e6eda65bc7196" : 1,
+    "572510c925296f96394957b4955cf69ab5990f5899e331238e2a62065d4b642b" : 1,
+    "6c8401ea25fc29ab16e2ead334108a47c9abbfa8b2e9748aad73452142c2a65c" : 1,
+    "6f53cf2a16acca450401afc417ff740dee2243518ecf31781963d8b31bfbfd2a" : 1,
+    "8561b3f59884bb879efbd7ea5269521c6101091b505ed458ff4eea9e693918af" : 1,
+    "8a28fcaeabed023356f392ba5ec34c0e2110543cc9b18745173148dc1a55b9b0" : 1,
+    "bd7bb277a2be9936f8baff731c9dcc1f0753aed63992255691617f9bab2cc030" : 1,
+    "bdf8fbcd8d6ad815d69a78e15f691a7731d95cd2bacffeaa44933d88307e6e2f" : 1,
+    "de15894363cebe887876c069aba287d8ea87ec6b89fbb1bc2c11b927a72af0d2" : 1
+  }
+}

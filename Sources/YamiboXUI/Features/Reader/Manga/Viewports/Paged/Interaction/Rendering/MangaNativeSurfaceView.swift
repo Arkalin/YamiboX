@@ -2,7 +2,6 @@
 import SwiftUI
 import UIKit
 
-/// The same host is used for a fitted bitmap, a hosted spread, and page-curl.
 final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceControlling, UIGestureRecognizerDelegate {
     enum PageContent {
         case image(String)
@@ -79,8 +78,6 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
             let needsContentGeometry = contentChanged || baseContentSize == .zero
             let next = needsContentGeometry ? geometry.replacingNativeViewport(bounds.size) : self.geometry
             runtime.configure(configuration, geometry: next, imageLoaded: imageLoaded)
-            // Viewport-only changes belong to layoutSubviews, which has the last
-            // old-bounds snapshot. A representable update may arrive on either side.
             if needsContentGeometry {
                 updateGeometry(next, preserving: baseContentSize == .zero ? nil : snapshot)
             }
@@ -175,7 +172,6 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
         let point = convert(windowPoint, from: window)
         let local = CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY)
         let decision = runtime.decision(.doubleTap(local))
-        // A trackpad double tap never dispatches a menu or navigation action.
         guard case .zoom = decision else { return }
         runtime.apply(decision)
     }
@@ -209,7 +205,6 @@ final class MangaNativeSurfaceView: NativeZoomScrollView, MangaNativeSurfaceCont
         if placement == nil, let entry, entry.factor > 1, case let .spread(left, right) = pageContent {
             let leading = entry.alignment == .left ? left ?? right : right ?? left
             guard let frame = spreadImageFrame(for: leading) else {
-                // Keep loading and retry controls visible without consuming the inherited factor.
                 showUnzoomedPlaceholder()
                 return
             }

@@ -35,7 +35,6 @@ enum MineSidebarDetail: Hashable {
     }
 }
 
-/// Navigation belongs to this Mine window, independently of its detail stack.
 @MainActor @Observable
 final class MineSidebarNavigationState {
     private(set) var sidebarPath: [MineSidebarSection] = []
@@ -51,7 +50,6 @@ final class MineSidebarNavigationState {
             returnToRoot()
             return
         }
-        // Library filters live above their content, not in a pushed sidebar.
         if section == .history || section == .likes {
             guard sidebarPath.isEmpty else { return }
             show(section == .history ? .history(.all) : .likes(.all))
@@ -64,7 +62,6 @@ final class MineSidebarNavigationState {
         case .likes: detail = .likes(.all)
         case .settings: detail = .settings(.category(.general))
         }
-        // A compact window first presents the submenu, not its default detail.
         preferredCompactColumn = .sidebar
     }
 

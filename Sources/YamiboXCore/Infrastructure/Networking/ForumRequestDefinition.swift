@@ -1,7 +1,5 @@
 import Foundation
 
-/// Request semantics, independent of WAF providers. Named routes declare these
-/// here; workflows cannot opt an arbitrary operation into recovery replay.
 public struct ForumRequestDefinition: Sendable {
     public enum Effect: Sendable { case read, write, unknown }
     enum Credentials: Sendable { case account, protectionOnly }
@@ -22,7 +20,6 @@ public struct ForumRequestDefinition: Sendable {
     static let unknown = Self(effect: .unknown, permitsRetry: false)
     static let promotion = Self(effect: .write, permitsRetry: false, credentials: .protectionOnly)
 
-    // Image and download adapters share one resource-read definition.
     static let resource = read
 
     public static func navigation(_ request: URLRequest) -> Self {
@@ -55,7 +52,6 @@ public struct ForumRequestDefinition: Sendable {
         }
     }
 
-    /// Discuz actions may use GET. A method alone never grants replay permission.
     public static func requiresConfirmationToLoad(_ url: URL) -> Bool {
         let items = URLComponents(url: url, resolvingAgainstBaseURL: true)?.queryItems ?? []
         if ["action", "op", "mod", "operation"].contains(where: { key in items.filter { $0.name.lowercased() == key }.count > 1 }) { return true }

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Loads and decodes the app source without deciding how a surface presents failures.
 struct AppSourceLoader: Sendable {
     enum Failure: Error {
         case invalidResponse(statusCode: Int?, responseURL: String?)

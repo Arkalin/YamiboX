@@ -3,31 +3,15 @@ import SwiftUI
 import YamiboXCore
 import UIKit
 
-/// Restores a session's semantic position in one physical viewport. The
-/// polling tasks, frames and last sample never migrate with the reader.
 @MainActor
 @Observable
 final class NovelReaderVerticalRestoreCoordinator {
-    /// Consumed by `body` (handed to `NovelReaderVerticalViewportScrollView`),
-    /// so writes must invalidate the view the same way the old `@State` did —
-    /// tracked (was `@Published` before the `@Observable` migration).
     private(set) var verticalScrollRequest: NovelReaderVerticalScrollRequest?
-    /// `shouldConcealViewportContent` drives the loading overlay in `body`;
-    /// tracking the whole struct mirrors the old `@State`/`@Published`
-    /// invalidation behavior (every phase mutation writes the struct back).
     private(set) var verticalRestoreController = ReaderVerticalRestoreController()
 
-    // The remaining fields are pure internal sequencing state: nothing in
-    // `body` reads them, so they were never `@Published` and stay
-    // unobserved (`@ObservationIgnored`) to keep the notification surface
-    // identical. The two task handles must also stay ignored because the
-    // nonisolated `deinit` cancels them — the macro would otherwise turn
-    // them into main-actor computed properties unreachable from `deinit`.
     @ObservationIgnored private var verticalScrollRequestCommandID: UInt64 = 0
     @ObservationIgnored private var verticalRestoreRetryTask: Task<Void, Never>?
     @ObservationIgnored private var verticalViewportPositionUpdateTask: Task<Void, Never>?
-    /// Reference-type box (never triggered view updates as `@State` either);
-    /// mutated from the viewport's deferred callbacks.
     private let verticalViewportSampling = NovelReaderVerticalViewportSamplingBox()
     @ObservationIgnored private var lastVerticalPositioningFingerprint: NovelReaderVerticalPositioningFingerprint?
     @ObservationIgnored var admitsViewport: () -> Bool = { true }
@@ -39,7 +23,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         verticalViewportPositionUpdateTask?.cancel()
     }
 
-    // MARK: - View lifecycle support
 
     func cancelPendingRestoreWork() {
         verticalRestoreRetryTask?.cancel()
@@ -52,12 +35,7 @@ final class NovelReaderVerticalRestoreCoordinator {
         verticalViewportSampling.surfaceFrames = [:]
     }
 
-    // MARK: - Viewport callback entry points
-    // These are the bodies of the closures `NovelReaderView.verticalContent`
-    // passes to `NovelReaderVerticalViewportScrollView`, moved verbatim; the
-    // view now forwards into them so the sampling box can live here.
 
-    /// Body of the old `onScrollRequestHandled` closure.
     func handleScrollRequestHandled(
         _ request: NovelReaderVerticalScrollRequest,
         model: NovelReaderViewModel,
@@ -80,7 +58,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         tryAdvanceVerticalRestore(model: model, scrollCoordinator: scrollCoordinator)
     }
 
-    /// Body of the old `onSurfaceFramesChange` closure.
     func handleSurfaceFramesChange(
         _ frames: [Int: NovelReaderVerticalSurfaceFrameValue],
         model: NovelReaderViewModel,
@@ -103,12 +80,7 @@ final class NovelReaderVerticalRestoreCoordinator {
         applyVerticalViewportPositionUpdate(for: .viewportSampleChanged, model: model)
     }
 
-    // MARK: - Fingerprint bookkeeping
 
-    /// The tail of the old `updateChromeForContentState()`: everything after
-    /// the chrome-state mutation dealt exclusively with the positioning
-    /// fingerprint, so it moved here as one block to preserve the early-return
-    /// order exactly.
     func synchronizePositioningFingerprintWithContentState(model: NovelReaderViewModel) {
         if model.isLoading && model.novelReaderSurfaces.isEmpty {
             lastVerticalPositioningFingerprint = nil
@@ -130,8 +102,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         }
     }
 
-    /// Was a computed property on the view; a method here because it needs
-    /// the model handed in.
     private func currentVerticalPositioningFingerprint(
         model: NovelReaderViewModel
     ) -> NovelReaderVerticalPositioningFingerprint? {
@@ -150,7 +120,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         )
     }
 
-    // MARK: - Vertical position persistence and restore
 
     private func rememberCurrentVerticalPositioningFingerprint(model: NovelReaderViewModel) {
         lastVerticalPositioningFingerprint = currentVerticalPositioningFingerprint(model: model)
@@ -320,9 +289,6 @@ final class NovelReaderVerticalRestoreCoordinator {
     }
 
     private func refreshVerticalRestorePhase(now: CFTimeInterval = CACurrentMediaTime()) {
-        // Mutating an @Observable value in place notifies even when refresh
-        // leaves it unchanged. Scroll ticks must not invalidate the reader's
-        // loading overlay unless the restore state actually transitions.
         var refreshedController = verticalRestoreController
         refreshedController.refresh(now: now)
         guard refreshedController != verticalRestoreController else { return }
@@ -352,12 +318,6 @@ final class NovelReaderVerticalRestoreCoordinator {
         }
     }
 
-    /// Fixed 10 x 80ms poll: layout of the vertical collection view lands
-    /// asynchronously, so the restore keeps nudging itself until the target
-    /// frame materializes; attempts 3/6/9 re-issue the scroll request in case
-    /// the viewport dropped it (e.g. it arrived before the scroll view had
-    /// nonzero bounds). `model`/`scrollCoordinator` captured here are the same
-    /// stable instances the old view-struct copy resolved at tick time.
     private func scheduleVerticalRestoreRetry(
         for request: NovelReaderVerticalScrollRequest,
         model: NovelReaderViewModel,

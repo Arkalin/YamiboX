@@ -1,22 +1,5 @@
 import Foundation
 
-/// User-space notification ("提醒/通知") list page, touch template
-/// `space_notice.htm`. Verified against the live template markup:
-///
-/// ```html
-/// <div id="notice_ul" class="imglist …"><ul>
-///   <li class="cl" notice="ID">
-///     <span class="mimg"><a href="home.php?mod=space&uid=AUTHOR"><img …></a></span>
-///     <p class="mtit"><a id="a_note_ID" …>屏蔽</a><span>TIME</span></p>
-///     <p class="mbody">CONTENT</p>
-///   </li>
-/// </ul></div>
-/// ```
-///
-/// The notice id lives in the `notice` attribute, the content in `.mbody`
-/// (never the whole row — that would drag in the 屏蔽 link and timestamp),
-/// and the timestamp in `.mtit span`, which for recent items is a relative
-/// phrase ("半小时前"), not a date.
 extension UserSpaceHTMLParser {
     static func parseNotices(from html: String) throws -> UserSpaceNoticePage {
         try YamiboHTMLPageInspector.ensureReadable(html)
@@ -62,9 +45,6 @@ extension UserSpaceHTMLParser {
     }
 
     private static func noticeContainers(in document: Document) -> [Element] {
-        // Most-specific first; the trailing candidates cover older markup
-        // variants. No broad `li` fallback — on this page it would turn the
-        // header, tab bar, and pager into "notices".
         for selector in [
             "#notice_ul li[notice]",
             "li[notice]",
@@ -108,8 +88,6 @@ extension UserSpaceHTMLParser {
         return nil
     }
 
-    /// Recovers a UID from the deterministic Discuz avatar path
-    /// (`/avatar/001/23/45/67_avatar…` → uid 1234567).
     private static func userIDFromAvatarURL(_ url: URL) -> String? {
         let normalized = url.absoluteString.replacingOccurrences(of: "\\", with: "/")
         guard let match = HTMLTextExtractor.firstMatch(pattern: #"/avatar/(\d{3})/(\d{2})/(\d{2})/(\d{2})_avatar"#, in: normalized) else {

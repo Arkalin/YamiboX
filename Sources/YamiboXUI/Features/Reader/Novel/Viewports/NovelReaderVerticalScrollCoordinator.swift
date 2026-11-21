@@ -76,7 +76,6 @@ final class NovelReaderVerticalScrollCoordinator: NSObject, UIGestureRecognizerD
         scrollView.setContentOffset(offset, animated: false)
         lastMotionTime = CACurrentMediaTime()
 
-        // Toggling scrollability reliably stops residual momentum from SwiftUI's backing scroll view.
         if scrollView.isDecelerating {
             scrollView.isScrollEnabled = false
             scrollView.isScrollEnabled = true

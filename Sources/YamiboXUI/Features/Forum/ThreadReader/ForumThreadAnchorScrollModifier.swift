@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Native scroll targets retain an anchor as lazy rows acquire their actual
-/// sizes. Start when the scroll container has layout, not after a fixed delay.
 struct ForumThreadAnchorScrollModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var position = ScrollPosition(idType: String.self)
@@ -31,8 +29,6 @@ struct ForumThreadAnchorScrollModifier: ViewModifier {
                 hasLayout = ready
                 if ready { scrollToPendingAnchor() }
             }
-            // Long floors need a tiny fraction, but strictly positive: zero
-            // also qualifies offscreen cached targets on some system versions.
             .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.000_001) { ids in
                 visiblePostIDs = ids
                 finishVisibleAnchor()
@@ -61,8 +57,6 @@ struct ForumThreadAnchorScrollModifier: ViewModifier {
 
     private func scrollToPendingAnchor() {
         guard hasLayout, let pendingAnchor else { return }
-        // Centering a long chapter floor lands midway through its text.
-        // Restores also avoid intermediate visibility/progress during motion.
         if reduceMotion || targetPostID == nil {
             position.scrollTo(id: pendingAnchor, anchor: .top)
         } else {
@@ -72,8 +66,6 @@ struct ForumThreadAnchorScrollModifier: ViewModifier {
     }
 
     private func reportVisibleAnchor() {
-        // Visibility IDs are not promised in page order. LazyVStack onAppear
-        // includes offscreen prefetched rows and cannot identify this anchor.
         let visible = Set(visiblePostIDs)
         onVisibleAnchorChange(postIDs?.first { visible.contains($0) })
     }
@@ -84,8 +76,6 @@ struct ForumThreadAnchorScrollModifier: ViewModifier {
         if targetPostID != nil {
             highlightedPostID = anchor
         } else {
-            // Seed progress from the requested floor before accepting live
-            // visibility reports, so a no-scroll visit cannot drift upward.
             onConsumeRestoredAnchor()
         }
     }

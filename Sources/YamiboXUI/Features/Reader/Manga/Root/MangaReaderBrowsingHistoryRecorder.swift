@@ -23,8 +23,6 @@ final class MangaReaderBrowsingHistoryRecorder {
         let history = reading.makeBrowsingHistoryWorkflow()
         let page = loaded.currentPage
         let tid = page?.tid ?? context.chapterTID
-        // Page positions use the progress adapter; directory metadata uses
-        // the shared workflow's change observer.
         guard !hasRecorded || lastChapterID != tid else { return }
         let title = loaded.directoryPanel.displayChapters.first(where: { $0.tid == tid })?.rawTitle
             ?? page?.chapterTitle ?? context.displayTitle

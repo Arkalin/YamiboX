@@ -1,7 +1,5 @@
 import Foundation
 
-/// Common wire fields, not a shared dataset/version. Each payload supplies its
-/// own current version and keeps ownership of item semantics and merge rules.
 struct WebDAVItemPayloadFields<Item: Codable>: Encodable {
     var version: Int
     var updatedAt: Date

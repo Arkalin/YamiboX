@@ -2,7 +2,6 @@ import CryptoKit
 import Foundation
 @preconcurrency import GRDB
 
-// Frozen wire formats used by v1-v3, not application domain models.
 extension MangaIdentityMigrationV1 {
     struct DirectoryID: RawRepresentable, Codable, Hashable, Sendable, Comparable {
         let rawValue: String

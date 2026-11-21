@@ -5,15 +5,12 @@ typealias AtomicSettingsUpdater = @Sendable (
     _ mutate: @Sendable (inout AppSettings) -> Void
 ) async throws -> AppSettings
 
-/// Optimistic presentation backed by atomic, field-level settings mutations.
 @MainActor
 protocol AppSettingsPersisting: SystemSettingsActivityReporting {
     var settingsStore: SettingsStore { get }
 }
 
 extension AppSettingsPersisting {
-    /// Capture the edited fields before calling; the mutation executes inside
-    /// SettingsStore, without suspending between reading and writing.
     @discardableResult
     func persistSettings<Value: Equatable>(
         _ keyPath: ReferenceWritableKeyPath<Self, Value>,

@@ -5,8 +5,6 @@ struct ForumDestinationScreen: View {
     @Environment(\.forumBrowserSourceIsList) private var fromBrowserList
     let destination: ForumDestination
     let navigator: ForumDestinationNavigator
-    // Application presentation stays at the destination assembly boundary,
-    // never on the path-owning navigator or in its routing effects.
     let appModel: YamiboAppModel
 
     private var dependencies: ForumDependencies { navigator.dependencies.forum }
@@ -164,10 +162,6 @@ struct ForumDestinationScreen: View {
     }
 }
 
-/// Resolves a thread URL in place (native thread reader intent) and then
-/// renders the thread reader, keeping the resolution visible where the user
-/// tapped instead of blocking the navigation on a network round-trip. Used as
-/// the reader overlay's root and for `.threadLink` pushes.
 struct ForumThreadLinkScreen: View {
     let url: URL
     let title: String?

@@ -57,7 +57,6 @@ private struct ReaderTransitionOverlay: ViewModifier {
             }
             .task(id: isPresented) {
                 guard isPresented else { showsIndicator = false; return }
-                // Fast cached switches should not flash a loading panel.
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled else { return }
                 withAnimation(.easeOut(duration: reduceMotion ? 0.1 : 0.18)) {

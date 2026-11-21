@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// A persisted identity, never recomputed when a directory's metadata changes.
 public struct MangaDirectoryID: RawRepresentable, Codable, Hashable, Sendable, Comparable {
     public let rawValue: String
 
@@ -13,8 +12,6 @@ public struct MangaDirectoryID: RawRepresentable, Codable, Hashable, Sendable, C
         self.rawValue = rawValue
     }
 
-    /// Only legacy importers may derive an identity from a name. Independent
-    /// devices importing the same old primary key must produce the same ID.
     static func legacy(name: String) -> Self {
         let key = "yamibox/manga-directory/v1\u{0}" + name.trimmingCharacters(in: .whitespacesAndNewlines)
         let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()

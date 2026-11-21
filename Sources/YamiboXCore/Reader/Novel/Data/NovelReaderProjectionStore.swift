@@ -1,8 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Thin façade over the shared `ReaderProjectionDiskStore`: owns only the
-/// novel namespace and key semantics, so it needs no isolation of its own.
 public final class NovelReaderProjectionStore: NovelReaderProjectionReading {
     public static let projectionNamespace = "novel-reader-projections"
 
@@ -40,8 +38,6 @@ public final class NovelReaderProjectionStore: NovelReaderProjectionReading {
         authorID: String?
     ) async -> Set<Int> {
         let identity = NovelReaderCacheIdentity(threadID: threadID, view: 1, authorID: authorID)
-        // Compare against the re-encoded (sanitized) group prefix rather than
-        // the raw ids: stored keys only ever contain sanitized components.
         let groupPrefix = ReaderCacheKeyCodec.groupKey(
             threadID: identity.threadID,
             authorID: identity.authorID

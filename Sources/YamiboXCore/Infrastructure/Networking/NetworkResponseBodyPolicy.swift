@@ -5,16 +5,12 @@ struct NetworkResponseBodyLimit: Sendable {
     let error: any Error
 }
 
-/// Feature-owned classification after a small prefix. A nil limit preserves
-/// the ordinary document/error-body contract rather than limiting all HTML.
 struct NetworkResponseBodyPolicy: Sendable {
     let prefixByteCount: Int
     let classify: @Sendable (HTTPURLResponse, Data) -> NetworkResponseBodyLimit?
     var headerFailure: (@Sendable (HTTPURLResponse) -> (any Error)?)? = nil
 }
 
-/// Plain data tasks deliver chunks here. Completion-handler/async data tasks
-/// aggregate their body inside Foundation and cannot enforce this buffer cap.
 final class NetworkResponseBodyReceiver: @unchecked Sendable {
     struct Completion {
         let continuation: CheckedContinuation<(Data, URLResponse), any Error>
@@ -37,8 +33,6 @@ final class NetworkResponseBodyReceiver: @unchecked Sendable {
 
     init(policy: NetworkResponseBodyPolicy) { self.policy = policy }
 
-    /// Cancellation and start admission share one lock. A cancellation before
-    /// credentials/continuation setup must not start a request afterwards.
     func start(_ task: URLSessionDataTask, continuation: CheckedContinuation<(Data, URLResponse), any Error>) -> Bool {
         lock.withLock {
             self.task = task
@@ -68,8 +62,6 @@ final class NetworkResponseBodyReceiver: @unchecked Sendable {
         }
     }
 
-    /// Never append an oversized chunk into the retained body. Transport may
-    /// already have delivered that one chunk; cancelling stops subsequent work.
     func receive(_ data: Data) -> Bool {
         lock.withLock {
             guard !completed, failure == nil else { return false }

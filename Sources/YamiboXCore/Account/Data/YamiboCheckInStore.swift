@@ -12,8 +12,6 @@ public struct YamiboCheckInSnapshot: Codable, Equatable, Sendable {
 public actor YamiboCheckInStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let defaults: UserDefaults
@@ -64,8 +62,6 @@ public actor YamiboCheckInStore {
         postChangeNotification()
     }
 
-    /// Logical UTF-8 payload only; the shared preferences file has no
-    /// independently attributable on-disk size for these keys.
     public func estimatedDataUsageBytes() async -> Int {
         let prefix = "\(keyPrefix)."
         return defaults.dictionaryRepresentation().reduce(into: 0) { bytes, item in

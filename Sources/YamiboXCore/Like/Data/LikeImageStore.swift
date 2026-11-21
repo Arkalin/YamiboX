@@ -1,9 +1,5 @@
 import Foundation
 
-/// Stores retained image bytes for image Like Items, keyed by the owning
-/// `LikeItem.id`. Unlike `FavoriteBackgroundImageStore`, bytes are kept as
-/// captured (no JPEG re-encoding): a liked image is user-retained content,
-/// not regenerable decoration.
 public actor LikeImageStore: LikeImageWriting {
     private let fileManager: FileManager
     private let baseDirectory: URL
@@ -90,8 +86,6 @@ public actor LikeImageStore: LikeImageWriting {
             try refreshFileIndexIfNeeded()
             guard let url = filesByID?[id]?.first else { return nil }
             if fileManager.fileExists(atPath: url.path) { return url }
-            // A vanished cached file needs a fresh listing so another legacy
-            // suffix can be found. Ordinary additions invalidate via the stamp.
             invalidateFileIndex()
             try refreshFileIndexIfNeeded()
             return filesByID?[id]?.first
@@ -111,8 +105,6 @@ public actor LikeImageStore: LikeImageWriting {
             invalidateFileIndex()
             return
         }
-        // Never claim an observed post-mutation stamp for a partial index:
-        // another writer may have changed unrelated files during our deletion.
         defer { invalidateFileIndex() }
         do {
             try refreshFileIndexIfNeeded()
@@ -123,8 +115,6 @@ public actor LikeImageStore: LikeImageWriting {
                 filesByID?[id] = nil
             }
         } catch {
-            // A partial deletion or external file change needs a fresh listing
-            // on the next operation, rather than keeping stale paths.
             invalidateFileIndex()
             throw error
         }
@@ -146,7 +136,6 @@ public actor LikeImageStore: LikeImageWriting {
         for url in urls {
             index[url.deletingPathExtension().lastPathComponent, default: []].append(url)
         }
-        // Preserve the listing's first-match order and all legacy suffixes.
         filesByID = index
         indexedStamp = stamp
     }

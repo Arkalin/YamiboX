@@ -38,7 +38,6 @@ public enum ReaderFontSelection: Codable, Hashable, Sendable {
     }
 }
 
-/// Ephemeral, platform-neutral resolution. Never persisted with appearance settings.
 public struct ReaderResolvedFont: Hashable, Sendable {
     public let bodyName: String
     public let boldName: String

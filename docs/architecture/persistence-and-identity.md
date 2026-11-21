@@ -32,9 +32,11 @@ AppContext 打开并传入同一个 `DatabasePool`，数据库默认位于 `Libr
 
 ### 数据库打开失败
 
-`YamiboDatabase` 配置写锁等待、注册全部迁移，并关闭 schema 改变时自动擦库。一般打开或迁移失败应传播到启动错误与重试，不创建空库掩盖失败。
+`YamiboDatabase` 配置写锁等待、注册全部迁移，并关闭 schema 改变时自动擦库。一般打开或迁移失败由 `openPool` 抛出，不创建空库掩盖失败；当前 AppContext 和部分旧 Store 初始化入口仍将这类失败视为致命错误，没有提供启动重试。
 
 当前有一个明确例外：SQLite 返回 `SQLITE_CORRUPT` 或 `SQLITE_NOTADB` 时，将数据库及 WAL/SHM 旁文件移动为带时间戳的 `.corrupt-*` 文件，再创建新库。这可能损失新库中的原有本地记录，隔离文件用于诊断；它不是备份恢复，也不是任意持久化错误的统一处理方式。
+
+设计取舍见[共享存储与失效](../adr/0006-persistence.md)和[漫画身份与历史兼容](../adr/0601-manga-identity-history.md)。
 
 ## 三类业务引用不能混为一谈
 

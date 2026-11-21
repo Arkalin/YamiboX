@@ -1,7 +1,5 @@
 import Foundation
 
-/// Shared missing-cover policy. Callers own task lifetime and refresh their own
-/// presentation; the final store write rechecks user choices in its transaction.
 public struct MangaAutomaticCoverService: Sendable {
     private let store: ContentCoverStore
 

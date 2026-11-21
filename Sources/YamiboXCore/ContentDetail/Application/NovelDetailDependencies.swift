@@ -1,6 +1,5 @@
 import Foundation
 
-/// Stores and repository factories used by the novel detail feature.
 public struct NovelDetailDependencies: Sendable {
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let readingProgressStore: ReadingProgressStore

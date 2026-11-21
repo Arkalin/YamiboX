@@ -1,7 +1,5 @@
 import Foundation
 
-/// A single data attempt. Business delegates retain their stricter redirect
-/// policy and progress observation; they cannot relax this origin boundary.
 enum ForumDataTransport {
     static func data(
         request: URLRequest,
@@ -17,8 +15,6 @@ enum ForumDataTransport {
         let observer = RedirectObserver(request: request, attempt: attempt, downstream: delegate)
         let policy = NetworkResponseBodyPolicy(prefixByteCount: ForumWAFResponseClassifier.maximumBodyBytes) { response, prefix in
             if let failure = observer.challenge(response: response, prefix: prefix) {
-                // Keep at most one complete, bounded HTML challenge for an
-                // audited read. A prefix or failed transfer must never execute.
                 let limit = observer.canReceiveChallengeDocument(response)
                     ? ForumWAFResponseClassifier.maximumBodyBytes : 0
                 return NetworkResponseBodyLimit(maximumBytes: limit, error: failure)
@@ -108,8 +104,6 @@ enum ForumDataTransport {
                     completionHandler(nil)
                     return
                 }
-                // Foundation may discard a manually supplied header on redirect.
-                // Rebuild it from the immutable attempt, never the current account.
                 YamiboNetworkPolicy.applyCredentials(attempt.credentials, to: &proposed,
                     handlesCookies: self.request.httpShouldHandleCookies,
                     cookieStorageContext: self.request.httpShouldHandleCookies ? .isolatedLogin : .standard)

@@ -166,7 +166,6 @@ public final class YamiboAppModel {
         mangaOpenTask?.cancel()
     }
 
-    /// Called once by the app entry point, not by a view's task or appearance.
     public func startRuntime() {
         if let windowCoordinator { windowCoordinator.startRuntime() } else { runtime?.start() }
     }
@@ -210,8 +209,6 @@ public final class YamiboAppModel {
         let preparation: AppContinuityLaunchPreparation
         let windowRestore: AppContinuityReaderRestorePreparation?
         if let windowCoordinator {
-            // Capture this window's position before starting/awaiting the shared
-            // startup round, so a merge before a failed PUT is still detected.
             windowRestore = await appContinuity.prepareReaderRestore()
             preparation = await windowCoordinator.bootstrap(onProgress: updateBootstrapPhase)
         } else {
@@ -235,8 +232,6 @@ public final class YamiboAppModel {
             openHandoff(request.payload)
         }
 
-        // Publishing the local shell is independent of WebDAV GET/PUT. The
-        // task is app-owned; cancelling this window only drops its late restore.
         let completion = await preparation.completion.value
         guard !Task.isCancelled, generation == accountGeneration else { return }
         let legacyRoute = windowCoordinator?.claimLegacyResumeRoute(windowID: windowID, completion: completion)
@@ -262,8 +257,6 @@ public final class YamiboAppModel {
         var state = initialState
         var stateGeneration = generation
         while true {
-            // A cached shared launch belongs to its original account. Account
-            // changes during either await must reload before publishing a shell.
             if stateGeneration != accountGeneration {
                 stateGeneration = accountGeneration
                 state = await appContext.bootstrap(includingFavoriteLibrary: false)
@@ -697,7 +690,6 @@ public final class YamiboAppModel {
     public func continueHandoff(_ request: ReadingHandoffRequest) {
         guard request.payload.encoded() != nil, handledHandoffIDs.insert(request.id).inserted else { return }
         readerRestorationRevision = UUID()
-        // A cold-launch activity outranks both launch arguments and stored continuation.
         initialNavigation = nil
         if bootstrapState == nil {
             pendingHandoff = request
@@ -770,8 +762,6 @@ public final class YamiboAppModel {
         forumNavigationRequest = ForumNavigationRequest(url: url, source: .readerOrigin, title: title)
     }
 
-    /// Claim before starting navigation so remounting the host cannot replay
-    /// the request. Keep the payload for the startup reader-restore guard.
     func claimForumNavigationRequest() -> ForumNavigationRequest? {
         guard let request = forumNavigationRequest,
               claimedForumNavigationRequestID != request.id else { return nil }
@@ -825,10 +815,6 @@ public final class YamiboAppModel {
     }
 
     private func applyRestoredRoute(_ route: ReaderResumeRoute?) {
-        // Re-checked at apply time, not just when bootstrap sampled it: a
-        // reader presented while bootstrap was still awaiting (e.g. from a
-        // favorite-update notification tap on cold start) must not be
-        // replaced by the restored resume route.
         guard let route, canRestoreReaderRoute else { return }
         switch route {
         case let .novel(context):

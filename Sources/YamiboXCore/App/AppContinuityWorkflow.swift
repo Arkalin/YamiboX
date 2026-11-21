@@ -11,9 +11,6 @@ public struct AppContinuityLaunchResult: Sendable {
     }
 }
 
-/// Local startup state is ready independently of synchronization and reader restore.
-/// The completion belongs to the app, so cancelling one window's waiter does not
-/// cancel a shared WebDAV round.
 public struct AppContinuityLaunchPreparation: Sendable {
     public let bootstrapState: YamiboBootstrapState
     public let completion: Task<AppContinuityLaunchCompletion, Never>
@@ -34,8 +31,6 @@ public struct AppContinuityLaunchCompletion: Sendable {
     }
 }
 
-/// Captured before startup synchronization; each window owns its own route and
-/// progress baseline, while all windows may await the same synchronization.
 public struct AppContinuityReaderRestorePreparation: Sendable {
     fileprivate let route: ReaderResumeRoute?
     fileprivate let routeGeneration: UUID
@@ -43,9 +38,6 @@ public struct AppContinuityReaderRestorePreparation: Sendable {
     fileprivate let progress: Result<ReadingProgressRecord?, any Error>
 }
 
-/// Thread-agnostic: mutable state sits behind an unfair lock so the
-/// fire-and-forget lifecycle entry points stay synchronous and, for any single
-/// caller, strictly ordered (presented → position changed → dismissed).
 public final class AppContinuityWorkflow: Sendable {
     private struct MutableState {
         var foregroundSyncTask: Task<WebDAVAutomaticSyncResult, Never>?
@@ -102,7 +94,6 @@ public final class AppContinuityWorkflow: Sendable {
         return AppContinuityLaunchPreparation(bootstrapState: bootstrapState, completion: completion)
     }
 
-    /// Compatibility for callers that need the complete startup result.
     public func launchIfNeeded(
         canRestoreReaderRoute: Bool,
         onProgress: @escaping @Sendable (AppBootstrapPhase) async -> Void = { _ in }
@@ -130,8 +121,6 @@ public final class AppContinuityWorkflow: Sendable {
     ) async -> ReaderResumeRoute? {
         guard await isCurrentAccount(for: startup) else { return nil }
         guard canRestoreReaderRoute else {
-            // Explicit navigation consumes this window's one startup restore
-            // without reading progress or changing its saved route.
             return await restoreReaderRoute(
                 canRestoreReaderRoute: false, reconcilesWithReadingProgress: false,
                 startup: startup, onProgress: { _ in }
@@ -139,8 +128,6 @@ public final class AppContinuityWorkflow: Sendable {
         }
         let after = await observeReadingProgress(for: startup.route)
         let shouldReconcileReadingProgress: Bool
-        // A local merge may commit before a failed PUT. Compare the window's
-        // own progress even when the overall sync reports skipped after failure.
         if case let .success(previous) = startup.progress,
            case let .success(current?) = after,
            let route = startup.route, current.hasReadingProgress(for: route) {
@@ -199,7 +186,6 @@ public final class AppContinuityWorkflow: Sendable {
                         legacyName: context.directoryName, legacyIdentity: nil, chapterTID: context.chapterTID
                     )
                 }
-                // Do not destroy an ambiguous old route or guess from a title.
                 guard let id else { return nil }
                 context.directoryID = id
                 context.directoryName = try await appContext.mangaDirectoryStore.identityName(id: id) ?? context.directoryName
@@ -232,7 +218,6 @@ public final class AppContinuityWorkflow: Sendable {
         guard await isCurrentAccount(for: startup) else { return nil }
         let finalRoute = restoredRoute
         return state.withLock { mutableState in
-            // Account changes or explicit navigation can arrive during the store awaits.
             guard mutableState.readerRouteGeneration == restoreGeneration,
                   isCurrentRoute(for: startup, state: mutableState) else { return nil }
             if finalRoute != route {
@@ -287,8 +272,6 @@ public final class AppContinuityWorkflow: Sendable {
         }
     }
 
-    /// Legacy callers cannot identify their dataset, so retain the conservative
-    /// full fingerprint pass. Registered store notifications use the ID overload.
     public func localDataChanged(touchesAppSettings _: Bool = false) {
         state.withLock {
             $0.needsFullLocalFingerprint = true
@@ -322,7 +305,6 @@ public final class AppContinuityWorkflow: Sendable {
                     try await Task.sleep(for: .seconds(2))
                     await self?.synchronizeDebouncedLocalChanges(id: id)
                 } catch {
-                    // A newer quiet window or background flush owns the changes.
                 }
             }
             return previous
@@ -358,8 +340,6 @@ public final class AppContinuityWorkflow: Sendable {
                     $0.needsFullLocalFingerprint = true
                 }
             }
-            // Retain failed candidates for the next change signal or full
-            // checkpoint. Requeueing alone must not create a retry timer loop.
             if !LoadDiagnosticError.isCancellation(error) {
                 YamiboLog.sync.warning("Debounced local-change WebDAV upload failed: \(error)")
             }
@@ -434,8 +414,6 @@ public final class AppContinuityWorkflow: Sendable {
         if needsBackgroundFlush {
             Task { [weak self] in await self?.flushWebDAVSyncBeforeBackground() }
         } else {
-            // Changes arriving during a read/merge are retained for another
-            // quiet window instead of being discarded by the in-flight guard.
             scheduleDebouncedUpload()
         }
     }
@@ -455,14 +433,11 @@ public final class AppContinuityWorkflow: Sendable {
         defer { endWebDAVSync() }
 
         do {
-            // Foreground activation bypasses the local-edit interval. The service
-            // only coalesces very recent checkpoints when no local data is dirty.
             let service = appContext.makeWebDAVSyncService()
             return try await withBackgroundProtection {
                 try await service.synchronizeAutomatically(bypassingMinimumInterval: true)
             }
         } catch {
-            // Automatic sync should never block the app shell.
             if !LoadDiagnosticError.isCancellation(error) {
                 YamiboLog.sync.warning("Automatic WebDAV sync failed: \(error)")
             }
@@ -484,15 +459,11 @@ public final class AppContinuityWorkflow: Sendable {
         defer { endWebDAVSync() }
 
         do {
-            // Full marking and reconciliation share the coordinator run, even
-            // when backgrounding cancelled the pending debounce before it ran.
             let service = appContext.makeWebDAVSyncService()
             _ = try await withBackgroundProtection {
                 try await service.synchronizeAutomatically(afterLocalChangesIn: nil, bypassingMinimumInterval: true)
             }
         } catch {
-            // The next checkpoint or change signal must still inspect all
-            // candidates if this full pass failed before marking completed.
             state.withLock { $0.needsFullLocalFingerprint = true }
             if !LoadDiagnosticError.isCancellation(error) {
                 YamiboLog.sync.warning("Background WebDAV sync flush failed: \(error)")
@@ -553,13 +524,6 @@ public final class AppContinuityWorkflow: Sendable {
         case let .novel(context):
             return try await appContext.readingProgressStore.load(threadID: context.threadID)
         case let .manga(context):
-            // Smart Comic Mode off means this thread is treated exactly like a normal
-            // thread (smart-comic-mode-design-decisions #2's 总原则): its progress lives
-            // ONLY in the precise per-thread `.mangaThread` record. The coincidental
-            // `load(threadID:)` OR-match (thread_id = ? OR manga_chapter_thread_id = ?)
-            // can otherwise pick up an unrelated directory-level `.mangaTitle` row whose
-            // `manga_chapter_thread_id` happens to equal this thread id, silently
-            // reconciling the restored route onto a different forum thread.
             if context.isSmartModeEnabled {
                 if let directoryID = context.directoryID {
                     return try await appContext.readingProgressStore.load(for: .mangaTitle(
@@ -581,10 +545,6 @@ public final class AppContinuityWorkflow: Sendable {
 
     private func favoriteItem(forMangaContext context: MangaLaunchContext) async -> FavoriteItem? {
         guard let document = try? await appContext.localFavoriteLibraryStore.load() else { return nil }
-        // A `.mangaThread` favorite is keyed by its own chapter thread id now
-        // (no merged-directory identity left to look up by directoryName —
-        // smart-comic-mode Phase A decision #3/#9), so a direct threadID
-        // match is the only lookup that still applies.
         return document.items.first { item in
             item.target.threadID == context.originalThreadID
         }

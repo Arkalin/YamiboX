@@ -1,13 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// WebDAV sync participant for the Bookmark Library.
-///
-/// Bookmarks carry no editable field, so the only transition a row ever makes
-/// is "exists" -> "deleted"; newest-record-wins-by-id plus a tombstone set is
-/// therefore exact rather than merely adequate here (unlike the Like Library,
-/// where colours and notes make rows genuinely mutable). Nothing but
-/// `BookmarkItem` metadata travels — a bookmark has no bytes.
 struct BookmarkLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
     var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
         MangaIdentityPayloadStrategy(normalizePayload: BookmarkLibraryWebDAVPayload.normalizingMangaIdentities)
@@ -71,8 +64,6 @@ struct BookmarkLibraryWebDAVPayload: Codable, Equatable, Sendable {
     /// existed (decode falls back to `updatedAt` comparisons then).
     var syncRevision: UInt64?
     var items: [BookmarkItem]
-    /// itemID -> deletedAt. Bare by design: a deleted bookmark has nothing left
-    /// worth syncing, only the fact and time of deletion.
     var tombstones: [String: Date]
 
     init(
@@ -89,9 +80,6 @@ struct BookmarkLibraryWebDAVPayload: Codable, Equatable, Sendable {
         self.tombstones = tombstones
     }
 
-    /// Builds the export payload from the full local snapshot (including
-    /// soft-deleted rows): live items are exported with their data,
-    /// soft-deleted rows are reduced to a bare tombstone.
     init(updatedAt: Date, localSnapshot: [BookmarkItem]) {
         self.version = Self.currentVersion
         self.updatedAt = updatedAt
@@ -144,7 +132,6 @@ struct BookmarkLibraryWebDAVMerger: Sendable {
         let rowTombstones = SyncSoftDeletionRules.tombstones(in: localSnapshot, id: \.id, deletedAt: \.deletedAt)
         let mergedTombstones = SyncDeletionState.mergingTombstones(SyncDeletionState.mergingTombstones(localTombstones, rowTombstones), remote?.tombstones ?? [:])
 
-        // Bare tombstones are persisted separately from the optional content.
         let storageSnapshot = SyncSoftDeletionRules.applying(
             mergedTombstones, to: byID.values, id: \.id, updatedAt: \.updatedAt, deletedAt: \.deletedAt
         )
@@ -163,14 +150,6 @@ struct BookmarkLibraryWebDAVMerger: Sendable {
         return MergeOutcome(storageSnapshot: deduped, payload: payload)
     }
 
-    /// A bookmark's invariant is "one per place", but two devices bookmarking
-    /// the same position independently mint two different ids, and an id-keyed
-    /// merge keeps both forever. `toggle` then removes only one of them and the
-    /// button flips straight back to bookmarked, so the duplicate has to die
-    /// here, where it is born.
-    ///
-    /// The survivor is the earliest-created row, which every device agrees on
-    /// without coordinating; ties break on id so the choice is deterministic.
     private func collapsingDuplicatePlaces(in items: [BookmarkItem], at date: Date) -> [BookmarkItem] {
         var survivorsByWork: [ReadingWorkKey: [BookmarkItem]] = [:]
         var result: [BookmarkItem] = []

@@ -25,8 +25,6 @@ public struct NovelReaderProjectionLoad: Hashable, Sendable {
     }
 }
 
-/// Transient detail/read result. Offline source pages must not be published
-/// as fresh online responses or used to advance download timestamps.
 public struct NovelReaderPageSnapshot: Sendable {
     public var projection: NovelReaderProjection
     public var sourcePage: ForumThreadPage
@@ -184,8 +182,6 @@ package extension NovelReaderProjection {
             guard case let .text(text, _) = segment else { return nil }
             let previewText: String
             if offset == 0, let coordinates = sourceCoordinates[startSegmentIndex] {
-                // This is the legacy Character ordinal. Never apply the
-                // displayed string's UTF-16 offset to untranslated source.
                 let start = coordinates.utf16Offset(forCharacterOffset: position.displayedTextOffset)
                 previewText = coordinates.text(in: start..<coordinates.utf16Count) ?? ""
             } else {

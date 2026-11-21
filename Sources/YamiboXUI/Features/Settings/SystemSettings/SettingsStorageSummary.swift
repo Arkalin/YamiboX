@@ -22,7 +22,6 @@ struct SettingsStorageSummary: Equatable {
     let categories: [SettingsStorageCategoryUsage]
     let hasLoaded: Bool
 
-    /// Unknown categories must not silently turn a partial sum into a total.
     var totalBytes: Int? {
         guard hasLoaded, categories.allSatisfy({ $0.bytes != nil }) else { return nil }
         return categories.reduce(0) { $0 + max(0, $1.bytes ?? 0) }

@@ -159,7 +159,6 @@ struct MangaPagedPageCurlLeafView: View {
             allowsUnzoomedSurfacePan: true,
             isPageZoomEnabled: isPageZoomEnabled,
             likedPageIDs: likedPageIDs,
-            // Cancel the curl container's faster clock only inside the single-page image surface.
             nativeAnimationSpeed: isPageZoomEnabled ? 1 / ReaderPagedPageCurlTransition.animationSpeed : 1
         )
         .environment(\.mangaViewportHandoff, handoff)
@@ -173,7 +172,6 @@ struct MangaPagedPageCurlLeafView: View {
     }
 }
 
-// A value snapshot avoids mounting a second native surface on the front's runtime.
 struct MangaPagedPageCurlBackContent {
     let image: UIImage?
     let geometry: MangaSurfaceGeometry

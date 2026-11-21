@@ -4,8 +4,6 @@ public actor YamiboProfileStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     private nonisolated let accountStore: AccountStore?
     public nonisolated var changeID: String { accountStore?.broadcaster.changeID ?? changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> {
         accountStore?.broadcaster.changes() ?? changeBroadcaster.changes()
     }

@@ -6,19 +6,12 @@ public actor FavoriteUpdateStore {
 
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
-    // Transfer the sole cached reference into one database read at a time.
-    // Keeping a second struct snapshot would copy its dictionaries on every delta.
     private var notificationBadge: FavoriteUpdateNotificationBadge?
     private var notificationBadgeEpoch: UInt64 = 0
 
-    /// Convenience for tests/previews, mirroring `FavoriteLibraryStore`:
-    /// `.standard` resolves the shared `yamibox.sqlite` pool; any other
-    /// defaults suite gets its own temporary database keyed by `key`.
     public init(defaults: UserDefaults = .standard, key: String = "yamibox.favoriteUpdates") {
         self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
@@ -107,18 +100,6 @@ public actor FavoriteUpdateStore {
         }
     }
 
-    /// Commits a whole check run's tracked-target and event changes in one
-    /// write transaction instead of the one-`upsertTrackedTarget`/
-    /// `insertEvent`-call-per-favorite pattern a check loop would otherwise
-    /// produce. Callers pass the complete post-run arrays as accumulated in
-    /// memory over the run — but a run takes minutes, and the caller's
-    /// arrays were seeded from a store snapshot taken at run start, so
-    /// anything written to the store since (the user marking events
-    /// read/dismissed from the updates page, another writer inserting) must
-    /// not be clobbered by that stale snapshot. This therefore MERGES rather
-    /// than replaces: the run is authoritative for its detection products,
-    /// the current store state for user-facing markers and rows the run
-    /// never saw. See `mergingRunEvents(_:intoStored:)`.
     public func applyCheckRunResults(
         trackedTargets: [FavoriteUpdateTrackedTarget],
         events: [FavoriteUpdateEvent]
@@ -136,12 +117,6 @@ public actor FavoriteUpdateStore {
         }
     }
 
-    /// Unread undismissed event count as it will stand once the given run's
-    /// in-memory events are committed via `applyCheckRunResults` — the number
-    /// a mid-run notification badge should show. Counting either side alone
-    /// is wrong mid-run: the store is missing this run's not-yet-committed
-    /// detections, while the run's snapshot is missing read/dismiss marks the
-    /// user applied since the run started.
     public func unreadEventCount(mergingRunEvents runEvents: [FavoriteUpdateEvent]) async throws -> Int {
         let merged = try await database.read { db in
             try Self.mergingRunEvents(runEvents, in: db)
@@ -151,10 +126,6 @@ public actor FavoriteUpdateStore {
             .count
     }
 
-    /// Fast path for the check engine's remove-undismissed/append detection delta.
-    /// Any event or identity writer changes the transactional revision, including
-    /// writers outside this actor. Rebase under that same read snapshot before
-    /// counting; a failed read never installs an optimistic cached baseline.
     public func unreadEventCount(
         mergingRunEvents runEvents: [FavoriteUpdateEvent],
         replacingWith event: FavoriteUpdateEvent,
@@ -181,8 +152,6 @@ public actor FavoriteUpdateStore {
         let result = try await database.read { db -> (FavoriteUpdateNotificationBadge?, Int) in
             guard try db.tableExists("favorite_update_notification_revision"),
                   let revision = try String.fetchOne(db, sql: "SELECT revision FROM favorite_update_notification_revision WHERE id = 1") else {
-                // Isolated callers can inject an older/minimal schema. Preserve
-                // their existing authoritative behavior until it is migrated.
                 let merged = try Self.mergingRunEvents(materializeRunEvents(), in: db)
                 return (nil, merged.filter { $0.readAt == nil && $0.dismissedAt == nil }.count)
             }
@@ -204,9 +173,6 @@ public actor FavoriteUpdateStore {
             }
             return (rebased, rebased.unreadCount)
         }
-        // Reentrant/concurrent reads may finish out of order. Only the newest
-        // admitted call may retain its baseline; every caller still gets its
-        // own correct database snapshot result.
         if epoch == notificationBadgeEpoch { notificationBadge = result.0 }
         return result.1
     }
@@ -220,30 +186,11 @@ public actor FavoriteUpdateStore {
         _ runEvents: [FavoriteUpdateEvent],
         in db: Database
     ) throws -> [FavoriteUpdateEvent] {
-        // A running check can still hold pre-merge IDs. Resolve both sides in
-        // the same transaction before comparing targets or dismissal markers.
         let canonicalRunEvents = try runEvents.map { try canonicalEvent($0, in: db) }
         let canonicalStoredEvents = try events(in: db).map { try canonicalEvent($0, in: db) }
         return mergingRunEvents(canonicalRunEvents, intoStored: canonicalStoredEvents)
     }
 
-    /// Three-way merge of a check run's in-memory event list over the current
-    /// store contents, by event id:
-    /// - present on both sides: the run never edits an existing event in
-    ///   place (it supersedes with a new id), so the copies differ only by
-    ///   markers the user may have set since the run's snapshot — a non-nil
-    ///   store-side `readAt`/`dismissedAt` wins.
-    /// - run-only: a new detection (or a snapshot row another writer has
-    ///   since superseded) — kept.
-    /// - store-only: either inserted by another writer during the run (kept),
-    ///   or the undismissed row this run superseded with an accumulated
-    ///   replacement under a new id (dropped, its delta already folded in).
-    /// The two are told apart by the final pass, which restores the "at most
-    /// one undismissed event per target" invariant both writers maintain
-    /// individually: dismissed events all survive, and an undismissed one only
-    /// if it is the target's newest detection overall — measured against
-    /// dismissed events too, so a stale undismissed copy can never outrank
-    /// (and thereby resurrect) newer same-target content the user dismissed.
     private static func mergingRunEvents(
         _ runEvents: [FavoriteUpdateEvent],
         intoStored storedEvents: [FavoriteUpdateEvent]
@@ -317,7 +264,6 @@ public actor FavoriteUpdateStore {
         }
     }
 
-    /// Matches all five tables cleared by `clearAll`, excluding shared SQLite overhead.
     public func estimatedDataUsageBytes() async throws -> Int {
         try await database.read { db in
             try Int.fetchOne(db, sql: """
@@ -422,15 +368,10 @@ public actor FavoriteUpdateStore {
         }
     }
 
-    /// Lets a cascade writer that mutated this store's tables inside its own
-    /// GRDB transaction (`MangaDirectoryStore`'s rename) emit the same change
-    /// signal the actor's own mutations post.
     public nonisolated func notifyExternalMutation() {
         postChangeNotification()
     }
 
-    /// Runs `updates` in one write transaction and posts the change
-    /// notification when the closure reports it actually mutated state.
     private func write(_ updates: @escaping @Sendable (Database) throws -> Bool) async throws {
         let didMutate: Bool
         do {
@@ -518,8 +459,6 @@ public actor FavoriteUpdateStore {
         if case let .mangaDirectory(id) = target.target {
             let canonical = try MangaDirectoryIdentityDatabase.canonicalID(id, in: db)
             target.target = .mangaDirectory(directoryID: canonical)
-            // A running check can hold a pre-merge snapshot of the surviving
-            // ID too. Preserve the stored union regardless of write order.
             if let existing = try trackedTarget(id: target.id, in: db) {
                 target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(existing.knownChapterTIDs ?? [])
                 target.categoryIDs.formUnion(existing.categoryIDs)

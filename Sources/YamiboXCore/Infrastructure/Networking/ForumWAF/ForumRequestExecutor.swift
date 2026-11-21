@@ -1,6 +1,5 @@
 import Foundation
 
-/// Adapters throw this only after the shared classifier has isolated a challenge.
 struct ForumTransportChallenge: Error, Sendable {
     let challenge: YamiboWAFChallenge
 }
@@ -13,9 +12,6 @@ public struct ForumRequestExecutor: ForumRequestExecuting {
         self.recovery = recovery
     }
 
-    /// The WebKit adapter has already made its first navigation. Reuse the
-    /// same execution contract for its observed challenge, without giving the
-    /// verifier any navigation or presentation authority.
     public func recoverNavigation(context: ForumRequestContext, policy: ForumRequestPolicy,
                                   challenge: YamiboWAFChallenge) async throws -> YamiboRequestCredentials {
         try await execute(context: context, policy: policy) { attempt in

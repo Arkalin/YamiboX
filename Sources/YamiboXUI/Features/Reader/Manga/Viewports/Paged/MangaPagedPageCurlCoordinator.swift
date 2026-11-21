@@ -195,14 +195,11 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         selectionIndex: Int,
         animated: Bool
     ) {
-        // External placement changes the model without a page-turn callback.
-        // Revisiting the last reported page must publish progress again.
         lastReportedGlobalIndex = nil
         setSelection(selectionIndex, in: pageViewController, animated: animated, publishOnCompletion: false)
     }
 
     func animateAdjacentSelection(delta: Int, in pageViewController: UIPageViewController) {
-        // Replacing an unfinished curl invalidates its only page-selection commit.
         guard !isPageTurnInProgress else { return }
         let targetSelectionIndex = selectionIndex + delta
         guard targetSelectionIndex >= 0,
@@ -406,7 +403,6 @@ final class MangaPagedPageCurlCoordinator: NSObject, UIPageViewControllerDataSou
         guard let spread = parent.plan.spread(at: index) else { return }
         let usesSpread = parent.sequence.usesTwoPageSpread
         let id = SurfaceID(value: usesSpread ? "curl-spread" : "page:" + spread.preferredPage.id)
-        // The shared spread host still has the outgoing page's readiness until it is reconfigured.
         interactionRuntime.activate(id, selectionID: spread.id, alignment: pageEntryAlignment, applyImmediately: !usesSpread)
         if usesSpread, let container = activeContainerViewController {
             zoom.updatePageCurlSpreadZoomAvailability(in: container)

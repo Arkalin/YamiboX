@@ -7,9 +7,6 @@ public struct YamiboWAFChallenge: Hashable, Sendable {
     public let userAgent: String
     public let provider: ForumWAFProvider
     public let document: ForumWAFChallengeDocument?
-    /// A one-way comparison value. It lets the WebKit owner decide whether it
-    /// already has a newer clearance without passing a cookie value across the
-    /// Core/UI boundary.
     public let clearanceFingerprint: String?
     public let clearanceExpiresAt: Date?
 
@@ -31,7 +28,6 @@ public struct YamiboWAFChallenge: Hashable, Sendable {
         self.clearanceExpiresAt = clearanceExpiresAt
     }
 
-    /// Recovery tickets retain evidence, not executable response bodies.
     func withoutDocument() -> Self {
         Self(url: url, method: method, userAgent: userAgent, clearanceFingerprint: clearanceFingerprint,
              clearanceExpiresAt: clearanceExpiresAt, provider: provider)

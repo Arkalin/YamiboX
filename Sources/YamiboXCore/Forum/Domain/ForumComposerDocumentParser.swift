@@ -19,12 +19,6 @@ enum ForumComposerDocumentParser {
         guard source.utf8.contains(0x5B) else { // No [ openings to mask.
             return expression.matches(in: source, range: NSRange(location: 0, length: text.length)).map(\.range)
         }
-        // A parameter may itself contain [, so an unterminated line tail
-        // makes the regex retry that whole tail at every [. None of those
-        // openings can form a token. Mask them only in the matching input;
-        // extract every token's raw spelling from the unchanged source below.
-        // _ and [ are both ordinary body characters in the emoticon branch,
-        // so emoticons spanning a masked opening retain their exact ranges.
         var hasClosingBracket = false
         var matchingUTF16 = Array(source.utf16)
         var maskedOpening = false
@@ -58,8 +52,6 @@ enum ForumComposerDocumentParser {
         }
         var pairs: [Int: Int] = [:]
         var crossed: [Int: Int] = [:]
-        // Literal bodies use the nearest closing tag, even when their contents
-        // contain markup. Index it once rather than searching every suffix.
         var literalClosings: [Int: Int] = [:]
         var nextClosingByName: [String: Int] = [:]
         for index in tokens.indices.reversed() {

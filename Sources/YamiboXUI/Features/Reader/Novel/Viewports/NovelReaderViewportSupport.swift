@@ -5,7 +5,6 @@ import YamiboXCore
 #if os(iOS)
 import UIKit
 
-/// Keeps retained SwiftUI page hosts current without rebuilding the reading layout.
 @MainActor
 @Observable
 final class NovelReaderImageLikeState {
@@ -44,12 +43,6 @@ enum NovelReaderVerticalViewportSample: Equatable {
     case image(NovelReaderSurfaceIdentity)
 }
 
-/// Per-scroll-frame pixel data (surface frames, TextKit viewport samples)
-/// only needs to be *available* to imperative restore/position-tracking code
-/// — it is never read from `NovelReaderView.body`. Holding it in a plain
-/// reference type stored behind `@State` (instead of `@State`-ing the
-/// dictionaries/samples directly) keeps per-frame writes from invalidating
-/// and re-evaluating the whole reader view tree on every scroll tick.
 @MainActor
 final class NovelReaderVerticalViewportSamplingBox {
     var surfaceFrames: [Int: NovelReaderVerticalSurfaceFrameValue] = [:]
@@ -164,8 +157,6 @@ func novelImageLikeAnchor(forImageURL url: URL, in surfaces: [NovelReaderSurface
     )
 }
 
-/// Single-surface convenience for block-level "is this image liked" lookups
-/// (each viewport already has the one `NovelReaderSurface` it's rendering).
 func novelImageLikeAnchor(forImageURL url: URL, in surface: NovelReaderSurface?) -> NovelImageLikeAnchor? {
     guard let surface else { return nil }
     return novelImageLikeAnchor(forImageURL: url, in: [surface])

@@ -1,6 +1,5 @@
 import Foundation
 
-/// A display-safe, transient snapshot. Never persist this alongside cached content.
 public struct LoadFailureDetails: Hashable, Sendable {
     public struct Item: Hashable, Sendable {
         public let title: String
@@ -26,7 +25,6 @@ public struct LoadFailureDetails: Hashable, Sendable {
     public let requestContext: String?
     public let httpStatus: Int?
     public let isHTMLParsingFailure: Bool
-    /// Whether the typed recovery error requires authentication, independent of diagnostic text.
     public private(set) var requiresAuthentication: Bool
     public private(set) var isSilentForumFailure: Bool
     public let html: String?
@@ -73,7 +71,6 @@ public struct LoadFailureDetails: Hashable, Sendable {
         var status: Int?
         var parsing = html != nil
         var failingURL: String?
-        // NSError chains can contain cycles supplied by third-party libraries.
         while let source = current, causes.count < 12 {
             let nsError = source as NSError
             guard !visited.contains(where: { $0 === nsError }) else { break }
@@ -135,7 +132,6 @@ public struct LoadFailureDetails: Hashable, Sendable {
         )
     }
 
-    /// The same sanitized text is used by the viewer and clipboard.
     public var diagnosticText: String {
         var sections = [summary]
         if let requestContext { sections.append("\(L10n.string("load_failure.context"))\n\(requestContext)") }
@@ -168,7 +164,6 @@ public struct LoadFailureDetails: Hashable, Sendable {
     }
 }
 
-/// Carries diagnostics without changing the error used for recovery decisions.
 public struct LoadDiagnosticError: LocalizedError, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     public let underlying: any Error
     public let details: LoadFailureDetails
@@ -181,7 +176,6 @@ public struct LoadDiagnosticError: LocalizedError, Sendable, CustomStringConvert
     }
 
     public var errorDescription: String? { recoveryError.localizedDescription }
-    // Existing logs interpolate errors. Do not let them dump response HTML.
     public var description: String { details.summary }
     public var debugDescription: String { description }
 
@@ -215,7 +209,6 @@ public struct LoadDiagnosticError: LocalizedError, Sendable, CustomStringConvert
         do {
             return try parse()
         } catch {
-            // Recognized server rejections are not HTML parse failures.
             if let source = classificationError(error) as? YamiboError {
                 switch source {
                 case .parsingFailed:

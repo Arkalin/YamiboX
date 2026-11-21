@@ -1,15 +1,8 @@
 import Foundation
 import YamiboXCore
 
-/// Routes a tapped favorite-update notification to its favorite, reusing the
-/// same resolver path as the in-app updates page (resume mode, board-default
-/// manga scope). Falls back to the favorites tab when the favorite has been
-/// deleted since the notification was delivered or resolution fails.
 @MainActor
 public enum FavoriteUpdateNotificationRouting {
-    /// Entry point for the app delegate's notification-response handler.
-    /// Returns false when the userInfo doesn't belong to a favorite-update
-    /// notification, so unrelated notifications pass through untouched.
     @discardableResult
     public static func open(notificationUserInfo userInfo: [AnyHashable: Any], dependencies: LibraryDependencies, appModel: YamiboAppModel) async -> Bool {
         guard let targetID = userInfo[FavoriteUpdateNotification.targetIDUserInfoKey] as? String else {
@@ -29,9 +22,6 @@ public enum FavoriteUpdateNotificationRouting {
         do {
             let target: LocalFavoriteOpenTarget?
             if let directoryID = FavoriteUpdateTargetKey.mangaDirectoryID(fromID: targetID) {
-                // A directory-mode event's notification carries no pointer to
-                // one specific favorite — re-derive fresh, same as the
-                // in-app updates page's tap handler.
                 target = try await resolver.openTarget(forMangaDirectoryID: directoryID)
             } else {
                 let document = try? await dependencies.localFavoriteLibraryStore.load()
@@ -47,8 +37,6 @@ public enum FavoriteUpdateNotificationRouting {
             }
             switch target {
             case .novelDetail, .mangaDetail:
-                // Notifications request explicit resume, never the tap preference.
-                // Keep the same safe fallback if that resolver contract changes.
                 appModel.selectTab(.favorites)
             case let .novelReader(context):
                 appModel.selectTab(.favorites)

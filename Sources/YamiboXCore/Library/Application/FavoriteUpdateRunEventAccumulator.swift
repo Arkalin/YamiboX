@@ -1,9 +1,6 @@
 import Foundation
 import os
 
-/// Preserves the run's array order while replacing only a raw target's live
-/// events. Removal versions retain the contents needed by an earlier lazy badge
-/// snapshot, even if its database read finishes after a newer mutation.
 final class FavoriteUpdateRunEventAccumulator: Sendable {
     struct Snapshot: Sendable {
         let count: Int

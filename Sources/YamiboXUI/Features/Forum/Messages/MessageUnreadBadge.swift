@@ -11,8 +11,6 @@ enum MessageUnreadBadge {
     @MainActor
     static func tabValue(for count: Int) -> String? {
         guard count > 0 else { return nil }
-        // The iPad top tab bar hides an empty badge; whitespace keeps its native
-        // indicator visible without introducing a numeric badge.
         return UIDevice.current.userInterfaceIdiom == .pad ? " " : ""
     }
 
@@ -31,8 +29,6 @@ extension View {
     }
 }
 
-// SwiftUI's tabItem label drops accessibilityValue when creating the native
-// tab. Update the owning tab item without replacing the system tab bar.
 private struct MessageUnreadTabAccessibility: UIViewControllerRepresentable {
     let value: String
 

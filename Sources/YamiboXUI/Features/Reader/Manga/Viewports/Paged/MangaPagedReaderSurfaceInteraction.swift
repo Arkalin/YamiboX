@@ -17,7 +17,6 @@ struct MangaPagedReaderSurfaceInteractionIdentity: Equatable {
     var zoomEnabled: Bool
 }
 
-/// Routes external controls to the mounted backend; absence never means permission to navigate.
 @MainActor
 final class MangaPagedControlPageTurnBridge {
     struct Sample {

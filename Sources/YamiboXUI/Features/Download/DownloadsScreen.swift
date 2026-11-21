@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Both entry directions use one secondary destination. Returning to the
-/// initial page pops it instead of recursively pushing another downloads UI.
 struct DownloadsScreen: View {
     enum Page { case management, queue }
     let initialPage: Page
@@ -53,7 +51,6 @@ struct DownloadsScreen: View {
 }
 
 
-/// List rows share selection semantics, but not the old card decoration.
 private struct DownloadListRowModifier: ViewModifier {
     let isSelected: Bool
     let action: (() -> Void)?

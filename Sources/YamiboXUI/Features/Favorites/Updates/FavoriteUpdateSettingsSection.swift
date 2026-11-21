@@ -4,13 +4,6 @@ import UIKit
 #endif
 import YamiboXCore
 
-/// The automatic-check-interval picker, smart-manga-interval picker, and
-/// notification toggle, shared between `FavoriteUpdatesPage` (behind the
-/// favorites bell) and the Settings > Favorites category page. Both
-/// embeddings read/write the same `FavoriteLibrarySettings` fields through
-/// their own `FavoriteUpdateMonitor` instance, so this view owns its own
-/// load state rather than relying on `@Published` fields the monitor
-/// doesn't publish for these.
 struct FavoriteUpdateSettingsSection: View {
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
 
@@ -29,13 +22,6 @@ struct FavoriteUpdateSettingsSection: View {
         .task {
             await reload()
         }
-        // `.task` only fires once per view identity. This view is embedded
-        // in two independently-instantiated `FavoriteUpdateMonitor`-backed
-        // screens that can both stay alive at once (a background tab's
-        // pushed FavoriteUpdatesPage plus this screen), so a change made
-        // through the other instance would otherwise never be reflected
-        // here again after the first load — `.onAppear` re-reads on every
-        // return to this screen, not just the first.
         .onAppear {
             Task { await reload() }
         }
@@ -109,8 +95,6 @@ struct FavoriteUpdateSettingsSection: View {
         }
     }
 
-    /// A custom binding (not `onChange`) so reverting a denied enable back to
-    /// off doesn't re-enter the setter and re-trigger the alert.
     private var notificationsBinding: Binding<Bool> {
         Binding(
             get: { notificationsEnabled },

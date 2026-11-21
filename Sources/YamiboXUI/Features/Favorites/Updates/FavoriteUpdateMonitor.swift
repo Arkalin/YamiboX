@@ -1,20 +1,12 @@
 import Foundation
 import YamiboXCore
 
-/// Thin UI-facing snapshot publisher over `FavoriteUpdateCheckEngine`.
-///
-/// The check-run engine — network fetching, fingerprint comparison, circuit
-/// breaking, offline handling, run persistence, and notification delivery —
-/// lives in `YamiboXCore.FavoriteUpdateCheckEngine`. This type only republishes
-/// the engine's state as `@Published` properties for SwiftUI observation and
-/// forwards every trigger to the engine; it holds no domain logic of its own.
 @MainActor
 final class FavoriteUpdateMonitor: ObservableObject {
     @Published private(set) var snapshot: FavoriteUpdateRunSnapshot?
     @Published private(set) var events: [FavoriteUpdateEvent] = [] {
         didSet { eventsRevision &+= 1 }
     }
-    /// `events` already publishes invalidation; progress never changes this revision.
     private(set) var eventsRevision: UInt64 = 0
     @Published private(set) var fidFilters: [FavoriteUpdateFidFilter] = [] {
         didSet { scopeRevision &+= 1 }
@@ -22,20 +14,10 @@ final class FavoriteUpdateMonitor: ObservableObject {
     @Published private(set) var categoryFilters: [FavoriteUpdateCategoryFilter] = [] {
         didSet { scopeRevision &+= 1 }
     }
-    /// The authoritative per-target category scope, keyed by
-    /// `FavoriteUpdateTargetKey`. UI category-filter matching for a
-    /// `.mangaDirectory` event must read this rather than guessing from
-    /// `FavoriteItem.target.id` equality (that lookup is `.favorite`-only by
-    /// construction — a directory event's target id never matches one).
     @Published private(set) var trackedTargets: [FavoriteUpdateTrackedTarget] = [] {
         didSet { scopeRevision &+= 1 }
     }
-    /// Scope inputs publish their own invalidation; check progress leaves this unchanged.
     private(set) var scopeRevision: UInt64 = 0
-    /// Mirrors the engine's error state, but stays independently settable so
-    /// a view can clear a shown alert (`errorMessage = nil`) without that
-    /// clear being resurrected by unrelated engine state changes — the engine
-    /// only pushes this field when it actually writes a new error.
     @Published var errorMessage: String? {
         didSet { errorDetails = nil }
     }
@@ -43,8 +25,6 @@ final class FavoriteUpdateMonitor: ObservableObject {
 
     private let engine: FavoriteUpdateCheckEngine
 
-    /// Shared admission, progress, completion, and account-transition gate
-    /// for monitors using the same update store (windows and background tasks).
     private static let sharedRunRegistry = FavoriteUpdateActiveRunRegistry.shared
 
     static func prepareForAccountChange(updateStore: FavoriteUpdateStore) async {
@@ -55,7 +35,6 @@ final class FavoriteUpdateMonitor: ObservableObject {
         sharedRunRegistry.finishAccountChange(storeID: updateStore.changeID)
     }
 
-    /// Foreground and background checks share assembly, not monitor lifetime.
     static func makeForLibrary(
         _ dependencies: LibraryDependencies,
         notifier: any FavoriteUpdateNotifying = UserNotificationFavoriteUpdateNotifier()
@@ -102,9 +81,6 @@ final class FavoriteUpdateMonitor: ObservableObject {
         }
     }
 
-    /// Copies the changed engine field into its `@Published` mirror. Called
-    /// synchronously, once per engine assignment, so views observe state at
-    /// exactly the same moments as when the monitor owned the state directly.
     private func publish(_ change: FavoriteUpdateCheckEngine.StateChange) {
         switch change {
         case .snapshot:
@@ -123,15 +99,10 @@ final class FavoriteUpdateMonitor: ObservableObject {
         }
     }
 
-    // MARK: - Engine delegation
-
-    /// Reloads the persisted run, events, and filters. A run still marked
-    /// running whose task no longer exists is downgraded to interrupted.
     func load() async {
         await engine.load()
     }
 
-    /// Refreshes events and filters from the store.
     func reloadEventState() async {
         await engine.reloadEventState()
     }
@@ -145,18 +116,15 @@ final class FavoriteUpdateMonitor: ObservableObject {
         await engine.interrupt()
     }
 
-    /// Expiration belongs only to the monitor that admitted this run.
     func interruptOwnedRun() async {
         await engine.interrupt(ifOwned: true)
     }
 
-    /// Waits for an in-flight check to finish (background refresh completion).
     @discardableResult
     func waitForCompletion() async -> FavoriteUpdateRunSnapshot? {
         await engine.waitForCompletion()
     }
 
-    /// Configured automatic check interval, or nil without a settings store.
     func configuredInterval() async -> FavoriteUpdateCheckInterval? {
         await engine.configuredInterval()
     }
@@ -165,8 +133,6 @@ final class FavoriteUpdateMonitor: ObservableObject {
         await engine.setConfiguredInterval(interval)
     }
 
-    /// Configured smart-manga chapter check interval, or nil without a
-    /// settings store.
     func configuredMangaInterval() async -> SmartMangaUpdateCheckInterval? {
         await engine.configuredMangaInterval()
     }
@@ -175,24 +141,18 @@ final class FavoriteUpdateMonitor: ObservableObject {
         await engine.setConfiguredMangaInterval(interval)
     }
 
-    /// Whether recent events keep arriving; drives the smart interval.
     var hasRecentEvents: Bool {
         engine.hasRecentEvents
     }
 
-    /// Smart-manga-only counterpart of `hasRecentEvents`.
     var hasRecentMangaDirectoryEvents: Bool {
         engine.hasRecentMangaDirectoryEvents
     }
 
-    /// Starts a check when the configured interval has elapsed since the last
-    /// completed run — the foreground catch-up half of automatic checking.
     @discardableResult
     func startCheckIfDue(nonTagMangaDirectoryCheckCap: Int = 1) async -> Bool {
         await engine.startCheckIfDue(nonTagMangaDirectoryCheckCap: nonTagMangaDirectoryCheckCap)
     }
-
-    // MARK: - Events and filters
 
     func markEventRead(_ eventID: String) async {
         await engine.markEventRead(eventID)
@@ -218,21 +178,15 @@ final class FavoriteUpdateMonitor: ObservableObject {
         await engine.setCategoryFilter(categoryID, enabled: enabled)
     }
 
-    // MARK: - Update notifications
-
-    /// Whether detected updates are delivered as local notifications.
     func notificationsEnabled() async -> Bool {
         await engine.notificationsEnabled()
     }
 
-    /// Persists the notification toggle and returns the effective value.
     @discardableResult
     func setNotificationsEnabled(_ enabled: Bool) async -> Bool {
         await engine.setNotificationsEnabled(enabled)
     }
 
-    /// True when the user's toggle is on but the system permission has since
-    /// been revoked — deliveries are silently skipped in that state.
     func notificationsBlockedBySystem() async -> Bool {
         await engine.notificationsBlockedBySystem()
     }

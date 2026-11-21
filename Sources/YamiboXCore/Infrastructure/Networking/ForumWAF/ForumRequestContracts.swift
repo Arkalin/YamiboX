@@ -1,6 +1,5 @@
 import Foundation
 
-/// An exact origin, never a hostname suffix or a Cookie domain.
 public struct ForumOrigin: Hashable, Sendable {
     public let scheme: String
     public let host: String
@@ -23,7 +22,6 @@ public enum ForumReplayPolicy: Sendable {
     case safeReadOnce
 }
 
-/// A lease cannot be extended by joining an existing verification flight.
 public struct ForumRuntimeLease: Sendable {
     public let deadline: ContinuousClock.Instant
 
@@ -48,7 +46,6 @@ public struct ForumRequestPolicy: Sendable {
     }
 }
 
-/// Retained by a recovery ticket, never recreated by a Cookie notification.
 public final class ForumRequestOperation: @unchecked Sendable {
     public let id = UUID()
     private let lock = NSLock()
@@ -94,8 +91,6 @@ public struct ForumTransportCapabilities: Sendable {
     }
 }
 
-/// Scope identifies the owner, not merely the logged-in account UID. Candidate
-/// and retired sessions must have distinct scope and Cookie storage identities.
 public struct ForumSessionKey: Hashable, Sendable {
     public let origin: ForumOrigin
     public let scopeID: UUID
@@ -112,8 +107,6 @@ public struct ForumSessionKey: Hashable, Sendable {
     }
 }
 
-/// The commit closure must check the expected generation and merge WAF cookies
-/// in the same storage transaction. A separate check followed by save is unsafe.
 public struct ForumRequestContext: Sendable {
     public let key: ForumSessionKey
     public let credentials: YamiboRequestCredentials
@@ -136,8 +129,6 @@ public struct ForumRequestContext: Sendable {
     }
 }
 
-/// A transport receives this value from the executor; it cannot mint another
-/// attempt or reset a logical operation's replay budget.
 public struct ForumRequestAttempt: Sendable {
     public let operationID: UUID
     public let number: Int
@@ -158,8 +149,6 @@ public struct ForumRequestAttempt: Sendable {
     }
 }
 
-/// Required dependency at native forum call sites. Even unavailable platform
-/// verification is represented by a verifier, never by an optional executor.
 public protocol ForumRequestExecuting: Sendable {
     func execute<Value: Sendable>(
         context: ForumRequestContext,

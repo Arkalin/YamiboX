@@ -25,7 +25,6 @@ struct MangaNavigationConfiguration: Equatable {
 
     func tap(at point: CGPoint, in bounds: CGRect) -> MangaNavigationRequest? {
         guard let action = gestureRegionLayout.action(at: point, in: bounds) else { return nil }
-        // A semantic next/previous tap must not change which physical edge gets revealed.
         let x = point.x - bounds.minX
         let third = bounds.width / 3
         let revealEdge: MangaPagedImageSurfaceHorizontalEdge? = x < third ? .left :

@@ -118,8 +118,6 @@ final class ReaderExternalDisplayCoordinator {
             disconnectedPreparation = nil
             failedPresentation = nil
             reservedOwner = nil
-            // Keep the candidates and any device panel so they can finish
-            // locally, and so opting in again does not require a reconnect.
             release(requireActivation: false)
             elect(nil)
             evaluate()
@@ -174,9 +172,6 @@ final class ReaderExternalDisplayCoordinator {
 
     func pauseForReaderNavigation(_ session: ReaderSession) {
         guard let lease, lease.owner.session === session else { return }
-        // This same cover also hosts the native post. Keep the system's
-        // connection, but remove the reader and all its input; UIKit need not
-        // connect a second accessory when the user reenters reading.
         release(requireActivation: false)
     }
 
@@ -204,8 +199,6 @@ final class ReaderExternalDisplayCoordinator {
 
     func acceptsPeripheralInput(windowID: String) -> Bool {
         guard let lease, lease.owner.model?.windowID == windowID else {
-            // A detached editor must not let this window's old reader or any
-            // capture callback consume keystrokes from its sheet.
             return candidates[windowID]?.session.deviceInteraction == nil
         }
         return canUseTrackpad && scenePhases[windowID] == .active
@@ -283,9 +276,6 @@ final class ReaderExternalDisplayCoordinator {
         if let lease, lease.owner.model?.windowID == windowID, closingSessionID != lease.owner.session.id {
             if value != .active {
                 if phase == .preparing {
-                    // A not-yet-visible viewport may still await a one-shot
-                    // layout or restoration callback. Restart its attachment
-                    // on foreground instead of suspending it mid-admission.
                     release(requireActivation: false, permitsDeviceReader: false)
                     evaluate()
                     return
@@ -313,7 +303,6 @@ final class ReaderExternalDisplayCoordinator {
         guard !session.isClosed, session.contentID == contentID, closingSessionID != session.id else { return }
         guard let lease, lease.owner.session === session else { session.close(); return }
         if phase == .preparing {
-            // The external window is already black; no privacy frame to wait for.
             session.close()
             return
         }
@@ -323,8 +312,6 @@ final class ReaderExternalDisplayCoordinator {
         lease.connection.conceal(true)
         lease.viewport.setSuspended(true)
         setPhase(.suspended)
-        // Keep the owner controller in the hierarchy long enough to publish
-        // black. Removing its cover first disconnects the accessory immediately.
         Task { [weak self, weak session] in
             try? await Task.sleep(for: .milliseconds(150))
             if let session, session.contentID == contentID { session.close() }
@@ -376,9 +363,6 @@ final class ReaderExternalDisplayCoordinator {
         let generation = registrationID
         let ownerWindowID = owner?.model?.windowID
         let ownerPhase = ownerWindowID.flatMap { scenePhases[$0] }
-        // An accessory can disconnect when UIKit changes the focused device
-        // scene (including app-switcher transitions). Keep its owner reserved
-        // while inactive so another open book isn't shown on the external display.
         reservedOwner = owner
         release(requireActivation: false, permitsDeviceReader: false)
         disconnectedPreparation?.cancel()
@@ -408,7 +392,6 @@ final class ReaderExternalDisplayCoordinator {
         updateDeviceAdmission(awaitingAccessory: awaitingAccessory)
     }
 
-    /// Returns the elected owner whose registration may still yield a scene.
     private func evaluateExternalPresentation() -> Candidate? {
         guard hasLoadedTakeoverSettings, isTakeoverEnabled, lease == nil, closingSessionID == nil else { return nil }
         guard !needsExplicitActivation else { elect(nil); return nil }
@@ -437,8 +420,6 @@ final class ReaderExternalDisplayCoordinator {
         }
         guard isRestoringDeviceInteraction || !candidate.session.permitsDeviceReader ||
               candidate.session.viewport.hasRendered else {
-            // A device viewport already admitted to read locally can finish
-            // restoring its position before a hot-plug handoff.
             candidate.session.viewport.didRender = { [weak self] in self?.evaluate() }
             return nil
         }
@@ -507,8 +488,6 @@ final class ReaderExternalDisplayCoordinator {
                 owner.cancelDeviceAdmissionWait()
                 owner.session.permitDeviceReader()
             } else if owner.deviceAdmissionWait == nil {
-                // Bound the entire selection, including a missing host, not
-                // just a registered accessory waiting for its external scene.
                 owner.deviceAdmissionWait = Task { [weak self, weak owner] in
                     do { try await Task.sleep(for: .seconds(3)) } catch { return }
                     guard let self, let owner, candidates[id] === owner, owner !== lease?.owner,
@@ -524,9 +503,6 @@ final class ReaderExternalDisplayCoordinator {
         guard let id = owner.model?.windowID, scenePhases[id] == .active,
               !owner.session.isClosed, owner.session.contentID == owner.contentID else { return false }
         if owner.session.deviceInteraction != nil {
-            // A foreground transition can reconnect an accessory while its
-            // owner still has a device sheet. Keep that sheet and restore only
-            // the external reader, without re-enabling remote input.
             guard owner === reservedOwner else { return false }
         } else {
             guard !owner.session.isShowingDevicePanel else { return false }
@@ -615,7 +591,6 @@ final class ReaderExternalDisplayCoordinator {
     }
 
     private func synchronizeInput(revealCursor: Bool = true) {
-        // Invalidate in-flight gestures before an overlay can consume input.
         pointer.setEnabled(canUseTrackpad, revealCursor: revealCursor)
         lease?.viewport.setInputPaused(!canUseTrackpad)
         wakefulness.setNeeded(phase == .external && showsReaderOnExternalDisplay)

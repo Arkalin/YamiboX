@@ -1,6 +1,5 @@
 import YamiboXCore
 
-/// One presentation snapshot shared by the favorites bell and updates list.
 struct FavoriteUpdateEventScope {
     let events: [FavoriteUpdateEvent]
     let unreadCount: Int
@@ -25,7 +24,6 @@ struct FavoriteUpdateEventScope {
         var directoryCategories: [FavoriteUpdateTargetKey: Set<String>] = [:]
         var enabledCategoryIDs: Set<String> = []
         if disabledCategoriesExist && !events.isEmpty {
-            // Keep the first matching item/target, including an empty category set.
             for item in items() where favoriteCategories[item.target.id] == nil {
                 favoriteCategories[item.target.id] = Set(item.locations.compactMap(\.categoryID))
             }

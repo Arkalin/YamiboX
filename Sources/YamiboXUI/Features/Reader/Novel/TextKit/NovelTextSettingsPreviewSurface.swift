@@ -3,9 +3,6 @@ import Foundation
 import UIKit
 import YamiboXCore
 
-/// Short-lived preview surface for the reader settings sheet. Reuses the
-/// attributed-document styling but never builds a viewport index or touches
-/// the active reading workflow.
 final class NovelTextSettingsPreviewSurface {
     private let attributedText: NSAttributedString
 
@@ -45,8 +42,6 @@ final class NovelTextSettingsPreviewSurface {
             options: options,
             context: nil
         )
-        // Lay out complete lines beyond the viewport so its bottom fade can
-        // reveal a partial line instead of dropping that line entirely.
         var drawingBounds = bounds
         drawingBounds.size.height = max(bounds.height, ceil(textBounds.height))
 

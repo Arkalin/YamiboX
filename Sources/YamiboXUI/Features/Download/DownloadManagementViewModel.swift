@@ -2,8 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// State and commands for the offline download management page and its
-/// per-group drill-down screen.
 @MainActor
 @Observable
 final class DownloadManagementViewModel {
@@ -73,7 +71,6 @@ final class DownloadManagementViewModel {
         errorDetails = nil
     }
 
-    // MARK: - Loading
 
     func refreshDownloadManagement() async {
         guard activeAction == nil else {
@@ -87,8 +84,6 @@ final class DownloadManagementViewModel {
             if loadingID == id && activeAction == .loading {
                 loadingID = nil
                 activeAction = nil
-                // A pushed page may request its load while the disappearing
-                // page's task is being cancelled. Do not lose that request.
                 if needsRefresh { Task { await self.refreshDownloadManagement() } }
             }
         }
@@ -98,8 +93,6 @@ final class DownloadManagementViewModel {
         } while needsRefresh && loadingID == id && !Task.isCancelled
     }
 
-    /// Throttle bursty progress notifications without losing the final update.
-    /// The view owns cancellation, so hidden pages do not scan the disk.
     func observeUpdates() async {
         let updates = downloadStore.downloadUpdates()
         await refreshDownloadManagement()
@@ -120,7 +113,6 @@ final class DownloadManagementViewModel {
         }
     }
 
-    // MARK: - Deletion requests and confirmation
 
     func requestDownloadGroupDeletion(id: DownloadGroupID) {
         prepareDownloadManagementConfirmation(groupIDs: [id])
@@ -151,7 +143,6 @@ final class DownloadManagementViewModel {
         await clearDownload(groupIDs: confirmation.groupIDs, entryIDs: confirmation.entryIDs)
     }
 
-    // MARK: - Selection
 
     func setDownloadManagementSelectionMode(_ isSelecting: Bool) {
         isDownloadManagementSelectionMode = isSelecting
@@ -185,7 +176,6 @@ final class DownloadManagementViewModel {
         downloadManagementRows.first { $0.id == id }
     }
 
-    // MARK: - Private
 
     private func clearDownload(groupIDs: [DownloadGroupID], entryIDs: [DownloadEntryID]) async -> Bool {
         guard activeAction != .clearingDownload else { return false }

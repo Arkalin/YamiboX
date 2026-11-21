@@ -7,11 +7,6 @@ enum LocalFavoriteDeleteScope: Equatable {
     case everywhere
 }
 
-/// Pending "also delete from Yamibo?" question raised by a favorites-page
-/// delete-everywhere action — the same second decision the quick-action
-/// remove flow models with `FavoriteRemovePrompt`, kept as its own type
-/// because the subject here is an item or the whole selection, not a
-/// `Favorite`.
 struct LocalFavoriteRemoveRemotePrompt: Identifiable, Equatable {
     enum Subject: Equatable {
         case item(FavoriteItem)
@@ -30,13 +25,6 @@ struct LocalFavoriteRemoveRemotePrompt: Identifiable, Equatable {
     }
 }
 
-/// Coordinates the local favorite library document: category, collection, tag
-/// and item organization, navigation state, and filter-driven derivation of
-/// the rendered cards.
-///
-/// All document mutations funnel through `commit`, and all derived output
-/// (cards, counts, visible collections) is recomputed exclusively by
-/// `refreshDerivedState()` whenever an input changes.
 @MainActor
 @Observable
 final class FavoriteLibraryOrganizer {
@@ -48,7 +36,6 @@ final class FavoriteLibraryOrganizer {
             refreshDerivedState()
         }
     }
-    /// Tracks assignments and nested value mutations, including same-count replacements.
     private(set) var unreadItemsRevision: UInt64 = 0
     var selectedCategoryID = FavoriteCategory.defaultID {
         didSet {
@@ -68,15 +55,7 @@ final class FavoriteLibraryOrganizer {
             persistNavigationState()
         }
     }
-    /// The open archive's stable directory ID, or a transient display-group
-    /// key while its original member threads have not resolved together.
-    /// Mirrors `selectedCollectionID`'s own navigation-state shape but is
-    /// deliberately not persisted through `SettingsStore` (see
-    /// `persistNavigationState()`): this scope is a live identity, not
-    /// durable navigation state worth restoring across launches.
     private(set) var selectedMergedGroupKey: String? = nil
-    /// Only a transient, unresolved archive needs chapter anchors. Keep its
-    /// original members visible until all surviving members resolve together.
     private var unresolvedMergedGroupThreadIDs: Set<String>?
     var filter = LocalFavoriteFilterState() {
         didSet {
@@ -85,21 +64,8 @@ final class FavoriteLibraryOrganizer {
         }
     }
     private(set) var derived = LocalFavoriteDerivedState()
-    /// `derived` scoped as if no collection were open, regardless of
-    /// `selectedCollectionID`. The root favorites screen renders from this
-    /// (never from `derived`) because `NavigationStack` keeps the root view
-    /// mounted underneath a pushed collection detail page, and its stock
-    /// interactive edge-swipe-back gesture reveals that root view mid-drag
-    /// while `selectedCollectionID` is still set — reading the same
-    /// collection-scoped `derived` there would show the collection page
-    /// duplicated behind itself. See `LocalFavoritesOrganizationView`.
     private(set) var rootDerived = LocalFavoriteDerivedState()
     private(set) var display = FavoriteLibraryDisplayState()
-    /// Snapshot of `settings.favorites.smartMangaBadgeEnabled`, kept live
-    /// alongside `smartMangaBulkDeleteEnabled` (see `settingsUpdatesTask`) —
-    /// but observable rather than `@ObservationIgnored`, because the card
-    /// views read it in `body` to show or hide the sparkles badge and must
-    /// re-render when the Settings switch flips.
     private(set) var smartMangaBadgeEnabled = true
     private(set) var removeRemotePromptEnabled = true
     private(set) var removeRemoteDefault = false
@@ -113,19 +79,13 @@ final class FavoriteLibraryOrganizer {
         didSet { errorDetails = nil }
     }
     var errorDetails: LoadFailureDetails?
-    /// Short-lived toast feedback (single-item sync results and similar).
     var transientFeedback: TransientFeedback?
     var transientMessage: String? {
         get { transientFeedback?.message }
         set { transientFeedback = newValue.map { TransientFeedback(message: $0) } }
     }
-    /// Non-nil while a delete-everywhere action waits for the user's "also
-    /// delete from Yamibo?" answer (`removeRemotePromptEnabled`). The view
-    /// renders it as a confirmation dialog; both confirm variants route back
-    /// through `confirmRemoveRemotePrompt`, dismissal aborts the delete.
     var removeRemotePrompt: LocalFavoriteRemoveRemotePrompt?
 
-    /// Selection and search-mode session shared with the views.
     let selection = LocalFavoriteBrowseSession()
 
     private let libraryStore: FavoriteLibraryStore
@@ -138,23 +98,14 @@ final class FavoriteLibraryOrganizer {
     @ObservationIgnored private let derivationWorker = FavoriteLibraryDerivationWorker()
     @ObservationIgnored private var derivationTask: Task<Void, Never>?
     @ObservationIgnored private var derivationGeneration: UInt64 = 0
-    /// tid → resolved `MangaDirectory`, for virtual favorites grouping
-    /// (smart-comic-mode decision #3/#5). Populated only at `load()`/
-    /// `reload()` via one batched `MangaDirectoryBatchReading.directories
-    /// (containingTIDs:)` call — never recomputed per render (the design
-    /// doc's performance constraint #2).
     @ObservationIgnored var mangaDirectoriesByTID: [String: MangaDirectory] = [:] {
         didSet { mangaDirectoriesRevision &+= 1 }
     }
     private(set) var mangaDirectoriesRevision: UInt64 = 0
-    /// Includes mode-off members so changing presentation never hides an existing update.
     var unreadMangaDirectoriesByTID: [String: MangaDirectory] = [:] {
         didSet { unreadDirectoriesRevision &+= 1 }
     }
     private(set) var unreadDirectoriesRevision: UInt64 = 0
-    /// Snapshot of the per-board reader configuration taken at the same
-    /// load/reload as `mangaDirectoriesByTID`, so the two are always
-    /// consistent with each other for a given derivation.
     var boardReaderSettings = BoardReaderSettings() {
         didSet { cachedSourceFilterLabels = nil }
     }
@@ -171,12 +122,7 @@ final class FavoriteLibraryOrganizer {
         key: SelectionLocationCacheKey, snapshot: LocalFavoriteLocationMembershipSnapshot
     )?
 
-    /// Presentation cache only. Commands still expand the current selection
-    /// independently and commit against the latest persisted document.
     var selectionLocationSnapshot: LocalFavoriteLocationMembershipSnapshot {
-        // Read observable revisions even on a cache hit. Directory metadata
-        // is otherwise observation-ignored, and a same-count replacement of
-        // items or directories must still invalidate the displayed states.
         let key = SelectionLocationCacheKey(
             documentRevision: unreadItemsRevision,
             directoriesRevision: mangaDirectoriesRevision,
@@ -197,7 +143,7 @@ final class FavoriteLibraryOrganizer {
     }
 
     private var sourceFilterLabels: FavoriteSourceFilterLabels {
-        let items = document.items // Keep the observable document dependency on warm reads.
+        let items = document.items
         if let cachedSourceFilterLabels { return cachedSourceFilterLabels }
         let labels = FavoriteSourceFilterLabels(items: items)
         cachedSourceFilterLabels = labels
@@ -215,11 +161,6 @@ final class FavoriteLibraryOrganizer {
             .sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
             .map(\.filter)
     }
-    /// Snapshot of `settings.favorites.smartMangaBulkDeleteEnabled`, kept
-    /// live alongside `boardReaderSettings` (see `settingsUpdatesTask`) so
-    /// `hasDeletableSelection` and `LocalFavoriteCardActions.standard(...)`
-    /// — both synchronous reads — see a change made from Settings without
-    /// waiting for an unrelated reload.
     @ObservationIgnored private(set) var smartMangaBulkDeleteEnabled = true
     @ObservationIgnored private var libraryUpdatesTask: Task<Void, Never>?
     @ObservationIgnored private var progressUpdatesTask: Task<Void, Never>?
@@ -255,12 +196,6 @@ final class FavoriteLibraryOrganizer {
             await self?.reload()
         }
         observeReadingProgressIfNeeded()
-        // Without this, toggling the new Smart Comic Mode settings UI while
-        // the Favorites tab is already loaded would leave the merged-card
-        // grouping stale until some unrelated favorite/progress/cover change
-        // happened to trigger a reload — the settings VALUE was always
-        // modeled/consumed correctly, but nothing here reacted to it
-        // changing live.
         settingsUpdatesTask = StoreChangeObservation.task(
             changes: { [store = settingsStore] in store.changes() },
             changeID: { [store = settingsStore] in store.changeID }
@@ -268,11 +203,6 @@ final class FavoriteLibraryOrganizer {
             await self?.reloadBoardReaderSettings()
             await self?.reloadFavoriteSettingsSnapshots()
         }
-        // Without this, renaming a manga directory from the manga reader's
-        // directory page would leave an already-open Favorites tab showing
-        // the old name/cover on a merged card until some unrelated
-        // favorite/progress/cover/settings change happened to trigger a
-        // full reload.
         if let mangaDirectoryStore {
             mangaDirectoryUpdatesTask = StoreChangeObservation.task(
                 changes: { [store = mangaDirectoryStore] in store.changes() },
@@ -291,8 +221,6 @@ final class FavoriteLibraryOrganizer {
         mangaDirectoryUpdatesTask?.cancel()
     }
 
-    // MARK: - Document access
-
     var categories: [FavoriteCategory] {
         document.categories
     }
@@ -310,15 +238,12 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    /// Current items also feed the root's visible-cover prefetch snapshot.
     var favoriteItems: [FavoriteItem] { document.items }
 
     @ObservationIgnored private var cachedTagAssociationCounts: [String: Int]?
 
-    /// Selection and search do not change associations. Reuse the counts
-    /// until the organizer receives another document, including after sync.
     var favoriteTagAssociationCounts: [String: Int] {
-        let items = document.items // Keep the observable document dependency.
+        let items = document.items
         if let cachedTagAssociationCounts { return cachedTagAssociationCounts }
         let counts = tagAssociationCounts(from: items)
         cachedTagAssociationCounts = counts
@@ -347,8 +272,6 @@ final class FavoriteLibraryOrganizer {
         return document.collections.first { $0.id == id }
     }
 
-    /// Whether the currently selected favorites can be removed from just this
-    /// category or collection (they all remain reachable elsewhere).
     var selectedFavoritesCanRemoveCurrentLocation: Bool {
         guard selection.selectedCollectionCount == 0 else { return false }
         return derived.cards.contains { card in
@@ -356,7 +279,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    /// Tag IDs shared by every selected favorite; seed for bulk tag editing.
     var commonTagIDsForSelection: Set<String> {
         let selectedIDs = expandedSelectionFavoriteIDs(selection.selectedFavoriteIDs)
         let selectedItems = document.items.filter { selectedIDs.contains($0.id) }
@@ -366,16 +288,12 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    // MARK: - Loading
-
     func load() async {
         observeReadingProgressIfNeeded()
         let loadedDocument: FavoriteLibraryDocument
         do {
             loadedDocument = try await libraryStore.load()
         } catch {
-            // Keep whatever the UI currently shows; an empty placeholder here
-            // would read as "all favorites gone".
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
@@ -426,16 +344,8 @@ final class FavoriteLibraryOrganizer {
 
     func reload() async {
         guard let loadedDocument = try? await libraryStore.load() else {
-            // Transient read failure: keep the current document on screen and
-            // let the next change notification retry.
             return
         }
-        // Only the Smart Comic Mode snapshot is refreshed here — unlike
-        // `load()`, `reload()` deliberately never re-applies
-        // `settings.favorites` (sort order/layout/etc.) so a background
-        // reload triggered by an unrelated favorite/progress/cover change
-        // can't clobber the sort order the user may have just changed live
-        // in this session.
         let settings = await settingsStore.load()
         boardReaderSettings = settings.boardReader
         mangaDirectoriesByTID = await resolveMangaDirectories(for: loadedDocument.items, boardReaderSettings: boardReaderSettings)
@@ -449,8 +359,6 @@ final class FavoriteLibraryOrganizer {
                !loadedDocument.collections.contains(where: { $0.id == selectedCollectionID && $0.categoryID == selectedCategoryID }) {
                 self.selectedCollectionID = nil
             }
-            // Tags removed by another device (WebDAV) must not linger as an
-            // invisible active filter.
             let validTagIDs = Set(loadedDocument.tags.map(\.id))
             if !filter.selectedTagIDs.isSubset(of: validTagIDs) {
                 filter.selectedTagIDs.formIntersection(validTagIDs)
@@ -477,8 +385,6 @@ final class FavoriteLibraryOrganizer {
                 if !Task.isCancelled, let self,
                    self.progressObservationGeneration == generation,
                    !LoadDiagnosticError.isCancellation(error) {
-                    // Keep the last valid snapshot on failure. A later load
-                    // can subscribe again instead of showing empty progress.
                     self.errorMessage = error.localizedDescription
                     self.errorDetails = LoadFailureDetails(error: error)
                 }
@@ -495,18 +401,6 @@ final class FavoriteLibraryOrganizer {
         refreshDerivedState()
     }
 
-    /// Re-derives only the Smart Comic Mode-dependent slice of state
-    /// (`boardReaderSettings`/`mangaDirectoriesByTID`/`coverLookup`'s
-    /// `.smartManga` slice) in response to *any*
-    /// `SettingsStore.changes()` element — mirroring `reload()`'s
-    /// deliberately narrower approach (see the comment at `reload()`):
-    /// this must never re-apply `settings.favorites` (sort order/layout/
-    /// selected category/collection), or an unrelated settings save made
-    /// elsewhere (including this organizer's own `persistViewPreferences`/
-    /// `persistNavigationState`) would clobber sort/filter state the user
-    /// may have just changed live in this session. Guarded on an actual
-    /// diff so unrelated settings saves (which also post this notification)
-    /// don't re-run the manga-directory batch query for no reason.
     private func reloadBoardReaderSettings() async {
         let settings = await settingsStore.load()
         guard settings.boardReader != boardReaderSettings else { return }
@@ -517,9 +411,6 @@ final class FavoriteLibraryOrganizer {
         scheduleMangaCoverBackfill(for: document.items)
     }
 
-    /// Refreshes the favorites settings read synchronously by the browse view
-    /// after Settings changes, so its menu, badge, and delete confirmation
-    /// reflect the latest preferences without waiting for an unrelated reload.
     private func reloadFavoriteSettingsSnapshots() async {
         let settings = await settingsStore.load()
         removeRemotePromptEnabled = settings.favorites.removeRemotePromptEnabled
@@ -532,21 +423,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    /// Re-derives the manga-directory-dependent slice of state
-    /// (`mangaDirectoriesByTID`/`coverLookup`'s `.smartManga` slice) in
-    /// response to `MangaDirectoryChangeObserving.changes()` -- e.g.
-    /// resolving a previously-unresolved manga favorite's directory for the
-    /// first time (`saveDirectory`), or renaming a directory from the manga
-    /// reader's directory page (`renameDirectory`). Without this, a newly-
-    /// resolved directory's merge/cover (or a rename's effect on a merged
-    /// card's displayed `cleanBookName`/`.smartManga` cover) would stay stale
-    /// in an already-open Favorites tab until some unrelated
-    /// favorite/progress/cover/settings change happened to trigger a
-    /// full reload.
-    ///
-    /// Reading progress follows its own database snapshot observation, which
-    /// also sees the directory identity transaction. Do not issue a second
-    /// progress query here or let a late manual read overwrite a newer snapshot.
     private func reloadMangaDirectories() async {
         if let store = mangaDirectoryStore {
             if let key = selectedMergedGroupKey,
@@ -569,9 +445,6 @@ final class FavoriteLibraryOrganizer {
         refreshDerivedState()
     }
 
-    // MARK: - Categories
-
-    /// Pushes one favorite item to Yamibo (card context menu action).
     func pushItemToYamibo(_ item: FavoriteItem) async {
         do {
             let repository = await makeFavoriteRepository()
@@ -640,8 +513,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    // MARK: - Collections
-
     func openCollection(id: String) {
         guard let collection = document.collections.first(where: { $0.id == id }) else { return }
         if selectedCategoryID != collection.categoryID {
@@ -704,13 +575,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    // MARK: - Merged smart-comic groups
-
-    /// Opens a smart card's "查看归档收藏" detail page, scoping `derived.cards`
-    /// (not `rootDerived`) to every individual favorite whose own effective
-    /// title (`FavoriteCardProjection.resolvedTitle`) currently matches
-    /// `cleanBookName` — one item for a still-solitary smart card, 2+ for an
-    /// actually merged one. Mirrors `openCollection(id:)` exactly.
     var selectedMergedGroupTitle: String? {
         guard let key = selectedMergedGroupKey else { return nil }
         return mangaDirectoriesByTID.values.first(where: { $0.id.rawValue == key })?.cleanBookName
@@ -730,7 +594,6 @@ final class FavoriteLibraryOrganizer {
         refreshDerivedState()
     }
 
-    /// Mirrors `closeCollection()` exactly.
     func closeMergedGroup() {
         selectedMergedGroupKey = nil
         unresolvedMergedGroupThreadIDs = nil
@@ -740,8 +603,6 @@ final class FavoriteLibraryOrganizer {
 
     private func resolveUnresolvedMergedGroupScope() {
         guard var threadIDs = unresolvedMergedGroupThreadIDs, let key = selectedMergedGroupKey else { return }
-        // Keep the unresolved page live for newly favorited chapters, while
-        // retaining its previous members after their display grouping changes.
         let currentMembers = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
             in: document.items,
             mangaDirectoriesByTID: mangaDirectoriesByTID,
@@ -756,14 +617,10 @@ final class FavoriteLibraryOrganizer {
         guard !survivingMembers.isEmpty else { return }
         let directories = survivingMembers.compactMap { mangaDirectoriesByTID[$0.target.threadID ?? ""] }
         let ids = Set(directories.map(\.id))
-        // A guessed title can cover several real works. Neither partially
-        // resolved members nor conflicting IDs justify selecting one of them.
         guard directories.count == survivingMembers.count, ids.count == 1, let id = ids.first else { return }
         selectedMergedGroupKey = id.rawValue
         unresolvedMergedGroupThreadIDs = nil
     }
-
-    // MARK: - Tags
 
     @discardableResult
     func createTag(name: String, color: FavoriteTagColor = .gray) async -> FavoriteTag? {
@@ -791,13 +648,6 @@ final class FavoriteLibraryOrganizer {
         filter.selectedTagIDs.remove(tagID)
     }
 
-    /// Reachable from a card's context-menu "标签" button, including a smart
-    /// card's — that button is not gated on `isModeOnMangaThread` (see
-    /// `LocalFavoriteCardContextMenu`), so `itemID` can be a smart card's
-    /// representative item id. Routed through `expandedSelectionFavoriteIDs`
-    /// so editing a smart card's tags from this single-item path applies to
-    /// every favorite archived under it, exactly like `updateTagsForSelection`
-    /// does for a bulk selection.
     func updateTags(for itemID: String, tagIDs: Set<String>) async {
         let expandedIDs = expandedSelectionFavoriteIDs([itemID])
         await commit { document in
@@ -820,8 +670,6 @@ final class FavoriteLibraryOrganizer {
             document.reorderTags(orderedIDs: orderedIDs)
         }
     }
-
-    // MARK: - Items
 
     func deleteItem(_ item: FavoriteItem, scope: LocalFavoriteDeleteScope, removeRemote: Bool) async {
         do {
@@ -860,8 +708,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    // MARK: - Display and sort preferences
-
     func updateLayoutMode(_ value: FavoriteLibraryLayoutMode) {
         guard value != display.layoutMode else { return }
         let previous = display.layoutMode
@@ -873,9 +719,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    /// Commits a grid card scale (pinch end on the favorites page). Values
-    /// are clamped here so gesture math never persists an out-of-range or
-    /// non-finite multiplier.
     func updateGridCardScale(_ value: Double) {
         let clamped = FavoriteLibrarySettings.clampGridCardScale(value)
         guard clamped != display.gridCardScale else { return }
@@ -921,14 +764,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    // MARK: - Derivation
-
-    /// While true, `refreshDerivedState()` records that a refresh is due
-    /// instead of running it. `load()`/`reload()` assign several
-    /// derivation inputs in sequence (filter, document, category,
-    /// collection), each of whose `didSet` requests a refresh — without
-    /// coalescing, one load runs the full-library derivation 4–6 times for
-    /// one visible outcome.
     @ObservationIgnored private var isCoalescingDerivedRefresh = false
     @ObservationIgnored private var needsCoalescedDerivedRefresh = false
     @ObservationIgnored private var isBookPresentationActive = false
@@ -937,8 +772,6 @@ final class FavoriteLibraryOrganizer {
     func setBookPresentationActive(_ active: Bool) {
         isBookPresentationActive = active
         if active {
-            // No hidden full-history queries while reading. A fresh initial
-            // snapshot on return also catches deletions and identity changes.
             progressObservationGeneration &+= 1
             progressUpdatesTask?.cancel()
             progressUpdatesTask = nil
@@ -957,7 +790,6 @@ final class FavoriteLibraryOrganizer {
     }
 
     private func withCoalescedDerivedRefresh(_ mutations: () -> Void) {
-        // A nested batch folds into the outer one.
         if isCoalescingDerivedRefresh {
             mutations()
             return
@@ -972,8 +804,6 @@ final class FavoriteLibraryOrganizer {
     }
 
     func refreshDerivedState() {
-        // Reading progress can reorder/remove the source card. Keep the
-        // displayed shelf intact until the reverse zoom has landed.
         guard !isBookPresentationActive else {
             needsBookPresentationRefresh = true
             return
@@ -996,14 +826,6 @@ final class FavoriteLibraryOrganizer {
                 memberScopeGroupKey: selectedMergedGroupKey,
                 memberScopeThreadIDs: unresolvedMergedGroupThreadIDs
             )
-        // `derived` can now be scoped by an open merged group even while no
-        // collection is open, so the old `selectedCollectionID == nil`
-        // shortcut alone is no longer sufficient — it must also gate on
-        // `selectedMergedGroupKey` (see `isBrowsingUnscopedRoot`),
-        // or `rootDerived` would silently inherit the merged-group scope in
-        // that case (opening a merged group's detail page directly from the
-        // root, not from inside a collection) and defeat the whole point of
-        // `rootDerived`.
         let rootInputs: LocalFavoriteLibraryDerivation.Inputs? = isBrowsingUnscopedRoot
             ? nil
             : LocalFavoriteLibraryDerivation.Inputs(
@@ -1016,8 +838,6 @@ final class FavoriteLibraryOrganizer {
                     textCoverForcedKeys: coverLookup.forcedKeys,
                     mangaDirectoriesByTID: mangaDirectoriesByTID,
                     boardReaderSettings: boardReaderSettings
-                    // `memberScopeGroupKey` intentionally omitted (nil
-                    // default): `rootDerived` must never narrow to this scope.
             )
         derivationGeneration &+= 1
         let generation = derivationGeneration
@@ -1036,10 +856,6 @@ final class FavoriteLibraryOrganizer {
         )
     }
 
-    // MARK: - Commit
-
-    /// Applies local edits atomically against the latest persisted document.
-    /// Network-backed commands commit separately through FavoriteCommands.
     @discardableResult
     func commit<Result: Sendable>(
         _ transform: @escaping @Sendable (inout FavoriteLibraryDocument) throws -> Result
@@ -1073,8 +889,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    // MARK: - Persistence
-
     private func persistNavigationState() {
         guard document.categories.contains(where: { $0.id == selectedCategoryID }) else { return }
         let categoryID = selectedCategoryID
@@ -1093,8 +907,6 @@ final class FavoriteLibraryOrganizer {
         }
     }
 
-    /// Persists the current view preferences; on failure runs `rollback` and
-    /// reports the error.
     private func persistViewPreferences(
         mutate: @escaping @Sendable (inout AppSettings) -> Void,
         rollback: @escaping @MainActor () -> Void

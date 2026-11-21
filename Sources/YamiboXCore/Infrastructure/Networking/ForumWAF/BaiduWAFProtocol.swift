@@ -1,6 +1,5 @@
 import Foundation
 
-/// Baidu NOX owns challenge evidence and clearance, not request retry policy.
 enum BaiduWAFProtocol {
     private static let clearanceName = "nox_jst_v1"
     private static let markers = ["window.__noxexpire", "nox_jst_v1", "gangplank", "/nox"]
@@ -13,7 +12,6 @@ enum BaiduWAFProtocol {
         guard response.statusCode == 405 else { return false }
         if response.value(forHTTPHeaderField: "Server")?.localizedCaseInsensitiveContains("baidu_waf") == true
             || response.value(forHTTPHeaderField: "bdwaf-request-id")?.isEmpty == false { return true }
-        // The bounded prefix may end mid-scalar. Preserve earlier ASCII evidence.
         let body = String(decoding: prefix.prefix(ForumWAFResponseClassifier.maximumBodyBytes), as: UTF8.self).lowercased()
         return markers.filter { body.contains($0) }.count >= 2
     }

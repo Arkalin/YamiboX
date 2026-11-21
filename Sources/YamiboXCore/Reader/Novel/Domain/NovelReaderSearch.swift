@@ -223,8 +223,6 @@ package enum NovelReaderSearchEngine {
                 ))
 
                 searchStart = endOffset.rawValue
-                // Show the first result promptly, then avoid one actor hop and
-                // observable collection invalidation for every remaining hit.
                 if !hasDeliveredFirstMatch || batch.count == batchSize {
                     await onMatches(batch)
                     batch.removeAll(keepingCapacity: true)
@@ -245,9 +243,6 @@ package enum NovelReaderSearchEngine {
 
         init(ranges: [NovelReaderSearchSurfaceRange]) {
             self.ranges = ranges
-            // Runtime ranges normally follow document order without overlaps.
-            // Keep the original first-containing/nearest behavior for any
-            // irregular snapshot, including empty or overlapping ranges.
             canAdvanceInOrder = ranges.allSatisfy { $0.endOffset > $0.startOffset }
                 && zip(ranges, ranges.dropFirst()).allSatisfy { $0.0.endOffset <= $0.1.startOffset }
         }
@@ -257,8 +252,6 @@ package enum NovelReaderSearchEngine {
                 return ranges.first(where: { $0.contains(offset) })
                     ?? ranges.min(by: { $0.distance(to: offset) < $1.distance(to: offset) })
             }
-            // Search matches advance monotonically in UTF-16 coordinates, so
-            // each page range is visited at most once for the entire segment.
             while nextIndex < ranges.count, ranges[nextIndex].endOffset <= offset {
                 nextIndex += 1
             }
@@ -267,7 +260,6 @@ package enum NovelReaderSearchEngine {
             let previous = nextIndex > 0 ? ranges[nextIndex - 1] : nil
             guard let previous else { return next }
             guard let next else { return previous }
-            // The old min(by:) keeps the first range when distances tie.
             return previous.distance(to: offset) <= next.distance(to: offset) ? previous : next
         }
     }

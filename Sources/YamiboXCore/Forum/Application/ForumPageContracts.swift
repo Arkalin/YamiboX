@@ -1,6 +1,5 @@
 import Foundation
 
-/// Feature-facing I/O capabilities shared by assembly and presentation.
 public protocol ForumHomePageLoading: Sendable {
     func cachedForumHome(allowExpired: Bool) async -> ForumHomePage?
     func fetchForumHome(preferCache: Bool) async throws -> ForumHomePage

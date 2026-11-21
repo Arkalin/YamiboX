@@ -29,8 +29,6 @@ extension View {
         }
     }
 
-    /// Uses the native spinner for pull-to-refresh and a top overlay for
-    /// refreshes started elsewhere, never displaying both at once.
     func refreshableWithTopIndicator(
         isRefreshing: Bool,
         action: @escaping @MainActor @Sendable () async -> Void

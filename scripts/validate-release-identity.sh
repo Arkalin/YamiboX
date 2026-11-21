@@ -39,8 +39,6 @@ esac
 
 git check-ref-format "refs/tags/${release_tag}" >/dev/null || fail "invalid release tag: ${release_tag}"
 
-# Resolve the same target/configuration that the archive command will use; do
-# not infer the version from an arbitrary textual occurrence in project.pbxproj.
 settings_json="$(
     xcodebuild \
         -project "$project_path" \

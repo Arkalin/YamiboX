@@ -1,13 +1,9 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Old names are intentionally confined to upgrade code and frozen migrations.
 enum DownloadNamingMigration {
     static func register(in migrator: inout DatabaseMigrator) {
-        // Keep FK enforcement enabled while renaming: Apple's SQLite can use legacy
-        // ALTER TABLE behavior, which otherwise leaves references pointing at old names.
         migrator.registerMigration("downloads.v1.naming", foreignKeyChecks: .immediate) { db in
-            // Identity v1 must finish against its original schema and payload path first.
             if let path = try String.fetchOne(db, sql: "SELECT file FROM pragma_database_list WHERE name = 'main'"), !path.isEmpty {
                 try migrateFiles(root: URL(fileURLWithPath: path).deletingLastPathComponent())
             }
@@ -15,7 +11,6 @@ enum DownloadNamingMigration {
                 let oldName = newName.replacingOccurrences(of: "download_", with: "offline_cache_")
                 try db.rename(table: oldName, to: newName)
             }
-            // SQLite updates foreign keys on table rename, but keeps index names.
             let indexes = try Row.fetchAll(db, sql: "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL")
             for index in indexes {
                 let name: String = index["name"]
@@ -43,8 +38,6 @@ enum DownloadNamingMigration {
             throw YamiboPersistenceError(context: "Legacy download directory is not a directory")
         }
         if !fileManager.fileExists(atPath: destination.path) {
-            // Both paths are siblings on the same volume. The normal upgrade can
-            // atomically move gigabytes of downloads without copying or extra disk space.
             var excludedSource = old
             var values = URLResourceValues()
             values.isExcludedFromBackup = true
@@ -86,8 +79,6 @@ enum DownloadNamingMigration {
             }
         }
         if let enumerationError { throw enumerationError }
-        // Keep all originals until every copy verifies. A crash leaves a safely retryable
-        // pair of directories; no in-place overwrite or database reference rewrite is needed.
         for file in files {
             if !fileManager.fileExists(atPath: file.target.path) {
                 let temporary = file.target.deletingLastPathComponent().appendingPathComponent(".migration-\(UUID().uuidString)")

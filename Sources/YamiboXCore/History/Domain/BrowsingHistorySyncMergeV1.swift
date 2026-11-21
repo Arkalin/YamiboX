@@ -1,8 +1,5 @@
 import Foundation
 
-/// Versioned rules shared by local visits and synchronization, not a wire payload.
-/// history.v3.webdav depends on these exact rules. Future merge/retention changes
-/// must introduce a new version rather than changing an already shipped migration.
 enum BrowsingHistorySyncMergeV1 {
     static let maximumRecords = 2000
 

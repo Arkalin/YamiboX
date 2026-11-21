@@ -4,11 +4,6 @@ import YamiboXCore
 #if os(iOS)
 import UIKit
 
-/// How the paged viewport slices content into collection items: one surface
-/// per page, or presentation spreads pairing surfaces on wide layouts. The
-/// two modes previously lived in near-identical twin viewports whose shared
-/// ~280 lines (gestures, paging driver wiring, scroll delegation) had to be
-/// kept in sync by hand; only the item count and per-cell content differ.
 enum NovelReaderPagedItemSource: Equatable {
     case surfaces
     case spreads([NovelReaderPresentationSpread])
@@ -125,8 +120,6 @@ struct NovelReaderPagedCollectionViewport: UIViewRepresentable {
         collectionView.addGestureRecognizer(discretePagePanRecognizer)
         collectionView.onLayoutSubviews = { [weak coordinator, weak collectionView] in
             guard let coordinator, let collectionView else { return }
-            // Layout can run inside the SwiftUI render commit; defer callbacks
-            // published by the selection scroll out of the update transaction.
             coordinator.callbackScheduler.performViewUpdate {
                 _ = coordinator.scrollToPendingSelectionIfPossible(in: collectionView, animated: false)
             }

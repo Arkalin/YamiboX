@@ -1,19 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Cover with a text placeholder: when there is no cover URL or it fails to
-/// load, the full title renders bold over a tinted background, its font size
-/// stepped down by title length (Android CoverTextFallback parity).
-///
-/// Sizing goes through a `GeometryReader` rather than
-/// `.frame(maxWidth: .infinity, maxHeight: .infinity)`: inside a List row
-/// whose tap target is a `Button` label, that greedy frame style can resolve
-/// against the button's ideal-size measurement pass instead of the final
-/// layout size, letting the cover balloon past its intended box (real images
-/// bleeding outside their frame; the text fallback stretching to the row's
-/// full width). `GeometryReader` always reports the size it was actually
-/// proposed, so the explicit `.frame(width:height:)` callers apply is honored
-/// exactly.
 struct BookCoverThumbnail: View {
     let source: YamiboImageSource?
     let title: String

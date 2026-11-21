@@ -42,8 +42,6 @@ extension UserSpaceHTMLParser {
             guard !changes.isEmpty else { throw creditLogParsingError() }
             let description = try creditDescription(in: descriptionElement)
 
-            // The touch template exposes no log ID. Keep identical transactions,
-            // disambiguating them by occurrence rather than dropping duplicates.
             let seed = [operation, columns[1].normalizedText(), description.text, timeText]
                 + description.links.map { $0.url.absoluteString }
             let digest = SHA256.hash(data: Data(seed.joined(separator: "\u{1F}").utf8))

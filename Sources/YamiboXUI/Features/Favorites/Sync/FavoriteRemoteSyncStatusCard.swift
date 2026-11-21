@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Compact remote sync status card pinned above the favorites list.
 struct FavoriteRemoteSyncStatusCard: View {
     let snapshot: FavoriteRemoteSyncSnapshot
     let onOpen: () -> Void
@@ -63,8 +62,6 @@ struct FavoriteRemoteSyncStatusCard: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    /// Coarse overall progress across the five phases: fetch 5–35%,
-    /// import 35–75%, upload 75–95%, reconcile 95%.
     private var progressValue: Double {
         func fraction(_ completed: Int, _ total: Int) -> Double {
             total > 0 ? min(1, Double(completed) / Double(total)) : 0

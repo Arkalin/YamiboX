@@ -1,8 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// The system picker edits a local draft. The containing sheet supplies swipe
-/// dismissal and commits once, without adding another close button.
 struct ThemeColorPicker: UIViewControllerRepresentable {
     @Binding var colorHex: UInt32
 

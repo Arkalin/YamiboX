@@ -136,8 +136,6 @@ public struct NovelReaderProgressProjection: Hashable, Sendable {
         )
     }
 
-    /// The structure has already normalized these arrays. Do not funnel this
-    /// through the public initializer, which defensively maps every index.
     package init(
         readingMode: ReaderReadingMode,
         usesTwoPageSpread: Bool,

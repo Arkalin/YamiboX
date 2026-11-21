@@ -1,6 +1,5 @@
 import Foundation
 
-/// Compatibility for URLs emitted by the existing Docker Discuz installation.
 enum YamiboLocalForumAdapter {
     static func resourceURL(_ url: URL, baseURL: URL, purpose: YamiboResourceURLPurpose) -> URL? {
         guard url.path == "/uc_server/avatar.php" else { return nil }
@@ -11,7 +10,6 @@ enum YamiboLocalForumAdapter {
             components.port = baseURL.port
             return components.url
         }
-        // UCenter selects the avatar by query parameters, not by path.
         return purpose == .profileImage ? url : nil
     }
 }

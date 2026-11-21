@@ -30,27 +30,6 @@ enum ReadingOpenOrigin: Sendable {
     }
 }
 
-/// Resolves a browsing-history row into a concrete open target, mirroring
-/// `LocalFavoriteOpenTargetResolver`'s resume semantics per content form.
-///
-/// Which reader opens follows the board's *current* 阅读方式 configuration
-/// (pluggable-reader-config R11/R13), through the same effective category the
-/// history page displays (`BrowsingHistoryEntry.category(boardReader:)`): a
-/// configured entry dictates the reader — 普通 opens the plain thread page,
-/// 小说 the novel reader, 漫画 the manga path with the smart bit queried live
-/// — known boards with no entry default to the plain reader, while unknown
-/// ownership keeps the stored identity's reader. The shared workflow first
-/// refreshes the row's identity and position to that same configuration:
-///
-/// - Normal threads open at page 1 with no explicit target — the thread
-///   reader itself restores the saved page + floor anchor on every entrance
-///   (browsing-history decision #8), so history adds nothing here.
-/// - Novels resume via their `.novelThread` progress record; a row recorded
-///   under another mode simply has none yet and starts fresh.
-/// - Manga: stored `.mangaTitle` rows keep their directory-level resume
-///   logic; every other stored identity goes through the single-thread
-///   logic, which itself upgrades to the directory level when the board is
-///   currently smart-on (decision #13).
 struct ReadingOpenTargetResolver {
     let readingProgressStore: ReadingProgressStore
     let mangaDirectoryStore: any MangaDirectoryPersisting
@@ -62,9 +41,6 @@ struct ReadingOpenTargetResolver {
         fallbackNovelView: Int? = nil,
         fallbackMangaView: Int = 1
     ) async throws -> BrowsingHistoryOpenTarget? {
-        // One settings snapshot backs both the category dispatch and the
-        // manga smart bit, so a concurrent configuration change can't make
-        // them disagree within a single resolve.
         var entry = entry
         let snapshot = try await historyWorkflow.snapshot()
         let boardReader = snapshot.boardReader
@@ -129,12 +105,6 @@ struct ReadingOpenTargetResolver {
         }
     }
 
-    /// Single-thread manga open (stored `.mangaThread` rows — recorded while
-    /// the board was off — plus normal/novel-recorded rows whose board is
-    /// configured 漫画 now). If the board is smart-on *now*, resume at the
-    /// directory level just like a `.mangaThread` favorite would; the next
-    /// mode-on visit also absorbs such rows into directory-level ones
-    /// (decision #13).
     private func mangaThreadTarget(
         threadID: String,
         entry: BrowsingHistoryEntry,
@@ -167,7 +137,6 @@ struct ReadingOpenTargetResolver {
         )
     }
 
-    /// Directory-level (`.mangaTitle`) row open.
     private func mangaTitleTarget(
         directoryID: MangaDirectoryID,
         cleanBookName: String,
@@ -181,10 +150,6 @@ struct ReadingOpenTargetResolver {
             return nil
         }
         guard smartModeEnabled else {
-            // Board toggled off since this directory-level row was written:
-            // route by the current switch (PRD compatibility note) — open the
-            // row's current chapter as a plain single thread reading its own
-            // `.mangaThread` progress.
             let ownThreadProgress = try await readingProgressStore.load(for: .mangaThread(threadID: chapterTID))?.manga
             return .mangaReader(
                 MangaLaunchContext(
@@ -200,10 +165,6 @@ struct ReadingOpenTargetResolver {
                 )
             )
         }
-        // Progress can have been cleared since this row was written; the
-        // chapter's real `view` still matters for multi-view threads, so
-        // fall back to the directory's own metadata like the favorites
-        // resolver does.
         let fallbackChapterView: Int
         if directoryProgress == nil,
            let directory = try? await mangaDirectoryStore.directory(containingTID: chapterTID) {

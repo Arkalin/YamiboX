@@ -21,8 +21,6 @@ struct ForumBlogEditorView: View {
     }
 }
 
-/// Blog settings follow the server's available controls and choices, while the
-/// layout and conditional privacy controls belong to the native composer.
 struct ForumBlogEditorFields: View {
     let form: ForumForm
     @Binding var values: [String: [String]]

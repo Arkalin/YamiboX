@@ -2,27 +2,13 @@ import Foundation
 import YamiboXCore
 
 enum FavoriteLaunchMode: Sendable {
-    /// Card taps follow the saved preference; explicit reading actions do not.
     case preferred
     case start
     case resume
 }
 
-/// How a `.mangaThread` favorite chooses between Smart Comic Mode's
-/// merged-directory reading and plain single-thread reading when opened.
-/// Orthogonal to `FavoriteLaunchMode` (resume/start applies to either scope).
 enum FavoriteMangaReadingScope: Sendable {
-    /// Follow the favorite's board switch: merged-directory reading when
-    /// Smart Comic Mode is on, single-thread reading when it's off.
     case boardDefault
-    /// Force plain single-thread reading regardless of the board switch.
-    /// The "查看归档收藏" archive page opens its members this way: the page
-    /// deliberately surfaces each archived favorite as an ordinary
-    /// non-smart card (see `LocalFavoriteLibraryProjection.cards(in:query:...)`'s
-    /// member-scope branch), so tapping one must read exactly that thread —
-    /// opening via the board switch instead would bounce every member back
-    /// into the same merged directory, making the per-member entries
-    /// indistinguishable.
     case singleThread
 }
 

@@ -13,7 +13,6 @@ extension EnvironmentValues {
     @Entry var yamiboImagePipeline: YamiboUIImagePipeline? = nil
 }
 
-/// Shared by the app's decoded pipeline and its storage-settings commands.
 public final class YamiboUIImageMemoryCache: YamiboOrdinaryImageCacheClearing {
     fileprivate let cache: ImageCache
 
@@ -61,9 +60,6 @@ struct YamiboImageThumbnail: Hashable, Sendable {
     }
 }
 
-/// A decoded image ready to display, plus the original bytes when the payload
-/// turned out to be animated (GIF, APNG, animated WebP/HEICS) so callers that
-/// can play animations have something to play. Still images carry no bytes.
 struct YamiboDisplayImage {
     var image: YamiboPlatformImage
     var animatedData: Data?
@@ -74,11 +70,6 @@ struct YamiboDisplayImage {
     }
 }
 
-/// Makes attached bytes mean exactly one thing: this payload animates, and
-/// here is what to play. The system decoder collapses every image to a single
-/// still frame, and Nuke's default decoder keeps the bytes of GIFs alone — of
-/// static ones too, while APNG and animated WebP keep none. So this attaches
-/// what that rule misses and drops what it over-keeps.
 struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
     let base: any ImageDecoding
     var preservesAnimatedData = true
@@ -98,9 +89,6 @@ struct YamiboAnimatedDataPreservingDecoder: ImageDecoding {
     }
 }
 
-/// Thin UI layer over `YamiboImagePipeline`: decodes bytes into `UIImage`
-/// with an in-memory cache. All byte loading —
-/// offline lookup, session headers, disk cache — lives in the Core pipeline.
 @MainActor
 @Observable
 public final class YamiboUIImagePipeline {
@@ -119,8 +107,6 @@ public final class YamiboUIImagePipeline {
     private var verificationRecoveryRevisions: [String: UUID] = [:]
     @ObservationIgnored private var loadObservation: Task<Void, Never>?
 
-    /// Recover failed views when another consumer loads the same image, even
-    /// when its decoded size exceeds the memory cache's single-entry limit.
     func successfulLoads(for source: YamiboImageSource, thumbnail: YamiboImageThumbnail? = nil) -> AnyPublisher<YamiboDisplayImage, Never> {
         loadedImages
             .filter { $0.0.cacheKey == source.cacheKey && $0.0.purpose == source.purpose && $0.1 == thumbnail }
@@ -207,8 +193,6 @@ public final class YamiboUIImagePipeline {
         pipeline.cache.cachedImage(for: nukeRequest(for: source, thumbnail: thumbnail, context: context)).map(YamiboDisplayImage.init(container:))
     }
 
-    /// A preview has its own decoded key, while the Core request still uses
-    /// the same source/byte-cache key as the original image.
     func cachedPreviewImage(for source: YamiboImageSource, maxPixelSize: Int) -> UIImage? {
         pipeline.cache.cachedImage(for: nukeRequest(for: source, maxPixelSize: maxPixelSize))?.image
     }
@@ -229,9 +213,6 @@ public final class YamiboUIImagePipeline {
         }
     }
 
-    /// Do not speculatively decode images that cannot survive the decoded
-    /// cache's entry limit. The original bytes are still warmed for display;
-    /// the visible page alone pays for its full-resolution decode.
     func prefetchImage(for source: YamiboImageSource) async throws {
         guard cachedImage(for: source) == nil else { return }
         let context = try await dataLoader.loadContext(for: source)
@@ -244,9 +225,6 @@ public final class YamiboUIImagePipeline {
         }.value
         try Task.checkCancellation()
         guard shouldDecode else {
-            // A failed inline view may be in the novel prefetch window. Let
-            // that consumer retry from the warmed bytes, without decoding an
-            // uncacheable original just to discard it here.
             prefetchedBytes.send(source.cacheKey)
             return
         }
@@ -273,8 +251,6 @@ public final class YamiboUIImagePipeline {
               let width = properties[kCGImagePropertyPixelWidth] as? Double,
               let height = properties[kCGImagePropertyPixelHeight] as? Double,
               width > 0, height > 0 else { return false }
-        // Reserve a conservative 64-byte row alignment and RGBA output even
-        // for grayscale input. Multi-frame payloads also retain their bytes.
         let depth = properties[kCGImagePropertyDepth] as? Double ?? 8
         let bytesPerPixel = max(4, 4 * ceil(depth / 8))
         let rowBytes = ceil(width * bytesPerPixel / 64) * 64
@@ -309,8 +285,6 @@ public final class YamiboUIImagePipeline {
             try Task.checkCancellation()
             guard await dataLoader.isCurrent(context, source: source) else { throw CancellationError() }
             loadedImages.send((source, thumbnail, image))
-            // Other failed variants may retry the shared bytes, but must not
-            // adopt this variant's decoded image (especially a cover poster).
             prefetchedBytes.send(source.cacheKey)
             return image
         } catch {
@@ -318,7 +292,6 @@ public final class YamiboUIImagePipeline {
         }
     }
 
-    /// Byte-cache clearing belongs to the Core pipeline's composition root.
     public func clearCache() async {
         pipeline.cache.removeAll()
     }
@@ -334,9 +307,6 @@ public final class YamiboUIImagePipeline {
             },
             options: [.disableDiskCache]
         )
-        // Cover bytes have an independent lifetime. A reader's decoded image
-        // must not bypass retaining new artwork, nor may a pre-clear decoded
-        // cover skip the new generation's byte load.
         if source.purpose == .cover {
             let revision = context?.imageRevision ?? imageRevisions[source.cacheKey] ?? requestEpoch
             imageRequest.imageID = "cover:\(revision.uuidString):\(source.cacheKey)"
@@ -398,7 +368,6 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
     ) {
         self.source = source
         self.animates = animates
-        // Thumbnail decodes are static posters; playback needs original bytes.
         self.thumbnail = animates ? nil : thumbnail
         self.injectedPipeline = pipeline
         self.content = content
@@ -526,8 +495,6 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             didFail = true
             return
         }
-        // Keep a cached poster visible while the pipeline validates the load
-        // context and reports decoded-cache recovery to the cover policy.
         apply(pipeline.cachedDisplayImage(for: source, thumbnail: thumbnail))
         didFail = false
         let verificationRevision = pipeline.verificationRecoveryRevision(for: source)
@@ -543,8 +510,6 @@ struct YamiboRemoteImage<Content: View, Placeholder: View, Failure: View>: View 
             guard !Task.isCancelled else { return }
             loadedIdentity = identity
             didFail = true
-            // The notification may arrive just before this task reports its
-            // failure. Consume that recovery without waiting for another one.
             if let recovered = pipeline.verificationRecoveryRevision(for: source), recovered != verificationRevision {
                 pendingRecoveryRevision = recovered
                 attempt += 1

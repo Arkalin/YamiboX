@@ -1,0 +1,7 @@
+# Keep reader font registration process-local and recoverable
+
+[ReaderFontFileRegistrar](../../Sources/YamiboXUI/Features/Reader/Novel/TextKit/ReaderFontFileRegistrar.swift) inspects app-private files and registers them at process scope; reader fonts need no system installation. The registrar is off the main actor so disk and font-service work do not block picker dismissal. Only font metadata, not Core Text objects, crosses back to the UI.
+
+[ReaderFontLibrary](../../Sources/YamiboXUI/Features/Reader/Novel/TextKit/ReaderFontLibrary.swift) disallows mutations if the index could not be read: an empty in-memory view must not overwrite users' data. Collection registration can partially succeed, so failed restoration attempts to unregister those faces before a later repair. Do not delete the source of a registration that could not be undone. On deletion, save the reduced index before removing the file so a failed index write leaves the file available for recovery; if file removal fails, attempt to restore the previous index and registration.
+
+The picker offers the built-in PingFang fonts and imported files, but the resolver retains old curated IDs for settings compatibility. [Standalone layout](../../Sources/YamiboXUI/Features/Reader/Novel/TextKit/NovelAttributedTextFactory.swift) can run without a prepared library and falls back through the requested installed family and PingFang before using a generic system face.

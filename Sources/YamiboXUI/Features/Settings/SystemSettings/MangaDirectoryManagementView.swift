@@ -1,12 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Flat list of manga directories (smart-comic grouping index entries) with
-/// per-directory swipe-delete and a select-mode bottom bar for batch delete.
-/// Selecting every row then deleting is how this screen supports "clear
-/// all" — mirrors `DownloadManagementView`, minus its per-entry
-/// drill-down screen (a directory has no sub-items worth managing
-/// individually here).
 struct MangaDirectoryManagementView: View {
     let viewModel: MangaDirectoryManagementViewModel
 

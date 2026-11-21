@@ -2,9 +2,6 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// A single selectable text container handles authored paragraph metrics and
-/// ruby. TextKit lays out the base text; annotations never become unbreakable
-/// SwiftUI subviews or replacement characters in copied text.
 struct ForumThreadRichTextBlockView: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.yamiboImagePipeline) private var pipeline
@@ -102,8 +99,6 @@ private struct ForumThreadNativeTextView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onURLTap: onURLTap) }
 
     func makeUIView(context: Context) -> UITextView {
-        // This explicit TextKit 1 stack supplies glyph geometry for ruby while
-        // preserving UIKit selection, links, accessibility and paragraph layout.
         let storage = NSTextStorage()
         let layout = ForumThreadRubyLayoutManager()
         let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
@@ -146,8 +141,6 @@ private struct ForumThreadNativeTextView: UIViewRepresentable {
             coordinator.imageSize = imageSize
             coordinator.images = images
             coordinator.attachments = [:]
-            // Capture TextKit's actual attachment instances once. Frame changes
-            // mutate only their images, never the selectable text or its metrics.
             view.textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: text.length)) { value, range, _ in
                 guard let attachment = value as? ForumThreadInlineAttachment,
                       let url = attachment.sourceURL else { return }

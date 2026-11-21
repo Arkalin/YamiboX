@@ -20,8 +20,6 @@ public extension DownloadQueueControlling {
 
 extension DownloadQueueExecutor: DownloadQueueControlling {}
 
-/// State and commands shared by download management and both readers' sheets, so none of them
-/// have to carry unrelated home-screen state just to show the queue.
 @MainActor
 @Observable
 final class DownloadQueueViewModel {
@@ -94,8 +92,6 @@ final class DownloadQueueViewModel {
         await refresh()
     }
 
-    /// A view task owns heavy queue projection only for its visible lifetime.
-    /// A nested owner screen can overlap the root screen without stopping updates.
     func loadWhileVisible() async {
         visibleConsumers += 1
         defer {
@@ -163,7 +159,6 @@ final class DownloadQueueViewModel {
                 works: works,
                 mangaDirectoriesByOwnerName: directoriesByOwnerName
             )
-            // Publish only after every required read succeeds.
             groups = projection.groups.map(DownloadQueueOwnerGroup.init(group:))
             entryCount = projection.unfinishedCount
             summaryFailedCount = works.filter { $0.state == .failed }.count
@@ -310,9 +305,6 @@ final class DownloadQueueViewModel {
             return injectedController
         }
 
-        // Composition-owned executors are scoped to the current account
-        // generation. This model can outlive that scope, so reacquire one for
-        // each command instead of retaining a retired executor.
         return await dependencies.makeDownloadQueueExecutor()
     }
 

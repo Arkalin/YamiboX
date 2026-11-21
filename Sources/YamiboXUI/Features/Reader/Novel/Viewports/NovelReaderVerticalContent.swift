@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Owns scroll-view wiring; the root receives only user interaction events.
 struct NovelReaderVerticalContent: View {
     let model: NovelReaderViewModel
     let layout: NovelReaderLayout

@@ -45,7 +45,6 @@ private struct ForumThreadTableGrid: View {
 
 private struct ForumThreadTableGridPlacement {
     struct Cell: Identifiable {
-        // Coordinates identify cells in this immutable parsed table, including empty cells.
         let id: String
         let row: Int
         let column: Int
@@ -106,7 +105,6 @@ private struct ForumThreadTableLayout: Layout {
     private func rowHeights(width: CGFloat, subviews: Subviews) -> [CGFloat] {
         let columnWidth = width / CGFloat(grid.columnCount)
         var heights = Array(repeating: CGFloat(0), count: grid.rowCount)
-        // Solve ordinary rows first, then distribute the extra height required by spanning cells.
         for index in grid.cells.indices.sorted(by: { grid.cells[$0].rowSpan < grid.cells[$1].rowSpan }) where index < subviews.count {
             let cell = grid.cells[index]
             let size = subviews[index].sizeThatFits(ProposedViewSize(width: CGFloat(cell.columnSpan) * columnWidth, height: nil))

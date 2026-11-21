@@ -11,12 +11,8 @@ extension DownloadStore {
         return try String.fetchOne(db, sql: "SELECT name FROM manga_identities WHERE id = ?", arguments: [canonical]) ?? fallback ?? key
     }
 
-    /// Batch display readers need names and redirects, not the registry's
-    /// potentially much larger historical-alias collection.
     static func downloadMangaIdentitySnapshot(in db: Database) throws -> DownloadMangaIdentitySnapshot {
         var result = DownloadMangaIdentitySnapshot()
-        // Scalar String fetches coerced SQLite values; cached Row decoding is
-        // stricter, so keep that conversion for historical title/redirect data.
         for row in try Row.fetchAll(db, sql: "SELECT CAST(id AS BLOB) AS raw_id, CAST(canonical_id AS TEXT) AS canonical_id FROM manga_identity_redirects WHERE typeof(id) = 'text'") {
             result.redirects[row["raw_id"]] = row["canonical_id"]
         }
@@ -27,9 +23,6 @@ extension DownloadStore {
     }
 }
 
-/// SQLite BINARY text keys distinguish NFC/NFD strings; Swift String keys do
-/// not. Read their original bytes before GRDB's text decoding can truncate
-/// embedded NULs or replace invalid UTF-8. Only TEXT keys match TEXT bindings.
 struct DownloadMangaIdentitySnapshot {
     var redirects: [Data: String] = [:]
     var titles: [Data: String] = [:]
@@ -37,7 +30,6 @@ struct DownloadMangaIdentitySnapshot {
     func canonicalID(_ id: String) -> String {
         var value = id
         var visited: Set<String> = []
-        // Match canonicalMangaOwnerKey's existing cycle-termination behavior.
         while let next = redirects[Data(value.utf8)], visited.insert(value).inserted {
             value = next
         }

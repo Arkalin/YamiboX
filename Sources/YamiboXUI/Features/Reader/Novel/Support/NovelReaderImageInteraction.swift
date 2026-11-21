@@ -2,8 +2,6 @@ import UIKit
 import UIKit.UIGestureRecognizerSubclass
 import YamiboXCore
 
-/// Shared hit testing and event delivery; each viewport retains its own gestures
-/// and callback scheduler. No interaction state is shared between reader sessions.
 @MainActor
 enum NovelReaderImageInteraction {
     static func activateFailureControl(at point: CGPoint, in window: UIWindow,
@@ -50,8 +48,6 @@ enum NovelReaderImageInteraction {
     }
 }
 
-/// Keep UIKit's tap timing and movement tolerance, but fail immediately outside
-/// a loaded image so ordinary reader taps never wait for a second tap there.
 @MainActor
 final class NovelReaderImageDoubleTapRecognizer: UITapGestureRecognizer {
     private let canOpen: () -> Bool

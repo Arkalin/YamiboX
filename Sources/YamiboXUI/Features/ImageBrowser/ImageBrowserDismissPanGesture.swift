@@ -70,8 +70,6 @@ final class ImageBrowserDismissPanInput: NSObject, UIGestureRecognizerDelegate {
         guard isEnabled, let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
         let velocity = localVelocity() ?? pan.velocity(in: pan.view)
         let intent = velocity == .zero ? (localTranslation() ?? pan.translation(in: pan.view)) : velocity
-        // Reject sideways/upward drags before recognition; ignoring their updates
-        // after recognition would still prevent the ancestor pager from scrolling.
         return ImageBrowserSwipeDismissGesture.canBegin(
             translation: intent, zoomScale: zoomFactor, minimumZoomScale: 1
         )

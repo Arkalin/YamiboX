@@ -1,12 +1,6 @@
 import Foundation
 import Kanna
 
-// SwiftSoup-style adapter over Kanna. Signature policy: `throws` is reserved for
-// operations that can actually fail (document parsing). Kanna 6.1.0's
-// `Searchable.css/xpath` return an `XPathObject` and never throw, and the node
-// accessors are all `value ?? ""` fallbacks, so the traversal/extraction API here
-// is deliberately non-throwing — historical `throws` on these methods only forced
-// `try?`-noise onto every call site without any real failure path.
 enum KannaSoup {
     static func parse(_ html: String, baseURL: String? = nil) throws -> Document {
         try Document(document: HTML(html: html, url: baseURL, encoding: .utf8))
@@ -51,9 +45,6 @@ class Element: Node {
         "pre", "section", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul"
     ]
 
-    // Cached DOM-identity key, see `isSameDOMNode(as:)`. Computed at most once per
-    // wrapper; Kanna documents are confined to a single thread by all callers, so a
-    // plain `lazy var` is sufficient.
     private lazy var domNodePath: [Int] = Self.computeDOMNodePath(of: rawNode)
 
     func select(_ selector: String) -> Elements {
@@ -141,28 +132,6 @@ class Element: Node {
         rawNode.parent?.removeChild(rawNode)
     }
 
-    /// Whether both wrappers point at the same underlying DOM node.
-    ///
-    /// Chosen approach: compare a cached "positional path" — the chain of
-    /// element-sibling indices from the node up to the document root.
-    ///
-    /// Why not pointer equality: Kanna 6.1.0 keeps the underlying `xmlNodePtr`
-    /// private (`libxmlHTMLNode.nodePtr`; the class itself is internal) and the
-    /// public `XMLElement` protocol exposes no identity member, so the real node
-    /// pointer is unreachable from this layer.
-    ///
-    /// Why not the previous `outerHTML` string comparison: it re-serialized both
-    /// subtrees on every call (O(n·m) across the ordering filter in
-    /// `selectElements`) and, worse, it declared isomorphic siblings "the same
-    /// node" (two identical adjacent `<li>x</li>` serialize identically), which
-    /// corrupted multi-selector ordering and `cssSelector()` sibling indices.
-    ///
-    /// The positional path is unambiguous for nodes of one document: distinct
-    /// nodes diverge at the level below their lowest common ancestor, and the same
-    /// underlying node always yields the same path. Cost is O(depth + preceding
-    /// siblings), paid once per wrapper thanks to the cache. All callers compare
-    /// nodes originating from the same document; cross-document comparison is out
-    /// of scope (the old outerHTML comparison was no better there).
     func isSameDOMNode(as other: Element) -> Bool {
         self === other || domNodePath == other.domNodePath
     }
@@ -191,11 +160,6 @@ class Element: Node {
         return parts.reversed().joined(separator: " > ")
     }
 
-    /// Positional path used as the node-identity key: index among element
-    /// siblings at every level, walking parents up to the root. Sibling position
-    /// is derived by hopping `previousSibling` (libxml's
-    /// `xmlPreviousElementSibling`), which follows the *underlying* node chain and
-    /// therefore needs no equality primitive itself.
     private static func computeDOMNodePath(of node: any Kanna.XMLElement) -> [Int] {
         var path: [Int] = []
         var current: (any Kanna.XMLElement)? = node
@@ -256,13 +220,8 @@ class Element: Node {
             return selectorParts.flatMap { selectSingleSelector($0, in: searchable) }
         }
 
-        // libxml's XPath union deduplicates underlying nodes and returns document
-        // order. Avoid matching every result against every independently wrapped
-        // candidate (including their sibling paths) just to recover that order.
         let isRoot: Bool
         if searchable is any Kanna.XMLElement {
-            // Kanna scopes the document root like the document itself, whereas
-            // other elements search descendants of their current context only.
             if case let .Number(count) = searchable.xpath("count(. | /*)") {
                 isRoot = count == 1
             } else {
@@ -276,7 +235,6 @@ class Element: Node {
             return searchable.xpath(paths.joined(separator: " | ")).map { Element(rawNode: $0) }
         }
 
-        // Preserve the existing fallback for CSS syntax Kanna cannot translate.
         let selected = selectorParts.flatMap { selectSingleSelector($0, in: searchable) }
         let broadSelector = selectorParts.map(broadSelectorForOrdering).joined(separator: ", ")
         let orderedCandidates = searchable.css(broadSelector).map { Element(rawNode: $0) }
@@ -287,9 +245,6 @@ class Element: Node {
     }
 
     private static func compatibilityXPath(for selector: String, isRoot: Bool) -> String? {
-        // Adjacent attribute tests need the existing Swift filtering adapter.
-        // Also leave quoted commas/apostrophes to its fallback: Kanna splits
-        // commas and interpolates single-quoted XPath literals without escaping.
         guard selector.filter({ $0 == "[" }).count <= 1, !selector.contains(","),
               !attributeConditions(in: selector).contains(where: { $0.value.contains("'") }) else {
             return nil
@@ -515,7 +470,6 @@ class Element: Node {
 final class Document: Element {
     private let rawDocument: any Kanna.HTMLDocument
 
-    // Real failure path: an empty/unparseable document has no root element.
     fileprivate init(document: any Kanna.HTMLDocument) throws {
         self.rawDocument = document
         guard let root = document.at_xpath("/*") else {

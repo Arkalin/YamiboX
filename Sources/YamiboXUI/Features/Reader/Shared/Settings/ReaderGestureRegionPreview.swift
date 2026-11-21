@@ -11,7 +11,6 @@ extension ReaderGestureRegionAction {
     }
 }
 
-/// Use the same shape and label geometry for the preview and interactive remote.
 struct ReaderGestureRegionMap<Content: View>: View {
     let layout: ReaderGestureRegionLayout
     @ViewBuilder let content: (ReaderGestureRegionAction, Int, ReaderGestureRegionShape) -> Content

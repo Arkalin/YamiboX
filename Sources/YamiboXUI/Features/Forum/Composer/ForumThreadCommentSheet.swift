@@ -27,7 +27,6 @@ final class ForumThreadCommentSheetModel {
 
     func clearError() { errorMessage = nil }
 
-    /// Returns true when the comment was submitted and the sheet should dismiss.
     func submitComment() async -> Bool {
         guard canSubmit else { return false }
         errorEventID = UUID()

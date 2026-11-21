@@ -69,7 +69,6 @@ final class ReaderImagePrefetchCoordinator {
                     try Task.checkCancellation()
                     try await load(source)
                 } catch {
-                    // Display loads retry independently; prefetch never interrupts reading.
                 }
                 self?.didFinish(key: key, id: id)
             }
@@ -78,7 +77,6 @@ final class ReaderImagePrefetchCoordinator {
     }
 
     private func didFinish(key: String, id: UUID) {
-        // A cancelled request can finish after this URL has re-entered the window.
         guard requests[key]?.id == id else { return }
         requests.removeValue(forKey: key)
         startPendingRequests()

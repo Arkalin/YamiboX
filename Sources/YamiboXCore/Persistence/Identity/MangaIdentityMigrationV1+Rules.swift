@@ -2,16 +2,8 @@ import CryptoKit
 import Foundation
 @preconcurrency import GRDB
 
-// Frozen rules for manga-identity.v1 through v3. Intentional historical copies:
-// never redirect these helpers to runtime remappers or update them for new features.
-// A behavior change requires a new, separately registered migration.
 extension MangaIdentityMigrationV1 {
-    /// Shared identity registry. Business-table rewrites belong to their feature adapters.
-    /// Directory cache deletion intentionally never deletes this registry.
     enum IdentityRegistry {
-        // A historical display name can now belong to an unrelated directory.
-        // Prefer chapter/opaque-identity evidence and retain conflicting records
-        // unresolved instead of attaching them to whichever title currently exists.
         static func resolveLegacyRecord(name: String, identity: String?, chapterTID: String?, allowNameFallback: Bool = true, in db: Database) throws -> String? {
             let identities = try snapshot(in: db)
             let usesStableIDs = try db.columns(in: "manga_directory_chapters").contains { $0.name == "directory_id" }
@@ -100,7 +92,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Portable identity information accompanies every manga-bearing dataset.
     struct IdentitySnapshot: Codable, Equatable, Sendable {
         var names: [String: String]
         var legacyIdentities: [String: String]
@@ -143,8 +134,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Transforms structured records rather than replacing arbitrary strings. Titles,
-    /// URLs, excerpts and chapter TIDs are never interpreted as directory keys.
     enum IdentityJSON {
         static func normalize(_ data: Data, identities: IdentitySnapshot, legacy: Bool, datasetID: String? = nil) throws -> Data {
             let value = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
@@ -158,15 +147,10 @@ extension MangaIdentityMigrationV1 {
             if source["strategy"] != nil, source["chapters"] != nil, let name = source["cleanBookName"] as? String {
                 let id = identities.resolve(source["id"] as? String ?? name, name: name, legacy: legacy)
                 object["id"] = id
-                // The title has its own conflict clock. Apply its winning value
-                // before merging content so the exported receipt matches storage.
                 if let title = identities.titles[id], title != id { object["cleanBookName"] = title }
             }
             if ["mangaTitle", "smartManga"].contains(source["kind"] as? String ?? ""), let name = source["cleanBookName"] as? String {
                 let id = source["mangaID"] as? String
-                // An unresolved legacy history/progress target may survive local
-                // migration. New-format transport must not resolve it by name
-                // without the containing record's chapter evidence.
                 if legacy || source["kind"] as? String != "mangaTitle" || id.map(isStableID) == true {
                     object["mangaID"] = identities.resolve(id ?? name, name: name, legacy: legacy)
                 }
@@ -186,8 +170,6 @@ extension MangaIdentityMigrationV1 {
                     object["mangaDirectory"] = ["directoryID": identities.resolve(id, legacy: legacy)]
                 }
             }
-            // Launch contexts and resolved favorite source metadata have explicit
-            // directory fields; guessed names alone do not acquire an identity.
             for field in ["directoryID", "mangaDirectoryID"] {
                 if let id = source[field] as? String { object[field] = identities.resolve(id, legacy: legacy) }
             }
@@ -205,11 +187,6 @@ extension MangaIdentityMigrationV1 {
                           !resolved.hasPrefix(protectedPrefix) else { return }
                     insert(confirmedPrefix + original, date)
                 }
-                // The first identity format used the same marker for guessed and
-                // confirmed hashes. An identity already present in the registry
-                // is evidence of a real deletion: never downgrade it just because
-                // the directory has since been renamed. Only unregistered guesses
-                // may return to pending/old-name protection.
                 var recovered: Set<String> = []
                 for (marker, date) in tombstones where marker.hasPrefix(protectedPrefix) {
                     let original = String(marker.dropFirst(protectedPrefix.count))
@@ -233,9 +210,6 @@ extension MangaIdentityMigrationV1 {
                     guard !recovered.contains(key) else { continue }
                     let newKey = normalizeKey(key, identities: identities, legacy: legacy, directoryDataset: datasetID == "mangaDirectories", deletedAt: date as? Double)
                     insert(newKey, date)
-                    // Original-key markers only filter old-format records. Keep
-                    // confirmed deletions distinct from rename protection so a
-                    // later rename cannot undo a successfully resolved deletion.
                     let original = key.hasPrefix(pendingPrefix) ? String(key.dropFirst(pendingPrefix.count)) : key
                     if (legacy || key.hasPrefix(pendingPrefix)), newKey != key,
                        !original.hasPrefix(protectedPrefix), !original.hasPrefix(confirmedPrefix) {
@@ -265,29 +239,17 @@ extension MangaIdentityMigrationV1 {
         private static func resolveLegacyKey(_ key: String, identities: IdentitySnapshot, directoryDataset: Bool, legacyValue: Bool, deletedAt: Double?) -> String {
             guard let parts = mangaKey(key, directoryDataset: directoryDataset) else { return key }
             let value = parts.value
-            // A legacy title may itself start with "manga-id:". Explicit legacy
-            // aliases win for old keys, but never reinterpret a new-format ID as
-            // a display name merely because an alias happens to share its text.
             if !legacyValue, isStableID(value) { return parts.prefix + identities.canonicalID(value) }
             guard let id = identities.legacyIdentities[value] ?? identities.names[value] ?? identities.redirects[value] else {
                 return pendingPrefix + key
             }
             let resolved = identities.canonicalID(id)
-            // A name tombstone can describe the removal of an old name during a
-            // rename, not deletion of the surviving identity. Opaque favorite keys
-            // have no such name semantics and can safely follow their mapping.
             let isName = identities.names[value] != nil || parts.prefix == "SmartManga:" || parts.prefix.isEmpty
             if isName, let currentName = identities.titles[resolved], currentName != value {
-                // A later real deletion can arrive before the alias of an earlier
-                // rename. A different current title alone does not prove that the
-                // tombstone merely removed the old name. Compare clocks before
-                // turning it into permanent old-format-only protection.
                 guard let deletedAt, deletedAt.isFinite,
                       let renamedAt = identities.titleModifiedAt[resolved], renamedAt.isFinite, renamedAt > 0 else {
                     return pendingPrefix + key
                 }
-                // Codable Date uses the 2001 reference epoch; identity title
-                // clocks are persisted as Unix seconds.
                 if Date(timeIntervalSinceReferenceDate: deletedAt).timeIntervalSince1970 <= renamedAt {
                     return protectedPrefix + key
                 }
@@ -300,15 +262,10 @@ extension MangaIdentityMigrationV1 {
             if key.hasPrefix(pendingPrefix) {
                 return resolveLegacyKey(String(key.dropFirst(pendingPrefix.count)), identities: identities, directoryDataset: directoryDataset, legacyValue: true, deletedAt: deletedAt)
             }
-            // Raw unknown keys from older new-format payloads also remain
-            // retryable. Never manufacture a directory identity from a tombstone.
             return resolveLegacyKey(key, identities: identities, directoryDataset: directoryDataset, legacyValue: legacy, deletedAt: deletedAt)
         }
     }
 
-    /// Coordinates feature-owned rewrites within the existing database write/migration.
-    /// Never opens a connection, starts a transaction, or catches a participant's error:
-    /// the caller commits all changes together or rolls the entire operation back.
     enum ReferenceRemapping {
         static func normalizeReferences(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             try ProgressRemapping.normalize(snapshot: snapshot, legacy: legacy, in: db)
@@ -339,7 +296,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Rewrites only this feature's references using the caller's transaction.
     enum ProgressRemapping {
         static func normalize(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             let rows = try Row.fetchAll(db, sql: "SELECT * FROM reading_progress WHERE target_kind = 'mangaTitle' ORDER BY updated_at ASC, id ASC")
@@ -352,9 +308,6 @@ extension MangaIdentityMigrationV1 {
                     id = snapshot.canonicalID(oldIdentity)
                 } else {
                     let chapterColumn = "manga_chapter_thread_id"
-                    // An earlier migration may deliberately leave an ambiguous
-                    // row untouched. Later identity updates must retry the same
-                    // evidence, not turn its display name into a binding.
                     guard let resolved = try IdentityRegistry.resolveLegacyRecord(name: name, identity: oldIdentity, chapterTID: row[chapterColumn], allowNameFallback: legacy, in: db) else { continue }
                     try IdentityRegistry.registerLegacyRecord(id: resolved, name: name, identity: oldIdentity, in: db)
                     id = resolved
@@ -375,7 +328,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Rewrites only this feature's references using the caller's transaction.
     enum HistoryRemapping {
         static func normalize(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             let rows = try Row.fetchAll(db, sql: "SELECT * FROM browsing_history WHERE target_kind = 'mangaTitle' ORDER BY last_visit_time ASC, id ASC")
@@ -388,9 +340,6 @@ extension MangaIdentityMigrationV1 {
                     id = snapshot.canonicalID(oldIdentity)
                 } else {
                     let chapterColumn = "chapter_thread_id"
-                    // An earlier migration may deliberately leave an ambiguous
-                    // row untouched. Later identity updates must retry the same
-                    // evidence, not turn its display name into a binding.
                     guard let resolved = try IdentityRegistry.resolveLegacyRecord(name: name, identity: oldIdentity, chapterTID: row[chapterColumn], allowNameFallback: legacy, in: db) else { continue }
                     try IdentityRegistry.registerLegacyRecord(id: resolved, name: name, identity: oldIdentity, in: db)
                     id = resolved
@@ -436,7 +385,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Rewrites only this feature's references using the caller's transaction.
     enum LikeRemapping {
         static func normalize(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             for oldID in try String.fetchAll(db, sql: "SELECT DISTINCT work_id FROM like_items WHERE work_kind = 'manga'") {
@@ -446,7 +394,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Rewrites only this feature's references using the caller's transaction.
     enum BookmarkRemapping {
         static func normalize(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             for oldID in try String.fetchAll(db, sql: "SELECT DISTINCT work_id FROM bookmarks WHERE work_kind = 'manga'") {
@@ -456,7 +403,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Rewrites only this feature's references using the caller's transaction.
     enum CoverRemapping {
         static func normalize(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             let covers = try Row.fetchAll(db, sql: "SELECT target_id, updated_at FROM content_cover WHERE target_type = 'SmartManga'").sorted { lhs, rhs in
@@ -484,7 +430,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Rewrites only this feature's references using the caller's transaction.
     enum FavoriteRemapping {
         static func normalizeTracking(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             var targets: [String: TrackedTarget] = [:]
@@ -524,7 +469,6 @@ extension MangaIdentityMigrationV1 {
         }
     }
 
-    /// Rewrites only this feature's references using the caller's transaction.
     enum OfflineRemapping {
         static func normalize(snapshot: IdentitySnapshot, legacy: Bool, in db: Database) throws {
             for (table, childTables, predicate) in [
@@ -549,9 +493,6 @@ extension MangaIdentityMigrationV1 {
                         }
                     }
                     if preferSource {
-                        // Read children first, then delete/copy parents. Cascades are
-                        // disabled during GRDB schema migrations, so remove children
-                        // explicitly as well. No payload files or assets are touched.
                         for childTable in childTables {
                             try db.execute(sql: "DELETE FROM \(childTable) WHERE \(whereClause)", arguments: [id, tid])
                             try db.execute(sql: "DELETE FROM \(childTable) WHERE \(whereClause)", arguments: [owner, tid])
@@ -572,8 +513,6 @@ extension MangaIdentityMigrationV1 {
             }
         }
 
-        /// The app places offline-cache beside the database. Only conflicting
-        /// memberships need I/O; compare existing payloads without renaming files.
         private static func cacheCompleteness(_ row: Row, in db: Database) throws -> Int {
             guard let mainDatabase = try Row.fetchAll(db, sql: "PRAGMA database_list").first(where: { $0["name"] as String == "main" }),
                   let path: String = mainDatabase["file"], !path.isEmpty else { return 0 }

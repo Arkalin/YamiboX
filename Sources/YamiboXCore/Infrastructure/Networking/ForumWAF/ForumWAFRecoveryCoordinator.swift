@@ -1,6 +1,5 @@
 import Foundation
 
-/// Shared by every transport, but only compatible sessions share a flight.
 public actor ForumWAFRecoveryCoordinator {
     private struct RecoveryKey: Hashable {
         let session: ForumSessionKey
@@ -9,8 +8,6 @@ public actor ForumWAFRecoveryCoordinator {
 
     private struct FlightKey: Hashable {
         let recovery: RecoveryKey
-        // A safe-entry preheat cannot consume an actual received challenge.
-        // Keep that flight from discarding the document of a later real read.
         let hasDocument: Bool
     }
 
@@ -49,7 +46,6 @@ public actor ForumWAFRecoveryCoordinator {
         let current = ForumWAFResult(cookies: try await context.currentWAFCookies())
         try await context.validate()
         try Task.checkCancellation()
-        // A response from an old attempt may arrive after another flight commits.
         if current.hasUpdatedClearance(for: challenge) {
             YamiboLog.networking.info("Forum scope=\(context.key.scopeID, privacy: .public) clearance=reuse-current")
             return current
@@ -112,8 +108,6 @@ public actor ForumWAFRecoveryCoordinator {
                         self.finish(key: flightKey, id: flightID, result: .failure(failure))
                     }
                 }
-                // Independent from verifier cooperation: a hung platform call
-                // cannot keep continuations alive after the bounded deadline.
                 let timeout = Task {
                     do { try await ContinuousClock().sleep(until: deadline) }
                     catch { return }

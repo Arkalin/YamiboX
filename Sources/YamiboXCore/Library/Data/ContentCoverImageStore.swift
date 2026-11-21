@@ -2,8 +2,6 @@ import CryptoKit
 import Foundation
 import ImageIO
 
-/// Retained original artwork, not an evictable cache. All access is serialized
-/// by ContentCoverStore, including reference checks and clear generations.
 struct ContentCoverImageStore: Sendable {
     let directory: URL
 
@@ -24,8 +22,6 @@ struct ContentCoverImageStore: Sendable {
             return nil
         }
         guard Self.isDecodable(data) else {
-            // A bad retained response must not permanently shadow a later
-            // successful request. Keep IO errors visible if removal fails.
             try FileManager.default.removeItem(at: fileURL(for: url))
             return nil
         }
@@ -47,8 +43,6 @@ struct ContentCoverImageStore: Sendable {
             [kCGImageSourceShouldCache: false] as CFDictionary),
             CGImageSourceGetStatus(source) == .statusComplete,
             CGImageSourceGetCount(source) > 0 else { return false }
-        // Decode the cover's first frame, not just its header or an embedded
-        // thumbnail. Bound decoded memory and retain the original bytes.
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: 64,
@@ -66,7 +60,6 @@ struct ContentCoverImageStore: Sendable {
     }
 
     func deleteAll() throws {
-        // Per-file deletion makes a partially failed clear safely retryable.
         for file in try files() {
             try FileManager.default.removeItem(at: file)
         }
@@ -94,7 +87,5 @@ struct ContentCoverImageStore: Sendable {
         return directory.appendingPathComponent(name, isDirectory: false)
     }
 
-    // Keep the marker across cover clears: newly cached reader copies must
-    // never be mistaken for pre-separation cover data on the next launch.
     private var migrationMarker: URL { directory.appendingPathComponent(".ordinary-image-migration-v1") }
 }

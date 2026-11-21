@@ -4,9 +4,6 @@ enum BlogReaderHTMLParser {
     static func parsePage(from html: String, blogID: String, uidHint: String? = nil, titleHint: String? = nil) throws -> BlogReaderPage {
         try YamiboHTMLPageInspector.ensureReadable(html)
         let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
-        // Touch template `space_blog_view.htm`: the blog subject lives in
-        // `.view_tit` (its leading `em` is the category link); `li.mtit` is the
-        // AUTHOR row and must not be mistaken for a title.
         let title = firstNonBlank([
             document.selectFirst(".view_tit").map { element in
                 element.ownText().htmlNormalized.nilIfBlank ?? element.normalizedText()
@@ -25,8 +22,6 @@ enum BlogReaderHTMLParser {
             throw YamiboError.parsingFailed(context: L10n.string("context.blog_reader"))
         }
 
-        // View/reply counts render as a bare `<em>` pair after the eye/chat
-        // icons in `.authi .mtime .y` — there are no text labels on touch.
         let counterValues = document.selectFirst(".authi .mtime .y")?
             .selectAll("em")
             .compactMap { Int($0.normalizedText()) } ?? []
@@ -146,9 +141,6 @@ enum BlogReaderHTMLParser {
     private static func author(in element: Element?, document: Document, uidHint: String?) -> BlogReaderUser {
         let link = firstUserLink(in: element) ?? firstUserLink(in: document)
         let uid = link?.attrURL("href").flatMap(YamiboForumURLIdentity.userID(from:)) ?? uidHint?.nilIfBlank
-        // `.mmc` before any `.muser` scan — the `.muser` wrapper starts before
-        // its own `.mmc` child in document order and its text glues the name to
-        // the date and action labels.
         let name = firstNonBlank([
             link?.normalizedText(),
             element?.firstText(".mmc, a[id^=author_], .author, .username"),

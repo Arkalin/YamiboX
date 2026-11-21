@@ -2,7 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// State and commands for the General settings page.
 @MainActor
 @Observable
 final class SettingsGeneralViewModel: AppSettingsPersisting {
@@ -30,9 +29,6 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
         }
     }
 
-    /// Called by the composition root with the one `AppSettings` snapshot it
-    /// loads for all pages, so opening Settings still costs a single store
-    /// read instead of one per page.
     func applyLoadedSettings(_ settings: AppSettings) {
         navigation = settings.system.navigation
         themeLibrary = settings.appearance.themeLibrary
@@ -82,8 +78,6 @@ final class SettingsGeneralViewModel: AppSettingsPersisting {
         themeLibrary = saved.appearance.themeLibrary
     }
 
-    /// Mirrors what `resetApplicationData()` just persisted; see the storage
-    /// page's reset action, which fans out to every page.
     func restoreDefaultsAfterApplicationReset() {
         navigation = AppNavigationSettings()
         themeLibrary = AppThemeLibrary()

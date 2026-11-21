@@ -1,8 +1,6 @@
 import Foundation
 import CryptoKit
 
-/// Stable content identity, independent of the transport carrying a snapshot.
-/// Encoding is also part of persisted conflict-resolution rules; keep it stable.
 enum SyncContentFingerprint {
     static func make(_ value: some Encodable) throws -> String {
         let encoder = JSONEncoder()

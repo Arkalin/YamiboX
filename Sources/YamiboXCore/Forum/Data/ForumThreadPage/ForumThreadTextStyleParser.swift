@@ -1,8 +1,6 @@
 import Foundation
 
-/// Adapts parsed HTML elements to domain text styles.
 enum ForumThreadTextStyleParser {
-    /// Style carried by a `<font color=... size=... style=...>` element.
     static func style(fromFontElement element: Element) -> ForumThreadTextStyle {
         var result = ForumThreadTextStyle()
         result.fontFamily = element.attr("face").nilIfBlank

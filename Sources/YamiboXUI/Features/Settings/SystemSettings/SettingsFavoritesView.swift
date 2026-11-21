@@ -239,9 +239,6 @@ struct SettingsFavoritesView: View {
         }
     }
 
-    /// The grid card size is an iPad-only concept (see
-    /// `FavoriteLibrarySettings.gridCardScale`); iPhone hides the slider
-    /// entirely rather than offering a control that does nothing.
     private var isPadDevice: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
     }
@@ -262,11 +259,9 @@ struct SettingsFavoritesView: View {
             ) {
                 Text(L10n.string("settings.favorite_grid_card_scale"))
             } minimumValueLabel: {
-                // Denser grid of smaller cards at the low end…
                 Image(systemName: "square.grid.3x3")
                     .foregroundStyle(.secondary)
             } maximumValueLabel: {
-                // …fewer, larger cards at the high end.
                 Image(systemName: "square.grid.2x2")
                     .foregroundStyle(.secondary)
             } onEditingChanged: { isEditing in
@@ -282,8 +277,6 @@ struct SettingsFavoritesView: View {
         "\(Int((viewModel.favoriteGridCardScale * 100).rounded()))%"
     }
 
-    /// Drag ticks only preview in memory; the commit happens once in
-    /// `onEditingChanged(false)` — see `commitFavoriteGridCardScale()`.
     private var favoriteGridCardScaleBinding: Binding<Double> {
         Binding(
             get: { viewModel.favoriteGridCardScale },

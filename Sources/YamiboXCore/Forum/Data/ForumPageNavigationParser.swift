@@ -1,6 +1,5 @@
 import Foundation
 
-/// Shared Discuz pagination extraction, retaining each template's total-page rules.
 enum ForumPageNavigationParser {
     enum Template {
         case forum
@@ -30,7 +29,6 @@ enum ForumPageNavigationParser {
                 ?? HTMLTextExtractor.matches(pattern: #"page=(\d+)"#, in: pager.html())
                 .compactMap { $0.dropFirst().first.flatMap(Int.init) }
                 .max()
-            // Last-page links may all point backwards; never lower the total below it.
             totalPages = parsedTotal.map { max($0, currentPage) }
         }
 

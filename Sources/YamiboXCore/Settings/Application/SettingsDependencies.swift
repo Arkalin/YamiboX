@@ -1,8 +1,5 @@
 import Foundation
 
-/// Everything the system settings feature UI needs from the composition
-/// root, including the packages of the features it hosts as sub-screens
-/// (favorite sync section, WebDAV sync sheet).
 public struct SettingsDependencies: Sendable {
     public let sessionStore: SessionStore
     public let blacklist: ForumBlacklistWorkflow
@@ -27,7 +24,6 @@ public struct SettingsDependencies: Sendable {
     public let httpCache: URLCache
     public let networkLogStore: NetworkLogStore
     public let resetApplicationData: @Sendable () async throws -> Void
-    /// The favorite sync section drives the library feature's view model.
     public let library: LibraryDependencies
     public let webDAVSync: WebDAVSyncDependencies
 

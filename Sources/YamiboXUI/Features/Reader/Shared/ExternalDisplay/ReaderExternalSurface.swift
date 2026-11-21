@@ -28,8 +28,6 @@ struct ReaderExternalSurface: View {
                 EdgeInsets(top: $0.top, leading: $0.left, bottom: $0.bottom, trailing: $0.right)
             } ?? proxy.safeAreaInsets
             let geometry = ReaderViewportGeometry(size: proxy.size, insets: insets, scale: scale)
-            // A proxy that ignores safe areas can report zero before attaching
-            // to its window. Only the window probe can confirm actual insets.
             let measuredGeometry = windowInsets != nil && geometry.valid ? geometry : nil
             ZStack {
                 if measuredGeometry != nil {
@@ -104,7 +102,6 @@ private struct ReaderExternalPrivacyCover: View {
     }
 }
 
-/// The mounted viewport must render before it can hand off or receive input.
 struct ReaderViewportRenderAcknowledgement: ViewModifier {
     let ready: Bool
     let viewport: ReaderViewportLifetime

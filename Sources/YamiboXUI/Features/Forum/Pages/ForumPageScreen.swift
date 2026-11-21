@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-// Owns one request's lifetime and dispatches its parsed response to a business
-// screen. Loading and failure transitions do not replace the appearance task.
 struct ForumPageScreen: View {
     @State private var model: ForumPageSession
     @State private var editorRegistry: ForumEditorRegistry

@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Only semantic image coordinates cross display or layout changes. UIKit still
-/// owns the live zoom scale and offset in each mounted viewport.
 struct MangaViewportFocus {
     let pageID: String
     let point: CGPoint

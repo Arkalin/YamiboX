@@ -20,8 +20,6 @@ struct MangaReaderView: View {
     @State private var controlPageTurnBridge = MangaPagedControlPageTurnBridge()
     @State private var controlUsesTwoPageSpread = false
     @State private var chromeSummaryMemo = MangaChromeSummaryMemo()
-    /// Scene-local window safe-area insets reported by
-    /// `ReaderWindowSafeAreaInsetsProbe`; nil until this reader attaches.
     @State private var windowSafeAreaInsets: UIEdgeInsets?
     @State private var readingViewportInsets = MangaReadingViewportInsets()
     @State private var visibleStatusBarTopInset: CGFloat = 0
@@ -67,8 +65,6 @@ struct MangaReaderView: View {
     }
 
     private func focusHitsPagedSurface(_ surface: MangaSurfaceRuntime, at point: CGPoint) -> Bool {
-        // A spread is already one zoom surface, including the gutter. Only
-        // standalone images require a hit on the bitmap before zooming.
         if case .spread = surface.geometry { return true }
         return remoteImage(at: point) != nil
     }
@@ -88,7 +84,6 @@ struct MangaReaderView: View {
             let presentation = model.presentation
             let topInset = externalGeometry?.insets.top
                 ?? max(proxy.safeAreaInsets.top, windowSafeAreaInsets?.top ?? proxy.safeAreaInsets.top)
-            // iPad hides the status-bar safe area before the information fade finishes.
             let informationTopInset = UIDevice.current.userInterfaceIdiom == .pad
                 ? max(topInset, visibleStatusBarTopInset) : topInset
             let bottomInset = externalGeometry?.insets.bottom
@@ -320,9 +315,6 @@ struct MangaReaderView: View {
                 }
 
                 if let likedItem = reader.likedItemForActionTarget {
-                    // A note lives on a like, so this only appears once the
-                    // page is liked — the same "notes depend on likes" rule the
-                    // novel reader follows.
                     Button(L10n.string(likedItem.hasNote ? "likes.edit_note" : "likes.add_note")) {
                         reader.imageSavePresentation.clearActionTarget()
                         reader.likedItemForActionTarget = nil
@@ -462,10 +454,6 @@ struct MangaReaderView: View {
         }
     }
 
-    /// Every thread ID this reading session covers: the work thread plus (for
-    /// smart manga) all directory chapter threads. Threads from this set
-    /// opened inside a forum overlay stay discussion companions and must not
-    /// write their own browsing-history rows.
     private var discussionWorkTIDs: Set<String> {
         var tids: Set<String> = [context.originalThreadID, context.chapterTID]
         if case let .loaded(loaded) = model.presentation.state {
@@ -544,8 +532,6 @@ struct MangaReaderView: View {
     }
 
     private func openDirectory() {
-        // Non-smart manga has no chapter directory. Smart manga may have a
-        // directory before its annotation identity is ready.
         guard context.isSmartModeEnabled else { return }
         if model.annotationSheetContext != nil {
             reader.readerLibraryTab = .chapters
@@ -558,8 +544,6 @@ struct MangaReaderView: View {
     private func handleControlEvent(_ event: ReaderControlEvent) {
         guard !reader.isDismissing, !hasControlBlockingSheet else { return }
         guard case let .loaded(loaded) = model.presentation.state, !loaded.pages.isEmpty else {
-            // Loading/error: Menu still toggles the chrome so a controller
-            // user can always reach the close button.
             if event == .menu { toggleChrome() }
             return
         }
@@ -595,11 +579,6 @@ struct MangaReaderView: View {
         viewport.enqueueInput(attachmentID, while: { admitsContentInput && model.viewportContentID == contentID }, operation)
     }
 
-    /// Non-touch page-turn triggers (keyboard, gamepad, Apple Pencil) share
-    /// this entry point so a fit-height/zoomed page reveals its hidden edge
-    /// content on the first press instead of jumping straight to the next
-    /// page — the same defer-to-surface decision a tap in the edge zone
-    /// already makes, surfaced through `controlPageTurnBridge`.
     private func performPageTurn(_ delta: Int, usesTwoPageSpread: Bool) {
         if model.presentation.settings.readingMode == .paged {
             controlPageTurnBridge.requestPageTurn(delta)
@@ -608,8 +587,6 @@ struct MangaReaderView: View {
         navigateFromViewport { await model.jumpRelativePage(delta, usesTwoPageSpread: usesTwoPageSpread) }
     }
 
-    /// A page turn while the chrome is up means "keep reading": perform it
-    /// and tuck the chrome away, mirroring the tap-zone mental model.
     private func hideChromeForControlReading() {
         guard showsChrome else { return }
         withAnimation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration)) {
@@ -740,9 +717,6 @@ struct MangaReaderView: View {
         }
     }
 
-    /// Matches the novel reader's add-note action: creating an annotation is
-    /// part of adding the note, rather than a prerequisite the reader has to
-    /// discover and perform separately.
     @MainActor
     private func addNote(to page: MangaReaderPageProjection) async {
         if let item = await prepareNoteItem(for: page) { editNote(item) }
@@ -800,8 +774,6 @@ struct MangaReaderView: View {
         )
     }
 
-    /// Mirrors `openLikedAnchor`: try the in-session jump first and only fall
-    /// back to presenting a fresh reader when that fails.
     private func openBookmark(_ item: BookmarkItem) async {
         guard case let .manga(anchor) = item.anchor else { return }
         if reader.presentedPanel == .companion(.annotations) { reader.presentedPanel = nil }
@@ -902,8 +874,6 @@ struct MangaReaderView: View {
     }
 }
 
-/// Keep window indexes separate from the selected page. Page turns and chrome
-/// toggles only derive the small position summary, not spreads or preview maps.
 @MainActor
 private final class MangaChromeSummaryMemo {
     private var basePlan: MangaPagedReadingPlan?
@@ -914,8 +884,6 @@ private final class MangaChromeSummaryMemo {
     private var cachedHeader = ""
     private var cachedScrubTargets: [Int] = []
 
-    // `@State`'s initial value is built in the view's nonisolated init; the
-    // box only becomes main-actor-bound once body starts using it.
     nonisolated init() {}
 
     func plan(loaded: MangaReaderLoadedPresentation, currentPageIndex: Int?,

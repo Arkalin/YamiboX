@@ -1,23 +1,9 @@
 import Foundation
 
-// Item-level mutations of the favorites library document: upsert/import,
-// retargeting and healing, remote-mapping refresh, and location
-// membership. Split from the former monolithic FavoriteLibrary.swift;
-// method bodies moved verbatim.
 extension FavoriteLibraryDocument {
-    /// Inserts `item`, replacing any existing item with the same target —
-    /// an upsert, not a plain append. (Terminology: `upsert*` writes the
-    /// local document directly; `import*` materializes a remote favorite
-    /// locally during sync; pushing local→Yamibo lives in the UI action
-    /// layer as `push*`.)
     public mutating func upsertItem(_ item: FavoriteItem) {
         removeItem(target: item.target)
         items.append(Self.normalizedItem(item, categories: categories, collections: collections, tags: tags))
-        // This id is being actively kept alive, not deleted — clear any
-        // tombstone `removeItem` above just wrote for it (target ids are
-        // content-derived, so re-favoriting a previously removed thread
-        // reuses the same id) so a merge doesn't treat the live item as
-        // still-deleted.
         deletedItemIDs.removeValue(forKey: item.target.id)
         sortItems()
     }
@@ -56,12 +42,6 @@ extension FavoriteLibraryDocument {
         remoteMapping: FavoriteRemoteMapping? = nil,
         date: Date = .now
     ) throws -> FavoriteItem {
-        // All three `FavoriteItemTargetKind` cases are plain per-thread
-        // favorites now (there is no merged-directory kind on this type at
-        // all), so a manga chapter thread imports through this same generic
-        // path as a normal/novel thread — see step 3 of the smart-comic-mode
-        // Phase A report for why the old dedicated
-        // `importMangaChapterFavorite` mechanism was removed instead of kept.
         let resolvedLocation = location ?? .category(defaultCategory.id)
         if let existingThreadID = probeResult.target.threadID,
            let existingTarget = items.first(where: { $0.target.threadID == existingThreadID })?.target,
@@ -123,8 +103,6 @@ extension FavoriteLibraryDocument {
         }
     }
 
-    /// Merge observed content dates without changing user metadata or reviving
-    /// favorites deleted while a network request was in flight.
     public mutating func recordContentUpdate(for target: FavoriteItemTarget, contentUpdatedAt: Date) {
         for index in items.indices where items[index].target == target {
             guard items[index].contentUpdatedAt.map({ $0 >= contentUpdatedAt }) != true else { continue }
@@ -132,28 +110,12 @@ extension FavoriteLibraryDocument {
         }
     }
 
-    // `addMangaTitleFavorite`/`importMangaChapterFavorite`/
-    // `mangaRetargetCandidateIndex` (the dormant merged-directory favorite
-    // mechanism) and `renameMangaTitle` (its rename counterpart) were removed
-    // in the smart-comic-mode Phase A type refactor — see decision #3/#9.
-    // `FavoriteItemTarget` cannot represent that identity at all anymore, so
-    // there is nothing left for these to operate on; manga chapter favorites
-    // now import through the same `importThreadFavorite` path as any other
-    // thread (see the comment above it), and a manga directory rename no
-    // longer needs to touch favorites at all since `.mangaThread` favorites
-    // are keyed by thread id, not by the directory's cleanBookName. Other
-    // directory-keyed identities migrate in the shared transaction service.
-
     public mutating func removeItem(target: FavoriteItemTarget, date: Date = .now) {
         guard items.contains(where: { $0.target.id == target.id }) else { return }
         items.removeAll { $0.target.id == target.id }
         deletedItemIDs[target.id] = date
     }
 
-    /// Applies an ordered deletion batch to this document, keeping the single
-    /// item API's first-deletion clock and missing-target behavior. Only the
-    /// requested identities are carried across a remote wait; callers invoke
-    /// this on the fresh document inside the store's write transaction.
     public mutating func removeItems(
         targets: [FavoriteItemTarget],
         now: () -> Date = { .now }
@@ -172,8 +134,6 @@ extension FavoriteLibraryDocument {
         deletedItemIDs.merge(dates, uniquingKeysWith: { _, new in new })
     }
 
-    /// Refreshes the Yamibo remote mapping after a sync run saw the item on
-    /// the website. Passing nil keeps the previously known value.
     public mutating func updateRemoteMapping(
         for target: FavoriteItemTarget,
         yamiboFavoriteID: String?,
@@ -184,8 +144,6 @@ extension FavoriteLibraryDocument {
         updateRemoteMapping(at: index, yamiboFavoriteID: yamiboFavoriteID, yamiboRemoteOrder: yamiboRemoteOrder, date: date)
     }
 
-    /// The sync engine resolves positions with an index scoped to this exact
-    /// document. Public single-item callers retain their linear lookup above.
     mutating func updateRemoteMapping(
         at index: Int,
         yamiboFavoriteID: String?,
@@ -202,13 +160,6 @@ extension FavoriteLibraryDocument {
         items[index].updatedAt = date
     }
 
-    /// Heals a `.unknown` source group once the actual forum resolves (e.g.
-    /// the favorite-update checker fetched the thread and learned its fid).
-    /// Items whose forum never resolved at add-time would otherwise never
-    /// regain one, which permanently excludes them from fid-scoped features
-    /// (like the update-check filter) once the user disables any other
-    /// forum's filter. No-ops if the item already has a resolved source
-    /// group, so this never clobbers a value obtained elsewhere.
     public mutating func healUnknownSourceGroup(for target: FavoriteItemTarget, forumID: String, forumName: String?, date: Date = .now) {
         guard let index = items.firstIndex(where: { $0.target.id == target.id }),
               items[index].sourceGroup == .unknown else {
@@ -230,9 +181,6 @@ extension FavoriteLibraryDocument {
         guard let index = items.firstIndex(where: { $0.target.id == oldTarget.id }) else { return }
         var replacement = items[index]
         replacement.target = newTarget
-        // Normal replies, novel author edits and manga publication dates
-        // have different scopes. A reclassification must not carry a later
-        // reader reply into a chapter's publication date.
         if oldTarget != newTarget { replacement.contentUpdatedAt = nil }
         if oldTarget.id == newTarget.id {
             items[index] = replacement
@@ -254,12 +202,6 @@ extension FavoriteLibraryDocument {
             items.append(replacement)
         }
         sortItems()
-        // `oldTarget.id` no longer exists in `items` after this — tombstone
-        // it so a stale peer's copy under the old id isn't revived as a
-        // duplicate favorite on the next merge (see `deletedItemIDs`'s doc
-        // comment). `newTarget.id` is now very much alive, so clear any
-        // stale tombstone it might carry from a prior deletion, mirroring
-        // `upsertItem`'s own resurrection handling.
         deletedItemIDs[oldTarget.id] = date
         deletedItemIDs.removeValue(forKey: newTarget.id)
     }
@@ -273,9 +215,6 @@ extension FavoriteLibraryDocument {
         let isNewLocation = !items[index].locations.contains(location)
         items[index].locations = FavoriteItem.normalizedLocations(items[index].locations + [location])
         items[index] = Self.normalizedItem(items[index], categories: categories, collections: collections, tags: tags)
-        // Only a genuinely new location should advance the merge clock — a
-        // no-op add (already a member) must not let this call's timestamp
-        // spuriously outrun a real, unsynced edit from another device.
         guard isNewLocation else { return }
         items[index].locationsUpdatedAt = date
         items[index].updatedAt = date

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Stores and repository factories used by the manga detail feature.
 public struct MangaDetailDependencies: Sendable {
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     public let readingProgressStore: ReadingProgressStore

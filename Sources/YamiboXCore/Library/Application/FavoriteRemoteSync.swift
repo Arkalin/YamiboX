@@ -1,9 +1,6 @@
 import Foundation
 
 public struct YamiboRemoteFavoriteEntry: Hashable, Sendable {
-    /// Nil when the page exposed a valid thread link but no server `favid`.
-    /// This is deliberately not replaced with `Favorite.id`, which is a local
-    /// UI identity and cannot be sent to the delete endpoint.
     public var remoteFavoriteID: String?
     public var threadID: String
     public var title: String?
@@ -17,7 +14,6 @@ public struct YamiboRemoteFavoriteEntry: Hashable, Sendable {
     }
 }
 
-/// One page of the Yamibo remote favorite list.
 public struct FavoriteYamiboRemotePage: Sendable {
     public var entries: [YamiboRemoteFavoriteEntry]
     public var currentPage: Int
@@ -30,17 +26,9 @@ public struct FavoriteYamiboRemotePage: Sendable {
     }
 }
 
-/// Network operations the sync engine needs, injected as closures so the UI
-/// layer can compose them from its repositories and tests can fake them.
 public struct FavoriteYamiboSyncClient: Sendable {
-    /// Fetches one page of the remote favorite list.
     public var fetchPage: @Sendable (_ page: Int) async throws -> FavoriteYamiboRemotePage
-    /// Resolves a remote entry's thread into a favorite target with metadata
-    /// (the entry carries the remote title as a resolution hint).
-    /// Implementations are expected to record covers as a side effect.
     public var probe: @Sendable (_ entry: YamiboRemoteFavoriteEntry) async throws -> FavoriteThreadProbeResult
-    /// Adds one thread to the Yamibo remote favorites.
-    /// The engine does not retry writes whose server-side outcome is unknown.
     public var addFavorite: @Sendable (_ threadID: String) async throws -> Void
 
     public init(
@@ -54,36 +42,11 @@ public struct FavoriteYamiboSyncClient: Sendable {
     }
 }
 
-/// Five-phase Yamibo favorite sync engine (Android-parity semantics):
-///
-/// 1. preparing — validate the target category.
-/// 2. fetching — page through the remote favorite list.
-/// 3. importing — import remote-only threads; existing unmapped items gain the
-///    target category location; already-mapped items only refresh the mapping.
-/// 4. uploading — push every thread item of the target category that the
-///    remote list lacks, including items the website side deleted: the local
-///    library is the source of truth and sync converges to the union.
-/// 5. reconciling — if anything uploaded, re-fetch the remote list and backfill
-///    favorite IDs and ordering.
-///
-/// Sync never deletes on either side; deletions propagate only through the
-/// explicit delete actions. Cancellation is cooperative: the engine finishes
-/// the current network call, persists partial progress, and records the run as
-/// interrupted.
 public struct FavoriteYamiboSyncEngine: Sendable {
     private let libraryStore: FavoriteLibraryStore
     private let client: FavoriteYamiboSyncClient
     private let retryPolicy: FavoriteRemoteSyncRetryPolicy
-    /// Backs the batched tid → directory lookup phase 3 uses for the
-    /// "imported into an already-favorited manga directory" warning
-    /// (smart-comic-mode Phase G, design decision #8's remote-sync half).
-    /// Requires explicit batched reads, not directory mutation or observation.
-    /// `nil` disables the warning.
     private let mangaDirectoryStore: (any MangaDirectoryBatchReading)?
-    /// Backs the per-item "is Smart Comic Mode on for this board" check the
-    /// same warning needs. `nil` falls back to the factory-default
-    /// `BoardReaderSettings()` (not an empty configuration), so the
-    /// attribution warning stays functional in the default scenario.
     private let settingsStore: SettingsStore?
 
     public init(
@@ -113,9 +76,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         self.settingsStore = settingsStore
     }
 
-    /// Runs the five phases starting from `initial` (typically phase .queued).
-    /// Every snapshot mutation is pushed through `persist`; the returned
-    /// snapshot is terminal (completed, failed, or interrupted).
     public func run(
         snapshot initial: FavoriteRemoteSyncSnapshot,
         interruptionReason: @escaping @Sendable () -> FavoriteRemoteSyncWarning? = { nil },
@@ -137,32 +97,16 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             }
         }
 
-        /// Queues a mutation for replay onto a freshly-loaded document at save
-        /// time, so a save never blindly overwrites edits the user made
-        /// elsewhere while this run was fetching. Reach for `apply` (defined
-        /// next to `workingDocument`) instead wherever possible — raw `record`
-        /// is only for the import case whose first application must throw
-        /// while its replay is tolerant.
         func record(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument, inout FavoriteLibraryItemIndex) -> Void) {
             pendingOperations.append(operation)
         }
 
-        /// Replays every mutation this run has queued since the last save onto
-        /// the current on-disk document and persists the merged result, all
-        /// inside one store transaction — this is what keeps a long-running
-        /// sync from clobbering concurrent local edits (deletes, moves, tag
-        /// changes) with a stale in-memory snapshot.
         func saveDocumentIfDirty() async throws -> FavoriteLibraryDocument? {
             guard !pendingOperations.isEmpty else { return nil }
             let operations = pendingOperations
             let libraryStore = libraryStore
-            // Unstructured task: interruption persists partial progress from
-            // the cancelled task, and GRDB's async accesses honor Task
-            // cancellation — the write must not inherit it.
             let merged = try await Task { () -> FavoriteLibraryDocument in
                 try await libraryStore.update { fresh in
-                    // Never replay positions from the working snapshot: local
-                    // edits may have removed, reordered or retargeted items.
                     var freshIndex = FavoriteLibraryItemIndex(fresh)
                     for operation in operations {
                         operation(&fresh, &freshIndex)
@@ -175,18 +119,11 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         }
 
         do {
-            // Phase 1: preparing
             try Task.checkCancellation()
             await commit { $0.phase = .preparing }
             var workingDocument = try await libraryStore.load()
             var workingIndex = FavoriteLibraryItemIndex(workingDocument)
 
-            /// Single write path for this run's document mutations: applies
-            /// the operation to the in-memory working copy and queues the
-            /// same closure for the save-time replay. One closure feeding
-            /// both copies is what keeps them from drifting — previously
-            /// every mutation was written twice by hand, and forgetting
-            /// either half meant "visible but never saved" (or the reverse).
             func apply(_ operation: @escaping @Sendable (inout FavoriteLibraryDocument, inout FavoriteLibraryItemIndex) -> Void) {
                 operation(&workingDocument, &workingIndex)
                 record(operation)
@@ -196,7 +133,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             }
             let targetLocation = FavoriteLocation.category(snapshot.targetCategoryID)
 
-            // Phase 2: fetching
             await commit { $0.phase = .fetching }
             var remoteEntries: [YamiboRemoteFavoriteEntry] = []
             var remoteThreadIDs: Set<String> = []
@@ -238,31 +174,10 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 page += 1
             }
 
-            // Phase 3: importing
             await commit { $0.phase = .importing }
             var skippedPathCounts: [(path: String, count: Int)] = []
             let importTotal = remoteEntries.count
 
-            // Attribution detection setup (smart-comic-mode Phase G, design
-            // decision #8's remote-sync half). Two pieces of state captured
-            // once, up front, before any item in this run is imported:
-            //
-            // 1. `preImportMangaThreadFavoritesByTID` — a snapshot of every
-            //    `.mangaThread` favorite already in the document *before this
-            //    run imports anything*. Deliberately frozen here rather than
-            //    re-read from `workingDocument` inside the loop below: if two
-            //    sibling chapters both happen to be newly imported within
-            //    this same run, neither existed "before this sync run started
-            //    importing", so importing one must not trigger the warning
-            //    for the other.
-            // 2. `candidateDirectoriesByTID` — the tid → `MangaDirectory`
-            //    lookup for every entry that isn't already a local favorite
-            //    (i.e. every entry that will go through the fresh-import path
-            //    below, whatever target kind it turns out to probe as). This
-            //    is the single batched `directories(containingTIDs:)` round
-            //    trip the design doc's "现算分组的性能要求" hard constraint
-            //    requires — never one `directory(containingTID:)` call per
-            //    item in the loop.
             var preImportMangaThreadFavoritesByTID: [String: FavoriteItem] = [:]
             for item in workingDocument.items where item.target.kind == .mangaThread {
                 if let tid = item.target.threadID {
@@ -276,8 +191,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 do {
                     candidateDirectoriesByTID = try await mangaDirectoryStore.directories(containingTIDs: candidateThreadIDs)
                 } catch where Task.isCancelled || LoadDiagnosticError.isCancellation(error) {
-                    // Don't swallow cancellation into a mere warning — let it
-                    // propagate to the run's own cancellation handling below.
                     throw error
                 } catch {
                     YamiboLog.sync.warning("Failed to batch-resolve manga directories for sync attribution detection; this run will skip attribution warnings: \(error.localizedDescription)")
@@ -325,10 +238,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 do {
                     let probeResult = try await retryPolicy.run { try await client.probe(entry) }
                     guard !probeResult.sourceMetadataFetchFailed else {
-                        // Compatibility for injected/legacy clients. The
-                        // production probe throws its original error, but a
-                        // degraded result must still never become a saved
-                        // placeholder that later syncs mistake for success.
                         throw YamiboError.parsingFailed(context: entry.threadID)
                     }
                     let mapping = FavoriteRemoteMapping(
@@ -336,11 +245,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                         yamiboRemoteOrder: entry.remoteOrder,
                         lastSeenAt: .now
                     )
-                    // A manga chapter thread imports through the same generic
-                    // path as any other thread now: `FavoriteItemTarget` has
-                    // no merged-directory kind left to special-case (the old
-                    // dedicated `importMangaChapterFavorite` mechanism was
-                    // removed — see smart-comic-mode Phase A decision #3/#9).
                     let importedItem: FavoriteItem
                     do {
                         defer { workingIndex = FavoriteLibraryItemIndex(workingDocument) }
@@ -363,23 +267,9 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                         }
                     }
                     await commit { $0.importedCount += 1 }
-                    // `importedItem.forumID` (not `probeResult.forumID`,
-                    // which the manga probe path leaves nil) is read here
-                    // because `FavoriteItem.init` resolves the real forumID
-                    // from `sourceGroup` when the explicit parameter is nil —
-                    // reading the item that actually landed in the document
-                    // is correct regardless of which of the two carried it.
                     if importedItem.target.kind == .mangaThread,
                        let directory = candidateDirectoriesByTID[entry.threadID],
                        boardReaderSettings.isSmartComicModeEnabled(forumID: importedItem.forumID) {
-                        // Check EVERY already-favorited sibling chapter, not just the
-                        // first one encountered in chapter order (`manual_order`/`tid`,
-                        // unrelated to which sibling is favorited or its board's mode) —
-                        // a directory can span multiple boards, and the sibling that
-                        // happens to sort first may have Smart Comic Mode off while a
-                        // later sibling has it on and would actually merge on the
-                        // Favorites page. Stopping at the first candidate risks a false
-                        // negative (silently dropping a warning for a real merge).
                         let hasAttributedSibling = directory.chapters.contains { chapter in
                             guard chapter.tid != entry.threadID,
                                   let sibling = preImportMangaThreadFavoritesByTID[chapter.tid] else {
@@ -418,7 +308,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 workingIndex = FavoriteLibraryItemIndex(workingDocument)
             }
 
-            // Phase 4: uploading
             let uploadCandidates = workingDocument.items.filter { item in
                 item.locations.contains { $0.categoryID == snapshot.targetCategoryID }
                     && item.target.threadID.map { !remoteThreadIDs.contains($0) } == true
@@ -454,7 +343,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
                 }
             }
 
-            // Phase 5: reconciling
             if snapshot.uploadedCount > 0 {
                 await commit { snapshot in
                     snapshot.phase = .reconciling
@@ -532,8 +420,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         return snapshot
     }
 
-    // MARK: - Helpers
-
     private func fetchAllPages() async throws -> [YamiboRemoteFavoriteEntry] {
         var entries: [YamiboRemoteFavoriteEntry] = []
         var seenThreadIDs: Set<String> = []
@@ -558,7 +444,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
         return trimmed.isEmpty ? "#\(threadID)" : "#\(threadID) \(trimmed)"
     }
 
-    /// Primary organization path of an item, for the "already synced at" log.
     private static func pathDescription(for item: FavoriteItem, in document: FavoriteLibraryDocument) -> String {
         guard let location = item.locations.first else { return "" }
         let categoryName = document.categories.first { $0.id == location.categoryID }?.displayName ?? location.categoryID
@@ -578,7 +463,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
     }
 }
 
-/// Shared cancellation detection for favorite background sessions.
 public extension Error {
     var isTaskCancellation: Bool {
         if self is CancellationError {

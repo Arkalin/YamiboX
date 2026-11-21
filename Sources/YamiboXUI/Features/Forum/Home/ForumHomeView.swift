@@ -45,9 +45,6 @@ struct ForumHomeView: View {
     }
 }
 
-/// Content-shaped placeholder for the first load: a banner block and two
-/// board sections where the real page will appear, gently pulsing. Reads as
-/// "the page is coming" rather than a context-free spinner.
 private struct ForumHomeSkeletonView: View {
     @Environment(\.forumTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -149,10 +146,6 @@ private struct ForumHomeCarouselView: View {
 
     var body: some View {
         Group {
-            // A full-width banner in a regular-width window (iPad, Max phones
-            // in landscape) gets enormous at 2.63:1, so those widths use a
-            // capped centered card with the neighboring banners peeking in
-            // on both sides.
             if horizontalSizeClass == .regular {
                 ForumHomePeekCarouselView(
                     items: items,
@@ -166,20 +159,13 @@ private struct ForumHomeCarouselView: View {
             }
         }
         .onChange(of: selection) { _, newValue in
-            // A selection change the timer didn't make is the user's (swipe
-            // settle, dot tap): restart the dwell so auto-advance never fires
-            // right on the heels of a manual move.
             if newValue != autoAdvanceSelection {
                 lastUserInteraction = .now
             }
             autoAdvanceSelection = nil
         }
-        // Reduce Motion disables auto-advance entirely; the banners stay
-        // swipeable by hand.
         .task(id: "\(items.map(\.id))-\(reduceMotion)") {
             guard items.count > 1, !reduceMotion else { return }
-            // Polls at 1s so a dwell that was reset by interaction is
-            // re-honored promptly; both guards must clear a full dwell.
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
@@ -209,10 +195,6 @@ private struct ForumHomeCarouselView: View {
         .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
         .frame(maxWidth: .infinity)
         .aspectRatio(2.63, contentMode: .fit)
-        // The page-style TabView exposes no scroll phase, so a parallel
-        // observer stamps touches to pause auto-advance mid-swipe; the
-        // selection onChange above catches the settle even if this gesture
-        // gets cancelled by the pager.
         .simultaneousGesture(
             DragGesture(minimumDistance: 1)
                 .onChanged { _ in
@@ -222,17 +204,11 @@ private struct ForumHomeCarouselView: View {
     }
 }
 
-/// Index arithmetic for the looping peek carousel. The strip renders the
-/// banners three times; the scroll position lives in the middle copy so both
-/// edges always show a real neighbor, and settles back there after every
-/// gesture via an invisible congruent jump.
 enum ForumHomeCarouselLoop {
     static func loopCount(itemCount: Int) -> Int {
         itemCount > 1 ? itemCount * 3 : itemCount
     }
 
-    /// Clones flank the middle copy; they exist to be peeked at and scrolled
-    /// through, never to rest on.
     static func isCloneIndex(_ index: Int, itemCount: Int) -> Bool {
         itemCount > 1 && (index < itemCount || index >= 2 * itemCount)
     }
@@ -242,8 +218,6 @@ enum ForumHomeCarouselLoop {
         return itemCount + min(max(selection, 0), itemCount - 1)
     }
 
-    /// The congruent middle-copy index to silently snap back to once a scroll
-    /// settles, or `nil` when the position is already in the middle copy.
     static func recenteredIndex(from current: Int, itemCount: Int) -> Int? {
         guard itemCount > 1 else { return nil }
         guard current >= 0, current < loopCount(itemCount: itemCount) else {
@@ -253,10 +227,6 @@ enum ForumHomeCarouselLoop {
         return middleLoopIndex(for: current % itemCount, itemCount: itemCount)
     }
 
-    /// The strip index to animate to for a new selection: the shortest
-    /// congruent hop, so the auto-advance +1 keeps rolling forward across the
-    /// wrap and a dot tap never travels the long way around. `nil` when the
-    /// current position already shows the selection.
     static func hopTarget(from current: Int, to selection: Int, itemCount: Int) -> Int? {
         guard itemCount > 0 else { return nil }
         guard current % itemCount != selection else { return nil }
@@ -269,9 +239,6 @@ enum ForumHomeCarouselLoop {
     }
 }
 
-/// Sizing for the regular-width peek carousel: the centered card is capped so
-/// it stays banner-sized on wide iPads, and the leftover width on each side
-/// shows the previous/next banner through symmetric insets.
 struct ForumHomeCarouselPeekLayout: Equatable {
     static let maxCardWidth: CGFloat = 560
     static let minSideInset: CGFloat = 44
@@ -280,8 +247,6 @@ struct ForumHomeCarouselPeekLayout: Equatable {
     let cardWidth: CGFloat
     let sideInset: CGFloat
 
-    /// - Parameter containerWidth: measured carousel width; `nil` before the
-    ///   first layout pass, which assumes a max-width card until measured.
     init(containerWidth: CGFloat?) {
         guard let containerWidth, containerWidth > 0 else {
             cardWidth = Self.maxCardWidth
@@ -304,8 +269,6 @@ private struct ForumHomePeekCarouselView: View {
 
     @State private var containerWidth: CGFloat?
     @State private var indicatorWidth: CGFloat = 0
-    // Index into the tripled strip, so the visible card always has a
-    // neighbor on both sides; `selection` is this modulo `items.count`.
     @State private var scrolledLoopIndex: Int?
 
     private var layout: ForumHomeCarouselPeekLayout {
@@ -323,9 +286,6 @@ private struct ForumHomePeekCarouselView: View {
                     ForEach(0..<loopCount, id: \.self) { index in
                         ForumCarouselImageButton(item: items[index % items.count], onTap: onTap)
                             .frame(width: layout.cardWidth)
-                            // VoiceOver should see each banner once, not three
-                            // times; the middle copy is where the scroll
-                            // position always settles.
                             .accessibilityHidden(isCloneIndex(index))
                             .id(index)
                     }
@@ -337,9 +297,6 @@ private struct ForumHomePeekCarouselView: View {
             .scrollIndicators(.hidden)
             .safeAreaPadding(.horizontal, layout.sideInset)
             .onScrollPhaseChange { _, newPhase in
-                // `.animating` is a programmatic hop (auto-advance, dot tap),
-                // not the user's finger — treating it as interaction would
-                // let the timer's own animation keep resetting the dwell.
                 let isUserDriven = newPhase == .tracking
                     || newPhase == .interacting
                     || newPhase == .decelerating
@@ -375,8 +332,6 @@ private struct ForumHomePeekCarouselView: View {
             scrollToSelection(newValue)
         }
         .onDisappear {
-            // A mid-gesture size-class change would otherwise leave the
-            // auto-advance guard stuck on.
             isUserInteracting = false
         }
     }
@@ -389,9 +344,6 @@ private struct ForumHomePeekCarouselView: View {
         ForumHomeCarouselLoop.middleLoopIndex(for: selection, itemCount: items.count)
     }
 
-    /// Snaps the settled position back into the middle copy of the strip
-    /// without animation; the congruent card renders identical content, so
-    /// the jump is invisible and the edges of the strip stay unreachable.
     private func recenterIntoMiddleCopy() {
         guard let current = scrolledLoopIndex,
               let recentered = ForumHomeCarouselLoop.recenteredIndex(from: current, itemCount: items.count)
@@ -428,9 +380,6 @@ private struct ForumHomePeekCarouselView: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: selection)
-        // The 6pt dots themselves are hopeless tap targets, so the whole
-        // padded band is the control: a tap selects the nearest dot's banner
-        // directly (the original per-dot jump semantics, bigger target).
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .contentShape(Rectangle())
@@ -447,8 +396,6 @@ private struct ForumHomePeekCarouselView: View {
                 selection = tappedIndex
             }
         }
-        // The banner buttons themselves are the accessible elements; the dots
-        // are a redundant visual affordance.
         .accessibilityHidden(true)
     }
 }
@@ -572,9 +519,6 @@ private struct ForumBoardRowView: View {
                 ForumBoardIconView(iconURL: iconURL, name: name)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    // At accessibility type sizes the inline badge would
-                    // squeeze the board name down to a couple of characters,
-                    // so name and badge stack vertically instead.
                     titleLayout {
                         Text(name)
                             .font(.body.weight(.semibold))

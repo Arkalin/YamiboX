@@ -1,6 +1,5 @@
 import Foundation
 
-/// An activity's source is not the reader identity stored in the timeline.
 public struct BrowsingHistoryVisit: Sendable {
     public var threadID: String
     public var title: String

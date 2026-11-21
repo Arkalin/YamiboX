@@ -2,7 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// State and commands for the Forum settings page's check-in and per-board reader modes.
 @MainActor
 @Observable
 final class SettingsForumViewModel: AppSettingsPersisting {
@@ -34,10 +33,6 @@ final class SettingsForumViewModel: AppSettingsPersisting {
         }
     }
 
-    /// Overwrites the board's entry with `mode`. `boardName` must be the
-    /// entry's stored snapshot carried through unchanged — the central
-    /// settings page cannot resolve real board names; only the board page
-    /// ever writes or refreshes them.
     func setBoardReaderMode(_ mode: BoardReaderSettings.ReaderMode, forumID: String, boardName: String?) {
         let entry = BoardReaderSettings.Entry(mode: mode, boardName: boardName)
         var optimistic = boardReader
@@ -53,10 +48,6 @@ final class SettingsForumViewModel: AppSettingsPersisting {
         }
     }
 
-    /// Entry-level persistence via the atomic `SettingsStore.update`: the
-    /// mutation applies to freshly loaded settings inside the store actor, so
-    /// a board page's concurrent name-snapshot update is never overwritten by
-    /// this page's stale snapshot.
     private func updateBoardReader(
         optimistic updated: BoardReaderSettings,
         mutate: @escaping @Sendable (inout AppSettings) -> Void

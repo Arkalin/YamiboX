@@ -106,9 +106,6 @@ package struct NovelTextLayoutRuntimeAdapterInput {
     }
 }
 
-/// One live platform text-layout object graph for exactly one runtime
-/// generation. Implemented by the UI layer's TextKit adapter; Core only
-/// forwards geometry queries and drawing through this seam.
 package protocol NovelTextViewportRuntimeGraph: AnyObject {
     func viewportSample(
         surfaceIdentity: NovelReaderSurfaceIdentity,
@@ -178,9 +175,6 @@ private extension NovelTextLayoutRuntimeCandidate {
     }
 }
 
-/// Caller-isolated (non-`Sendable`) seam between the runtime owner and the
-/// platform TextKit implementation. The production adapter lives in
-/// `YamiboXUI`; tests substitute their own adapters.
 package protocol NovelTextLayoutRuntimeAdapter: AnyObject {
     func prepareCandidate(
         input: NovelTextLayoutRuntimeAdapterInput
@@ -633,10 +627,6 @@ package final class NovelTextViewportRuntimeOwner {
         return coordinates.text(in: range)
     }
 
-    /// Resolves a document-global UTF-16 offset without depending on any
-    /// particular rendered surface. A vertical selection can span multiple
-    /// surfaces, while its persisted endpoints still need their true semantic
-    /// positions in the shared document.
     package func semanticTextPosition(
         containingDocumentOffset documentOffset: NovelDocumentUTF16Offset
     ) -> NovelTextViewportSemanticTextPosition? {
@@ -654,10 +644,6 @@ package final class NovelTextViewportRuntimeOwner {
         return projection.chapterTitle(forSegmentIdentity: segmentIdentity.rawValue)
     }
 
-    /// The document text on either side of a selection, each side capped at
-    /// `radius` characters — the raw material `NovelLikeExcerptContext` trims
-    /// to clause boundaries. Capped here so a selection near the middle of a
-    /// long chapter never copies the whole document out.
     package func surroundingText(
         for selectionRange: NovelTextSelectionRange,
         radius: Int
@@ -674,15 +660,6 @@ package final class NovelTextViewportRuntimeOwner {
         )
     }
 
-    /// Converts a persisted Like highlight's start/end into a selection range
-    /// in the active generation's document-offset space, reusing the same
-    /// geometry `selectionRects(for:surfaceIdentity:)` already draws with. A
-    /// persisted Like anchor never carries which forum page (`view`) it came
-    /// from, so both endpoints' `view` are overridden to the active
-    /// document's own `view` before lookup; content that isn't part of the
-    /// active document simply fails the segment-identity lookup inside
-    /// `documentOffset(for:in:)`, which is the desired "not on this page,
-    /// don't render" behavior rather than an error.
     package func documentSelectionRange(
         from start: NovelResumePoint,
         to end: NovelResumePoint

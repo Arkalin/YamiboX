@@ -1,12 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Schema for favorite-update tracking owned by `FavoriteUpdateStore`:
-/// per-target check baselines, detected-update events, run snapshots, and
-/// notification filters. Runtime task state, so it lives in GRDB rather than
-/// app settings (which sync over WebDAV) — and unlike the UserDefaults blob
-/// it replaced, rows are written individually and the manga-directory rename
-/// cascade can join `MangaDirectoryStore`'s transaction.
 enum FavoriteUpdateDatabaseSchema: DatabaseSchemaModule {
     static func registerMigrations(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("favorite_update.v1") { db in
@@ -17,16 +11,12 @@ enum FavoriteUpdateDatabaseSchema: DatabaseSchemaModule {
 
             try db.create(table: "favorite_update_events") { table in
                 table.column("id", .text).primaryKey(onConflict: .replace)
-                // Promoted from event_json for the queries below; kept in sync
-                // by every event write.
                 table.column("target_id", .text).notNull()
                 table.column("detected_at", .double).notNull()
                 table.column("dismissed_at", .double)
                 table.column("event_json", .text).notNull()
             }
-            // Serves activeEvents: dismissed_at IS NULL ORDER BY detected_at DESC.
             try db.create(index: "favorite_update_events_active_idx", on: "favorite_update_events", columns: ["dismissed_at", "detected_at"])
-            // Serves insertEvent's replace-per-target delete and the rename cascade.
             try db.create(index: "favorite_update_events_target_idx", on: "favorite_update_events", columns: ["target_id"])
 
             try db.create(table: "favorite_update_runs") { table in
@@ -50,8 +40,6 @@ enum FavoriteUpdateDatabaseSchema: DatabaseSchemaModule {
         }
     }
 
-    /// Register after the identity schema so fresh databases can observe both
-    /// direct event writers and redirect changes made by other feature stores.
     static func registerNotificationBadgeMigration(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("favorite_update.v2.notification-revision") { db in
             try db.execute(sql: """

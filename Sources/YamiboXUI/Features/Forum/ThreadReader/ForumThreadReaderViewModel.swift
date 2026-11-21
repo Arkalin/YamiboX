@@ -21,16 +21,8 @@ final class ForumThreadReaderViewModel {
     let favoriteActions: FavoriteActionController
     var isFavorited: Bool { favoriteActions.isFavorited }
     private var readerMenuSettings = BoardReaderSettings(entries: [:])
-    /// Floor anchor loaded from saved reading progress, pending its one
-    /// restore scroll (browsing-history decision #8). The body view scrolls
-    /// to it once the page renders, then calls `consumeRestoredAnchor()`.
-    /// While non-nil, incoming visible-anchor updates are ignored so the
-    /// initial top-of-page render can't overwrite the saved anchor before
-    /// the restore scroll happens.
     var restoredAnchorPostID: String?
-    /// 只看楼主 — pages are requested scoped to `threadAuthorID`.
     var isAuthorOnly = false
-    /// 倒序浏览 — pages are requested newest-first (Discuz `ordertype=1`).
     var isReverseOrder = false
     var persistsReadingActivity = true
     var recordsReaderSessionHistory = false
@@ -67,10 +59,6 @@ final class ForumThreadReaderViewModel {
     @ObservationIgnored private var handledSubmissionID: UUID?
     @ObservationIgnored private var initialPreloadedPage: ForumThreadPage?
     @ObservationIgnored private let resolveReplyTarget: @Sendable (URL) async -> YamiboThreadRouteResolution?
-    /// The thread starter's uid, needed to scope 只看楼主. Captured from the
-    /// first post of an unfiltered forward-ordered page 1 — the only place it
-    /// shows up — and resolved on demand when this session never loaded that
-    /// page (a resumed session opens deep into the thread).
     @ObservationIgnored private var threadAuthorID: String?
     @ObservationIgnored private var enqueueAttachmentRequest: (@Sendable (ForumAttachmentDownloadRequest) async throws -> ForumAttachmentEnqueueResult)?
 
@@ -220,11 +208,6 @@ final class ForumThreadReaderViewModel {
         ))
     }
 
-    /// Cover menu entries for images opened from this thread: thread cover
-    /// always, manga cover when the thread is a chapter of a local directory
-    /// and its board currently has Smart Comic Mode on (design decision
-    /// #16 — mode off hides this entry outright, even if a `MangaDirectory`
-    /// technically still exists for this tid).
     var imageBrowserCoverActionsProvider: ImageBrowserCoverActionsProvider {
         let forumID = resolvedForumID
         return ImageBrowserThreadCoverActions.provider(
@@ -232,9 +215,6 @@ final class ForumThreadReaderViewModel {
             contentCoverStore: contentCoverStoreProvider,
             mangaDirectoryStore: mangaDirectoryStoreProvider,
             isSmartComicModeEnabled: { [settingsStoreProvider] in
-                // Strict rule, no special cases: without a settings store
-                // there is no configured smart-enabled manga board, so the
-                // manga-cover entry stays hidden.
                 guard let settingsStore = await settingsStoreProvider() else { return false }
                 return await settingsStore.load().isSmartComicModeEnabled(forumID: forumID)
             }
@@ -283,8 +263,6 @@ final class ForumThreadReaderViewModel {
         isLoading = false
     }
 
-    /// A retained model must accept the newly requested chapter anchor, not
-    /// silently resume its previous floor or author/reverse filter.
     func prepareForOriginalPost(context: ThreadNovelLaunchContext, preloadedPage: ForumThreadPage?) {
         guard context.thread.tid == self.context.thread.tid else { return }
         cancelPageLoad()
@@ -332,15 +310,12 @@ final class ForumThreadReaderViewModel {
             await refresh(after: change)
             return
         }
-        // Cancellation retains the old page. A filter toggle may still need
-        // matching content, so reentry must resume that unfinished intent.
         if needsViewModeReload {
             await loadPage(1)
             return
         }
         guard page == nil else { return }
         var initialPage = context.explicitReadingState?.page ?? context.initialPage
-        // Resume is opt-in. Explicit post/page links still take precedence.
         do {
             if context.explicitReadingState == nil, context.targetPostID == nil, context.initialPage <= 1,
                await settingsStoreProvider()?.load().readingProgress.savesNormalThreadProgress == true,
@@ -363,8 +338,6 @@ final class ForumThreadReaderViewModel {
     }
 
     private func refresh(after change: ForumSubmissionChange) async {
-        // Resolving a findpost URL can suspend. A page turn or mode switch
-        // during that lookup must win over the submission's older intent.
         cancelPageLoad()
         generation += 1
         let requestGeneration = generation
@@ -423,13 +396,6 @@ final class ForumThreadReaderViewModel {
         await loadPage(nextPage)
     }
 
-    /// Turns 只看楼主 on or off. Both directions restart at page 1: a filtered
-    /// thread paginates over a different set of posts, so the page the reader
-    /// is on means nothing in the other mode.
-    ///
-    /// Enabling needs the thread starter's uid; when this session has never
-    /// seen page 1 it is resolved first, and the toggle stays off if even that
-    /// fails rather than silently loading the unfiltered thread.
     func setAuthorOnly(_ isEnabled: Bool) async {
         guard !Task.isCancelled, isEnabled != isAuthorOnly else { return }
         if isEnabled, threadAuthorID == nil {
@@ -462,8 +428,6 @@ final class ForumThreadReaderViewModel {
         await reloadAfterViewModeChange()
     }
 
-    /// Turns 倒序浏览 on or off, restarting at page 1 for the same reason
-    /// `setAuthorOnly` does — reversed page 1 holds the newest replies.
     func setReverseOrder(_ isEnabled: Bool) async {
         guard !Task.isCancelled, isEnabled != isReverseOrder else { return }
         needsViewModeReload = true
@@ -504,8 +468,6 @@ final class ForumThreadReaderViewModel {
         }
     }
 
-    /// Keep thread-only enrichment here; decisions, mutations and operation
-    /// admission are shared with every other favorite entry point.
     private func favoriteAddedFeedback(_ result: FavoriteCommands.AddResult) async -> TransientFeedback {
         if let coverCandidate = ThreadCoverResolver.findThreadCoverCandidate(in: page),
            let coverStore = await contentCoverStoreProvider() {
@@ -525,26 +487,6 @@ final class ForumThreadReaderViewModel {
         return result.feedback
     }
 
-    /// Local half of decision #8's "auto-attribution" feedback (the
-    /// remote-sync half is a later phase) — the star-button add path is the
-    /// most common way users hit this feature, so it gets an immediate toast
-    /// rather than waiting for a sync warning that may never come.
-    ///
-    /// Fires only when every one of these holds, checked in this order so
-    /// the cheapest gate runs first:
-    /// - This board's Smart Comic Mode is on, via an explicit
-    ///   `settingsStore` lookup (never inferred from a proxy signal like
-    ///   "a directory happened to resolve" — that exact mistake bit three
-    ///   earlier smart-comic-mode phases).
-    /// - A `MangaDirectory` actually resolves for this tid (a single-tid
-    ///   `directory(containingTID:)` lookup is enough here — this is one
-    ///   favorite, not the batch grouping the favorites page does).
-    /// - At least one *other* already-favorited `.mangaThread` item (the one
-    ///   just added is already persisted by the time this runs) shares that
-    ///   directory's chapter tids.
-    ///
-    /// Returns the directory's `cleanBookName` to interpolate into the toast,
-    /// or nil to leave `transientMessage` as the plain add-feedback string.
     private func autoAttributionDirectoryTitle(localFavoriteLibraryStore: FavoriteLibraryStore) async -> String? {
         guard let settingsStore = await settingsStoreProvider() else { return nil }
         let settings = await settingsStore.load()
@@ -555,13 +497,6 @@ final class ForumThreadReaderViewModel {
         }
         let siblingTIDs = Set(directory.chapters.map(\.tid))
         guard let document = try? await localFavoriteLibraryStore.load() else { return nil }
-        // A sibling favorite only actually merges on the Favorites page if ITS
-        // OWN board also has Smart Comic Mode on (LocalFavoriteLibraryProjection's
-        // rawGroupedFavorites checks isSmartComicModeEnabled(forumID:) per-member, not just for
-        // the item just favorited) — a MangaDirectory can span threads from
-        // different boards (e.g. a `.searched` strategy match isn't fid-scoped).
-        // Without this check the toast could claim "merged" for a sibling that
-        // the Favorites page will actually keep standalone.
         let hasOtherFavoriteInDirectory = document.items.contains { item in
             item.target.kind == .mangaThread
                 && item.target.threadID != context.thread.tid
@@ -679,10 +614,6 @@ final class ForumThreadReaderViewModel {
         page?.thread.tid ?? context.thread.tid
     }
 
-    /// Best-known forum id for this thread, falling back from the freshest
-    /// loaded page down to the launch context — used wherever a forumID is
-    /// needed opportunistically (favorite add, cover-action mode gating)
-    /// rather than requiring the page to already be loaded.
     private var resolvedForumID: String? {
         page?.forumID ?? page?.thread.fid ?? context.thread.fid
     }
@@ -802,9 +733,6 @@ final class ForumThreadReaderViewModel {
             var loadedPageNumber = page
             if let locatingReply, !loaded.posts.contains(where: { $0.postID == locatingReply.postID }),
                page != locatingReply.fallbackPage {
-                // findpost resolution is best-effort. If its fallback page
-                // does not contain the reply, refresh the original page
-                // instead of moving the reader to an unrelated position.
                 loaded = try await repository.fetchThreadPage(
                     context: context, page: locatingReply.fallbackPage, authorID: authorID, reverse: reverse
                 )
@@ -856,41 +784,26 @@ final class ForumThreadReaderViewModel {
         }
     }
 
-    // MARK: - 只看楼主 / 倒序浏览
 
-    /// Author scope for the pages this reader requests: set only while
-    /// 只看楼主 is on, since the uid stays remembered across toggles.
     private var activeAuthorID: String? {
         isAuthorOnly ? threadAuthorID : nil
     }
 
-    /// True while the reader shows something other than the canonical
-    /// forward-ordered whole thread. Page numbers and post order both differ
-    /// there, so reading progress and browsing history stay frozen at the last
-    /// canonical position instead of recording a position the normal view
-    /// could never resume to.
     private var isFilteredView: Bool {
         isAuthorOnly || isReverseOrder
     }
 
     private func reloadAfterViewModeChange() async {
-        // The previous mode's anchor points at a post that need not exist —
-        // or need not be at the same floor — in the new one.
         latestVisibleAnchorPostID = nil
         restoredAnchorPostID = nil
         await loadPage(1)
     }
 
-    /// The first post of an unfiltered forward-ordered page 1 is the thread
-    /// starter, and it is the only page that reveals their uid.
     private func captureThreadAuthorIDIfNeeded(from loaded: ForumThreadPage) {
         guard threadAuthorID == nil, !isFilteredView, currentPage == 1 else { return }
         threadAuthorID = loaded.posts.first?.author.uid?.nilIfBlank
     }
 
-    /// Looks up the thread starter's uid for a session that never loaded
-    /// page 1 — cached copy first, then one network read. Returns nil when the
-    /// page carries no uid at all (a deleted or guest first floor).
     private func resolveThreadAuthorID() async throws -> String? {
         if let threadAuthorID { return threadAuthorID }
         let repository = await repositoryProvider()
@@ -902,12 +815,7 @@ final class ForumThreadReaderViewModel {
         return fetched.posts.first?.author.uid?.nilIfBlank
     }
 
-    // MARK: - Reading progress + browsing history
 
-    /// Reported by the body view whenever the topmost rendered post changes
-    /// (floor-level anchor capture). Ignored while a restored anchor is
-    /// still pending its scroll, so the initial top-of-page render can't
-    /// clobber the saved position before the restore happens.
     func updateVisibleAnchor(postID: String?) {
         guard !isSuspendedForModeSwitch else { return }
         guard restoredAnchorPostID == nil else { return }
@@ -918,17 +826,12 @@ final class ForumThreadReaderViewModel {
     }
 
     func consumeRestoredAnchor() {
-        // Seed the live anchor from the restored one so leaving without
-        // scrolling doesn't flush a nil anchor over the saved position.
         if latestVisibleAnchorPostID == nil {
             latestVisibleAnchorPostID = restoredAnchorPostID
         }
         restoredAnchorPostID = nil
     }
 
-    /// Exit-time write-through, called from the view's `onDisappear`. Runs
-    /// in a fresh unstructured Task so view teardown can't cancel the GRDB
-    /// write mid-flight (the cancelled-Task write trap).
     func flushReadingProgress() {
         guard persistsReadingActivity, page != nil, !isFilteredView else { return }
         let position = currentThreadReadingPosition()
@@ -943,9 +846,6 @@ final class ForumThreadReaderViewModel {
 
     private func handlePageLoadSuccess(previousLoadedPage: Int?) {
         if previousLoadedPage != currentPage {
-            // A different page renders different posts; the old anchor is
-            // meaningless there. Same-page reloads (refresh) keep it — the
-            // visible cards re-report momentarily anyway.
             latestVisibleAnchorPostID = nil
         }
         recordBrowsingHistoryVisit()
@@ -974,8 +874,6 @@ final class ForumThreadReaderViewModel {
         persistsReadingActivity && (!context.isDiscussionView || recordsReaderSessionHistory) && !isFilteredView
     }
 
-    /// Main reader-session originals count as activity, unlike comment
-    /// companions. Page turns cannot resurrect a deleted history row.
     private func recordBrowsingHistoryVisit() {
         guard shouldRecordBrowsingHistory, page != nil else { return }
         let history = browsingHistoryWorkflow

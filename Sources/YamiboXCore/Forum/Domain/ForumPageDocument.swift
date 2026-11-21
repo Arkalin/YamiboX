@@ -23,8 +23,6 @@ public struct ForumPageDocument: Equatable, Sendable {
     public let composerLinks: [ForumComposerLink]
     public var announcements: ForumAnnouncementPage? = nil
 
-    // The response can differ from the requested route, for example a search
-    // result, permission message, or a form reached through an unknown link.
     public var purpose: ForumPagePurpose {
         switch forms.first(where: { $0.kind != .standard })?.kind {
         case .thread: return .postEditor

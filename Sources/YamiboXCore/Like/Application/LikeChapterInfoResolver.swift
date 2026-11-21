@@ -1,16 +1,6 @@
 import Foundation
 
-/// Saved chapter titles win; local reading data only fills missing snapshots.
 enum LikeChapterInfoResolver {
-    /// A `NovelReaderProjection` cache lookup is keyed by more than just the
-    /// forum page: `NovelReaderProjectionStore` also keys on `authorID`, and
-    /// every real projection is cached under a real, non-empty author id
-    /// (see `NovelReaderProjectionBuilder.build`) — a lookup that omits it
-    /// resolves to the unfiltered/"all" namespace, which never has a real
-    /// entry, and is not merely a "cache miss": the underlying projection was
-    /// never written under that key. `NovelTextLikeAnchor`/
-    /// `NovelImageLikeAnchor` capture both dimensions at Like time so this
-    /// can round-trip the exact key rather than guessing either of them.
     private struct NovelCacheContext: Hashable {
         var view: Int
         var resolvedAuthorID: String?
@@ -33,8 +23,6 @@ enum LikeChapterInfoResolver {
         }
     }
 
-    /// Matches the anchor's segment identity against `projection.segmentSemantics`
-    /// and reads the corresponding `NovelReaderSegment.chapterTitle`.
     static func novelChapterTitle(
         for anchor: LikeAnchorPayload,
         in projection: NovelReaderProjection?
@@ -52,10 +40,6 @@ enum LikeChapterInfoResolver {
         return projection.chapterTitle(forSegmentIdentity: segmentIdentity)
     }
 
-    /// Resolves chapter titles for a batch of novel Like items, caching one
-    /// projection load per distinct `(view, authorID)` so a list of many
-    /// items on the same forum page/filter context doesn't re-read the disk
-    /// cache per item.
     static func novelChapterInfo(
         for items: [LikeItem],
         threadID: String,
@@ -87,8 +71,6 @@ enum LikeChapterInfoResolver {
         return result
     }
 
-    /// Resolves chapter titles for a batch of manga Like items from the
-    /// (already-loaded) manga directory's chapter list, matched by `tid`.
     static func mangaChapterInfo(for items: [LikeItem], directory: MangaDirectory?) -> [String: String] {
         var titleByTID: [String: String] = [:]
         for chapter in directory?.chapters ?? [] where titleByTID[chapter.tid] == nil {
@@ -113,7 +95,6 @@ enum LikeChapterInfoResolver {
         let items: [LikeItem]
         do { items = try await store.likes(for: work) }
         catch {
-            // Metadata backfill is optional; leave existing annotations untouched.
             YamiboLog.persistence.warning("Failed to read likes for chapter-title backfill: \(error)")
             return
         }

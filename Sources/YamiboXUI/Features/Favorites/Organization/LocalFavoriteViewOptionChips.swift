@@ -1,10 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Context row under the category bar: the current view's item count
-/// (when the "show category counts" setting is on) leading, then layout,
-/// filter, and sort icon-only buttons trailing (filter moved here from the
-/// navigation bar so all three view-affecting controls live together).
 struct LocalFavoriteViewOptionChips: View {
     let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
@@ -30,9 +26,6 @@ struct LocalFavoriteViewOptionChips: View {
             } label: {
                 chipIcon(
                     text: L10n.string("favorites.chip.layout", organizer.display.layoutMode.title),
-                    // Reflects the selected mode's own icon rather than a
-                    // fixed glyph, since the icon is now this button's only
-                    // visible content.
                     systemImage: organizer.display.layoutMode.systemImageName
                 )
             }
@@ -64,8 +57,6 @@ struct LocalFavoriteViewOptionChips: View {
                         organizer.filter.sortOrder.title,
                         organizer.filter.sortDescending ? "↓" : "↑"
                     ),
-                    // Direction-specific arrow so the current sort direction
-                    // still reads at a glance without visible text.
                     systemImage: organizer.filter.sortDescending ? "arrow.down" : "arrow.up"
                 )
             }
@@ -76,7 +67,6 @@ struct LocalFavoriteViewOptionChips: View {
 
     /// Icon-only button; `text` is still passed to `Label` so it's exposed
     /// as the accessibility label even though `.iconOnly` hides it visually.
-    /// `tint` lets the filter button show its active state in accent color.
     private func chipIcon(text: String, systemImage: String, tint: Color? = nil) -> some View {
         Label(text, systemImage: systemImage)
             .labelStyle(.iconOnly)

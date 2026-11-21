@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Derived colors for content inside a selectable card row: entering
-/// selection mode dims every row that isn't selected so the checked ones
-/// stand out.
 struct SelectionRowDimming {
     let isSelecting: Bool
     let isSelected: Bool
@@ -19,8 +16,6 @@ struct SelectionRowDimming {
         isDimmed ? Color.secondary.opacity(0.55) : .secondary
     }
 
-    /// Accent-ish foregrounds (leading icons, failure text) collapse to the
-    /// same dimmed gray as secondary text instead of keeping their hue.
     func emphasis(_ color: Color) -> Color {
         isDimmed ? Color.secondary.opacity(0.55) : color
     }
@@ -64,9 +59,6 @@ private struct SelectableCardRowModifier: ViewModifier {
 }
 
 extension View {
-    /// The shared chrome of a card-style row that can be multi-selected:
-    /// rounded grouped background, accent stroke when selected, and the
-    /// spring that animates the stroke in and out.
     func selectableCardRow(
         isSelecting: Bool,
         isSelected: Bool,
@@ -81,7 +73,6 @@ extension View {
         ))
     }
 
-    /// The same card chrome for rows that never take part in selection.
     func cardRowChrome(
         fill: Color = YamiboColors.SystemSurface.secondaryGroupedBackground
     ) -> some View {

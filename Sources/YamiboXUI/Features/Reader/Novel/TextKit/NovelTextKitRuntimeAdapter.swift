@@ -23,10 +23,6 @@ final class NovelTextViewportLayoutDelegate: NSObject, NSTextViewportLayoutContr
     }
 }
 
-/// Production TextKit 2 runtime adapter: materializes the semantic attributed
-/// document into one `NSTextContentStorage`/`NSTextLayoutManager` graph, builds
-/// the authoritative viewport index, and hands the graph to Core behind the
-/// `NovelTextViewportRuntimeGraph` seam.
 final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter {
     init() {}
 
@@ -385,8 +381,6 @@ final class DefaultNovelTextLayoutRuntimeAdapter: NovelTextLayoutRuntimeAdapter 
         return clipRect.isNull ? nil : clipRect
     }
 
-    /// Pagination and rematerialized clipping use the same document-space
-    /// geometry, including vertical tolerance and support for zero-width lines.
     private static func validatedLineRect(
         fragmentFrame: CGRect,
         typographicBounds: CGRect

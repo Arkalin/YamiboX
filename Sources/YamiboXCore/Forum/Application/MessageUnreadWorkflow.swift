@@ -72,8 +72,6 @@ public final class MessageUnreadWorkflow {
         await task.value
     }
 
-    /// Invalidate immediately, before the async refresh can yield. Multiple
-    /// read completions during a probe collapse into one follow-up request.
     @discardableResult
     public func refreshAfterReading() -> Task<Void, Never> {
         generation += 1
@@ -93,8 +91,6 @@ public final class MessageUnreadWorkflow {
     private func sessionDidChange() async {
         let changed = updateSession(await sessionStore.load())
         if changed, isAppActive {
-            // Do not hold up the change stream while the network is slow;
-            // sign-out must be able to invalidate the in-flight response.
             Task { await refresh() }
         }
     }
@@ -129,8 +125,6 @@ public final class MessageUnreadWorkflow {
                 result = .failure(error)
             }
 
-            // Validate against the store too, even if its change observer
-            // has not yet handled a concurrent logout or account switch.
             guard requestID == id, isAppActive, !Task.isCancelled else { return }
             guard await sessionStore.isCurrentGeneration(snapshot.generation) else { return }
             let currentSession = await sessionStore.load()

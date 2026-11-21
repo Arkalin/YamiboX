@@ -5,9 +5,6 @@ import YamiboXCore
 import UIKit
 #endif
 
-/// Hierarchy detail of the settings screen: pushed onto its navigation
-/// stack (drill-down content, not a self-contained modal task), so it owns
-/// no `NavigationStack` or close button of its own.
 public struct AboutView: View {
     @Environment(\.openURL) private var openURL
     @StateObject private var updateViewModel: AboutUpdateViewModel
@@ -362,8 +359,6 @@ private enum PlatformAppIcon {
     static func load() -> UIImage? {
         for name in iconNames {
             #if canImport(UIKit)
-            // The interactive icon always represents the default brown app icon,
-            // even when the system offers a separate dark Home Screen rendition.
             if let image = UIImage(named: name, in: .main, compatibleWith: UITraitCollection(userInterfaceStyle: .light)) {
                 return image
             }
@@ -373,8 +368,6 @@ private enum PlatformAppIcon {
     }
 
     private static var iconNames: [String] {
-        // A multi-group Icon Composer asset is an icon stack, not a UIImage.
-        // Loading it by name can raise an Objective-C exception on iOS 27.
         var names = ["AppIconPreview"]
 
         if let icons = Bundle.main.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],

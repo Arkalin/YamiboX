@@ -4,8 +4,6 @@ import Foundation
 public actor FavoriteLibraryStore {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
@@ -26,8 +24,6 @@ public actor FavoriteLibraryStore {
         self.database = databasePool
     }
 
-    /// A failed read is never an empty library. Mutations must use `update`,
-    /// which reads and writes the current document in one transaction.
     public func load() async throws -> FavoriteLibraryDocument {
         do {
             let json = try await database.read { db in
@@ -45,11 +41,6 @@ public actor FavoriteLibraryStore {
         }
     }
 
-    /// Applies `transform` to the persisted document inside one write
-    /// transaction — the read, mutation, and save cannot interleave with any
-    /// other writer, so concurrent read-modify-write cycles never overwrite
-    /// each other. Throwing from `transform` rolls the transaction back and
-    /// rethrows the caller's error unchanged.
     @discardableResult
     public func update<T: Sendable>(
         _ transform: @escaping @Sendable (inout FavoriteLibraryDocument) throws -> T
@@ -93,8 +84,6 @@ public actor FavoriteLibraryStore {
 
     public func clearAll() async throws {
         try await database.write { db in
-            // Favorites-scoped wipe: covers are content metadata and survive
-            // clearing the library (only the app-level reset erases them).
             try LibraryDatabaseSchema.deleteAllRows(in: db)
         }
         postChangeNotification()
@@ -136,13 +125,6 @@ public actor FavoriteLibraryStore {
         )
     }
 
-    /// Stored documents stay canonical: the memberwise initializer normalizes
-    /// categories (default ensured, sorted) and items (validated, sorted by
-    /// id) — Codable decoding bypasses it, so save is where canonical form is
-    /// enforced. Collections and tags get the ordering the relational schema
-    /// used to impose via ORDER BY. Uses the internal 8-param initializer, not
-    /// `document.rebuiltPreservingTombstones()`, because this also needs to
-    /// substitute the freshly sorted collections/tags in the same call.
     private static func canonicalized(_ document: FavoriteLibraryDocument) -> FavoriteLibraryDocument {
         FavoriteLibraryDocument(
             categories: document.categories,

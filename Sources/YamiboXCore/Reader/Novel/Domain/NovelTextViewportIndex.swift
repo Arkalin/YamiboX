@@ -144,9 +144,6 @@ package struct NovelTextViewportIndexSurfacePosition: Hashable, Sendable {
     }
 }
 
-/// Compatibility DTO for persisted resume/bookmark/Like values. Unlike a
-/// viewport sample, `displayedTextOffset` here is a Character ordinal, obtained
-/// from the immutable coordinate index rather than by traversing the string.
 package struct NovelTextViewportSemanticTextPosition: Hashable, Sendable {
     public var chapterIdentity: NovelChapterIdentity?
     public var textSegmentIdentity: NovelTextSegmentIdentity
@@ -171,10 +168,6 @@ package struct NovelTextViewportSample: Hashable, Sendable {
     public var documentView: Int
     public var textSegmentIdentity: NovelTextSegmentIdentity
     public var displayedTextOffset: NovelSegmentUTF16Offset
-    /// The owning `NovelReaderProjection`'s cache-key identity (see
-    /// `NovelTextLikeAnchor.resolvedAuthorID`) — carried on the sample so
-    /// Like capture can round-trip the exact cache key later without
-    /// guessing it.
     public var resolvedAuthorID: String?
 
     public init(
@@ -318,11 +311,6 @@ package extension NovelTextViewportIndexSurface {
         }
     }
 
-    /// External blocks (images) carry their own identity on
-    /// `NovelTextViewportExternalBlock.imageSegmentIdentity` rather than in
-    /// `ranges`, so a resume point targeting a liked image must be matched
-    /// here instead of via the text-range `contains(textSegmentIdentity:)`
-    /// overloads above, which only ever see text ranges.
     func contains(
         imageSegmentIdentity: NovelTextSegmentIdentity
     ) -> Bool {

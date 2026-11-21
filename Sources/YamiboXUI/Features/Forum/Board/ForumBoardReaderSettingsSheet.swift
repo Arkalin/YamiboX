@@ -79,8 +79,6 @@ struct ForumBoardReaderSettingsSheet: View {
             }
         }
         .task {
-            // A failure alert left over from a previous presentation must not
-            // fire out of context on the fresh sheet.
             model.boardReaderErrorMessage = nil
             await model.refreshBoardReaderEntry()
         }
@@ -118,11 +116,6 @@ struct ForumBoardReaderSettingsSheet: View {
         Binding(
             get: { currentSelection },
             set: { selection in
-                // The change guard doubles as entry hygiene: a never-
-                // configured board re-selecting 普通 is a no-op (no `.normal`
-                // entry gets created), while switching AWAY from novel/manga
-                // records the explicit `.normal` entry that forces plain
-                // opening in the favorites dispatch (R12).
                 guard selection != currentSelection else { return }
                 switch selection {
                 case .plain:
@@ -130,8 +123,6 @@ struct ForumBoardReaderSettingsSheet: View {
                 case .novel:
                     model.setBoardReaderMode(.novel)
                 case .manga:
-                    // Newly manga-configured boards default Smart Comic Mode
-                    // off (PRD decision #8).
                     model.setBoardReaderMode(.manga(smartEnabled: false))
                 }
             }

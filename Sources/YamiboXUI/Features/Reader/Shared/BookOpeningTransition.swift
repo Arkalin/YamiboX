@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Each visible book owns a namespace, so the same favorite in a collection
-/// and the library beneath it cannot compete as the return destination.
 struct BookOpeningTransition: Equatable {
     let namespace: Namespace.ID
 
@@ -36,8 +34,6 @@ struct BookOpeningPressFeedback {
 
     mutating func activate(reduceMotion: Bool, now: ContinuousClock.Instant = .now) {
         guard !isActivating else { return }
-        // Scroll views can coalesce the entire quick press. Complete the missing
-        // compression before navigation rather than requiring a sustained touch.
         let elapsed = pressedAt.map { $0.duration(to: now) } ?? .zero
         activationDelay = reduceMotion ? .zero : max(.zero, Self.compressionDuration - elapsed)
     }
@@ -131,9 +127,6 @@ private struct BookOpeningPressEffect: ViewModifier {
     }
 }
 
-/// The source is fixed for a presentation, including its closing animation.
-/// The system owns the spring, source cross-fade, interactive cancellation,
-/// offscreen-source fallback, and Reduce Motion behavior in both directions.
 struct BookOpeningDestination<Content: View>: View {
     let source: BookOpeningTransition?
     @ViewBuilder let content: Content

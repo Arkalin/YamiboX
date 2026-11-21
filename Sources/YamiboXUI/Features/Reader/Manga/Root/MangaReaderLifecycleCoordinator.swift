@@ -1,7 +1,5 @@
 import Foundation
 
-/// Owns session task lifetimes and result admission. Content/navigation policy
-/// remains in the workflow and its feature coordinators.
 @MainActor
 final class MangaReaderLifecycleCoordinator {
     enum Phase { case idle, preparing, ready, failed, resetting, closed }
@@ -86,7 +84,6 @@ final class MangaReaderLifecycleCoordinator {
         }
     }
 
-    /// A retry cannot replace workflow data while an old preparation is alive.
     func resetForRetry() async -> Bool {
         guard phase != .closed, phase != .resetting else { return false }
         phase = .resetting
@@ -106,9 +103,6 @@ final class MangaReaderLifecycleCoordinator {
 
     func invalidateContent() {
         contentID = UUID()
-        // Chapter-load admission belongs to MangaReaderWorkflow. Retiring it
-        // here would also cancel a navigation that can safely rebase across a
-        // directory-only commit.
         retire(.adjacentPrefetch)
     }
 

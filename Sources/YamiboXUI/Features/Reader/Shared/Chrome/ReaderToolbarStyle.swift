@@ -19,7 +19,6 @@ extension EnvironmentValues {
 }
 
 #if os(iOS)
-/// Shared by horizontal and vertical Books progress indicators.
 struct ReaderBooksProgressPalette {
     let paper: Color
     let colorScheme: ColorScheme
@@ -93,7 +92,6 @@ private struct ReaderBooksPressFeedback: ViewModifier {
     }
 }
 
-/// For controls whose label already contains its panel, unlike the action row.
 struct ReaderBooksPressButtonStyle: ButtonStyle {
     var isPressFeedbackEnabled = true
 
@@ -132,8 +130,6 @@ private struct ReaderStyledChromePanel: ViewModifier {
     }
 }
 
-/// One diffuse field behind the whole stack, rather than a shadow on each
-/// capsule. Keeping it separate also prevents text and glyphs casting shadows.
 private struct ReaderBooksBackdrop: View {
     @Environment(\.readerToolbarStyle) private var style
     @Environment(\.colorScheme) private var colorScheme

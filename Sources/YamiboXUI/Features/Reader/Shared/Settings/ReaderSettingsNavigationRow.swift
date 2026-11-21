@@ -2,9 +2,6 @@ import SwiftUI
 
 #if os(iOS)
 
-/// Title + trailing chevron row that opens another screen instead of editing
-/// a value in place. Layout matches ``ReaderSettingsToggleRow`` (its neighbor
-/// in both readers' "Other" section) so the two line up inside one card.
 struct ReaderSettingsNavigationRow<Palette: ReaderSettingsPalette>: View {
     let title: String
     let palette: Palette

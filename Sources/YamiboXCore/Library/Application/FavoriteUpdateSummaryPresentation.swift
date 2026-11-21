@@ -1,7 +1,6 @@
 import Foundation
 
 extension FavoriteUpdateSummary {
-    /// Shared by in-app update lists and system notification bodies.
     public var displayText: String {
         switch self {
         case let .newReplies(count):

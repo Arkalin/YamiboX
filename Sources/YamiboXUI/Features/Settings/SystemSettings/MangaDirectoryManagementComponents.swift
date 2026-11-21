@@ -29,9 +29,6 @@ struct MangaDirectoryManagementRowView: View {
             Spacer(minLength: 8)
         }
         .selectableCardRow(isSelecting: isSelecting, isSelected: isSelected) {
-            // No per-directory drill-down exists here, so a tap outside
-            // selection mode is a no-op — only the "select" toolbar button
-            // and swipe-to-delete are live until selection mode is entered.
             if isSelecting {
                 select()
             }
@@ -80,10 +77,6 @@ extension View {
                 }
             ),
             title: \.title,
-            // "清除", not "common.delete" ("删除") — the dialog's own
-            // title/message are framed as a cleanup ("清理"), and the
-            // confirm button should read as the same action, not a
-            // more destructive-sounding synonym.
             actionTitle: { _ in L10n.string("common.clear") },
             message: { $0.message + "\n\n" + viewModel.deletionNotice }
         ) { confirmation in

@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// The shared reader-library panel, with an optional chapters tab followed by
-/// the persisted bookmarks and likes tabs.
 struct ReaderAnnotationPanel<ChapterContent: View>: View {
     let work: ReadingWorkKey
     let workTitle: String
@@ -105,10 +103,6 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
 
-            // Keep every tab mounted while the picker changes. Besides
-            // preserving scroll position, it prevents a freshly-created list
-            // from briefly presenting its empty state before its store load
-            // finishes.
             ZStack {
                 chapterContent(selectedTab == .chapters) { chapterNavigationState = $0 }
                     .opacity(selectedTab == .chapters ? 1 : 0)
@@ -149,9 +143,6 @@ struct ReaderAnnotationPanel<ChapterContent: View>: View {
                 .accessibilityHidden(selectedTab != .likes)
             }
         }
-        // The navigation item belongs to the panel, not its replaceable
-        // segment bodies. Replacing a List otherwise briefly removes and
-        // re-adds the title and Select item, which produces a clipped frame.
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
@@ -205,11 +196,6 @@ extension ReaderAnnotationPanel where ChapterContent == EmptyView {
     }
 }
 
-/// The bookmark segment: book-ordered rows, tap to jump, swipe to delete.
-///
-/// Rows read from the persisted snapshot only — never from a live projection —
-/// so a bookmark synced from another device renders correctly on a device that
-/// has never opened that chapter.
 struct ReaderBookmarkListView: View {
     let work: ReadingWorkKey
     let bookmarkStore: BookmarkStore
@@ -317,8 +303,6 @@ struct ReaderBookmarkListView: View {
             await load()
         }
         .task(id: work) {
-            // Same appearance-scoped observation pattern the reader uses for
-            // the Like store: one stream, torn down with the view.
             for await _ in bookmarkStore.changes() {
                 await load()
             }
@@ -418,8 +402,6 @@ private struct ReaderBookmarkRow: View {
     var body: some View {
         let presentation = ReaderBookmarkRowPresentation(
             item: item,
-            // Same relative-date wording the Like list already uses, so the
-            // two segments of one panel don't phrase time differently.
             relativeDateText: LocalFavoriteRelativeDate.string(from: item.createdAt)
         )
 

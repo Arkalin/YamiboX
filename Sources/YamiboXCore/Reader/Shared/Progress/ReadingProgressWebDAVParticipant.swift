@@ -1,8 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// WebDAV sync participant for reading progress. Owns the payload format and
-/// newest-record-wins merge semantics for progress records.
 struct ReadingProgressWebDAVParticipant: MangaIdentitySyncParticipant {
     var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
         MangaIdentityPayloadStrategy(

@@ -1,8 +1,5 @@
 import Foundation
 
-/// Interactive browse session for the favorites screen: multi-selection
-/// state. Pure state machine with no persistence dependencies. (Search is a
-/// plain live filter through `.searchable`, not a session mode.)
 @MainActor
 final class LocalFavoriteBrowseSession: ObservableObject {
     @Published private(set) var isSelectionMode = false
@@ -21,14 +18,10 @@ final class LocalFavoriteBrowseSession: ObservableObject {
         selectedFavoriteIDs.count + selectedCollectionIDs.count
     }
 
-    /// Only meaningful for a pure-item selection: creating a collection
-    /// moves the selected favorites into it, which has no sensible effect on
-    /// a selected collection (collections don't nest).
     var canCreateCollectionFromSelection: Bool {
         !selectedFavoriteIDs.isEmpty && selectedCollectionIDs.isEmpty
     }
 
-    // MARK: - Selection
 
     func enterSelectionMode() {
         isSelectionMode = true
@@ -72,8 +65,6 @@ final class LocalFavoriteBrowseSession: ObservableObject {
         selectedCollectionIDs.formUnion(collectionIDs)
     }
 
-    /// Drops selections that no longer exist in the library document and exits
-    /// selection mode when nothing remains selected.
     func prune(validFavoriteIDs: Set<String>, validCollectionIDs: Set<String>) {
         selectedFavoriteIDs.formIntersection(validFavoriteIDs)
         selectedCollectionIDs.formIntersection(validCollectionIDs)

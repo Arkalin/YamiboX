@@ -24,8 +24,6 @@ struct NovelReaderView: View {
     @State private var bottomChromeHeight: CGFloat = 0
     @State private var pagedScrollAnimationRequest: ReaderPagedScrollAnimationRequest?
     @State private var controlPagedPagerIdentity: ReaderPagedPagerIdentity?
-    /// Scene-local window safe-area insets reported by
-    /// `ReaderWindowSafeAreaInsetsProbe`; nil until this reader attaches.
     @State private var windowSafeAreaInsets: UIEdgeInsets?
     let dependencies: NovelReaderDependencies
     let forumDependencies: ForumNavigationDependencies
@@ -167,10 +165,6 @@ struct NovelReaderView: View {
                     verticalScroll: { remoteScrollTarget() }
                 ))
 
-                // Chrome-visible only, and only once the top chrome has
-                // reported its height: on the first chrome frame
-                // `topChromeHeight` is still 0 and the banner would sit on
-                // top of the close button.
                 if let sourceStatusText = model.sourceStatusText,
                    !model.novelReaderSurfaces.isEmpty,
                    !reader.isOfflineBannerDismissed,
@@ -224,7 +218,6 @@ struct NovelReaderView: View {
 
                 if externalGeometry == nil {
                     chrome(topInset: topInset, bottomInset: bottomInset, isVisible: showsChrome)
-                        // Match the viewport's origin; the chrome already includes topInset.
                         .ignoresSafeArea(.container, edges: .top)
                         .zIndex(2)
                 } else if externalMenuPresented, model.settings.readingMode == .vertical,
@@ -297,7 +290,6 @@ struct NovelReaderView: View {
                 reader.observeAnnotationsIfNeeded()
             }
             .disabled(hasPresentedOverlay)
-            // Hide only the reading surface's bar, not a presented panel's commands.
             .toolbar(.hidden, for: .navigationBar)
             .transientMessage(
                 loadingOverlayPresentation.isPresented || hasPresentedOverlay
@@ -381,8 +373,6 @@ struct NovelReaderView: View {
                 Task { await reader.annotations.resolveSortKeys() }
             }
         }
-        // Inspector belongs outside the viewport geometry so a pinned panel
-        // reflows the reader rather than covering already laid-out text.
         .modifier(novelReaderPresentationModifier())
         .modifier(NovelReaderToolbarColors(backgroundStyle: model.settings.backgroundStyle))
         .annotationOperationFeedback(reader.annotations.operations)
@@ -455,14 +445,7 @@ struct NovelReaderView: View {
                 guard !Task.isCancelled, viewport.accepts(attachmentID) else { return }
                 updateChromeForContentState()
                 restoreVerticalPositionIfNeeded()
-                // `prepare` is what makes a semantic reader position
-                // available. Refreshing earlier always reads nil and leaves
-                // an existing bookmark looking like an add action.
                 await reader.annotations.refresh()
-                // Strictly after `prepare`: it is what creates the reading
-                // workflow, and the ordinals come off the laid-out projection.
-                // Spawned before it, this read always saw a nil workflow and
-                // silently no-opped, leaving every chapter ordinal unresolved.
                 await reader.annotations.resolveSortKeys()
             },
             onLayoutChange: updateViewportLayout,
@@ -477,8 +460,6 @@ struct NovelReaderView: View {
 
     private func updateViewportLayout(_ layout: NovelReaderLayout) {
         Task {
-            // Let the scoped appearance transaction win. Its completion
-            // triggers another read of the current viewport geometry.
             guard viewport.accepts(attachmentID), !model.isApplyingAppearanceSettings else { return }
             if externalGeometry != nil {
                 await model.commitNovelTextPresentationEnvironment(isPad: isPadDevice)
@@ -751,8 +732,6 @@ struct NovelReaderView: View {
     }
 
     private func effectiveTopInset(_ rawTopInset: CGFloat) -> CGFloat {
-        // Keep pagination based on the status-bar-visible safe area so immersive status bar changes
-        // do not move text or alter rendered page counts.
         guard externalGeometry == nil, isPadDevice else { return rawTopInset }
         return verticalBands.padVisibleStatusBarTopInset
     }
@@ -833,7 +812,6 @@ struct NovelReaderView: View {
         }
     }
 
-    // MARK: - Image taps and browser
 
     private func openImageBrowser(url: URL, title: String?) {
         let item = ImageBrowserItem(
@@ -875,7 +853,6 @@ struct NovelReaderView: View {
         onClose()
     }
 
-    // MARK: - Chrome state and control events
 
     private func toggleChrome() {
         guard !reader.isDismissing, !hasPresentedOverlay else { return }
@@ -949,7 +926,6 @@ struct NovelReaderView: View {
         }
     }
 
-    // MARK: - Tap routing
 
     private func handlePagedContentTap(
         pageDelta: Int? = nil,
@@ -1027,7 +1003,6 @@ struct NovelReaderView: View {
         reader.presentedSheet = .annotations
     }
 
-    // MARK: - Annotation presentation and viewport events
 
     private var annotationSegmentBinding: Binding<ReaderAnnotationSegment> {
         Binding(
@@ -1042,7 +1017,6 @@ struct NovelReaderView: View {
     }
 
     private func toggleBookmarkAtCurrentPosition() {
-        // The vertical sample can lag a gesture; synchronize before capturing.
         syncVerticalViewportBeforeSave()
         reader.annotations.toggleBookmark()
     }
@@ -1085,9 +1059,6 @@ struct NovelReaderView: View {
         verticalRestore.synchronizePositioningFingerprintWithContentState(model: model)
     }
 
-    // MARK: - Vertical position persistence and restore
-    // Thin forwarders into `NovelReaderVerticalRestoreCoordinator`; kept so
-    // the many call sites across the view read the same as before the move.
 
     private func restoreVerticalPositionIfNeeded() {
         guard viewport.accepts(attachmentID) else { return }
@@ -1111,7 +1082,6 @@ struct NovelReaderView: View {
         navigationPresentation.perform { model.jumpToAdjacentChapter(delta) }
     }
 
-    // MARK: - Navigation intents
 
     private var navigationPresentation: NovelReaderNavigationCoordinator.Presentation {
         .init(
@@ -1319,8 +1289,6 @@ struct NovelReaderView: View {
         verticalRestore.cancelVerticalRestoreForUserScroll()
     }
 
-    /// The vertical band definitions shared by pagination, the paged
-    /// viewports and the chrome; see `NovelReaderVerticalBandsPresentation`.
     private var verticalBands: NovelReaderVerticalBandsPresentation {
         NovelReaderVerticalBandsPresentation()
     }

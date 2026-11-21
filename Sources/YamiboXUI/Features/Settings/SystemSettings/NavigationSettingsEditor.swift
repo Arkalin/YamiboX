@@ -38,9 +38,6 @@ struct NavigationSettingsEditor: View {
                         update(tabs: tabs)
                     }
                 )
-                // Recreate editing cells when membership changes: a cell moved
-                // from the available section otherwise retains non-movable traits.
-                // Reordering alone preserves identity and the active drag.
                 .id(Set(draft.tabs))
                 NavigationAvailableSection(tabs: draft.tabs) { tab in
                     guard draft.tabs.count < 5 else { return }

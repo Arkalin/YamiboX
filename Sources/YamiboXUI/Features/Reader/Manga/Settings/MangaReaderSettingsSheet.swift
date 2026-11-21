@@ -3,8 +3,6 @@ import YamiboXCore
 
 #if os(iOS)
 struct MangaReaderSettingsSheet: View {
-    // Plain reference (was `@ObservedObject`): the `@Observable` model's
-    // tracked properties read in `body` register observation on their own.
     let model: MangaReaderViewModel
     let settingsStore: SettingsStore
     let settingsTarget: ReaderSettingsTarget

@@ -1,8 +1,6 @@
 import Foundation
 import YamiboXCore
 
-/// Owns cover snapshots, stale-read admission, store observation and backfill
-/// lifetime. The organizer only supplies grouping inputs and consumes output.
 @MainActor
 final class FavoriteCoverCoordinator {
     struct Context {
@@ -132,7 +130,6 @@ final class FavoriteCoverCoordinator {
                 } catch {
                     YamiboLog.persistence.error("Failed to set automatic smartManga cover for \(group.directory.cleanBookName): \(error.localizedDescription)")
                 }
-                // The store's change stream refreshes the snapshot after commit.
             }
         }
     }

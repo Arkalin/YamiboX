@@ -1,8 +1,6 @@
 import Observation
 import YamiboXCore
 
-/// One committed UI snapshot, with independent observation for each projection.
-/// A position update must not invalidate readers of unchanged settings/structure.
 @MainActor
 final class NovelReaderPublishedState: Observable {
     private struct Snapshot {
@@ -42,7 +40,6 @@ final class NovelReaderPublishedState: Observable {
         return snapshot.resumePoint
     }
 
-    /// Loading, navigation, layout/settings changes and close all publish here.
     func publish(_ state: NovelReadingWorkflowState?, cache: NovelReaderPresentationCache) {
         var next = Snapshot()
         if let state, let presentation = state.presentation {
@@ -58,9 +55,6 @@ final class NovelReaderPublishedState: Observable {
             cache.clear()
         }
 
-        // Nest notifications around a single replacement: every willSet sees
-        // the complete old snapshot, and every didSet sees the complete new one.
-        // Tracking the backing struct itself would invalidate all projections.
         withChange(of: \.presentation, to: next.presentation) {
             withChange(of: \.structure, to: next.structure) {
                 withChange(of: \.progress, to: next.progress) {

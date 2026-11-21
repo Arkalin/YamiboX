@@ -8,10 +8,6 @@ public enum WebDAVSyncContent: String, Codable, CaseIterable, Sendable, Identifi
     public var title: String { L10n.string("webdav.content.\(rawValue)") }
 }
 
-/// The receipt fields in `WebDAVSyncSettings` describe one remote/account
-/// scope. The password is deliberately not part of this value: changing a
-/// credential is a connection change and clears the receipts before the new
-/// connection is admitted.
 struct WebDAVReceiptScope: Codable, Equatable, Sendable {
     let baseURL: String
     let username: String
@@ -27,10 +23,7 @@ struct WebDAVReceiptScope: Codable, Equatable, Sendable {
 public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     public var baseURLString: String
     public var username: String
-    /// In-memory only. `encode(to:)` intentionally omits this field; the
-    /// settings store hydrates it from Keychain after decoding.
     public var password: String
-    /// Non-secret reference to the Keychain item containing `password`.
     var credentialReference: String?
     var pendingCredentialDeletionReferences: Set<String> = []
     public var isAutoSyncEnabled: Bool
@@ -53,35 +46,13 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     public var lastSyncedAt: Date?
     public var lastRemoteUpdatedAt: Date?
     public var localUpdatedAt: Date?
-    /// Datasets flagged as changed since the last sync; only consulted for
-    /// participants that upload exclusively when marked dirty.
     public var dirtyDatasetIDs: Set<String>
-    /// Fingerprint of the last committed sync snapshot, never advanced just
-    /// because a local edit was detected.
     public var lastSyncedFingerprintByDatasetID: [String: String]
-    /// `updatedAt` of the newest remote payload whose content this device has
-    /// absorbed (by applying it or by producing it through an upload), per
-    /// dataset. Lets the upload path apply newer remote data for datasets that
-    /// are not locally dirty instead of discarding it.
     public var lastAppliedRemoteUpdatedAtByDatasetID: [String: Date]
-    /// Monotonic (Lamport-style) revision this device stamped onto its most
-    /// recent upload of each dataset. Revisions, not wall clocks, decide sync
-    /// direction whenever both sides carry one, so cross-device clock skew
-    /// cannot flip a comparison; the `updatedAt` fields above stay as the
-    /// fallback for pre-revision peers and for interval bookkeeping.
     public var localRevisionByDatasetID: [String: UInt64]
-    /// Revision of the newest remote payload whose content this device has
-    /// absorbed (by applying it or by producing it through an upload), per
-    /// dataset. Revision-bearing counterpart of
-    /// `lastAppliedRemoteUpdatedAtByDatasetID`.
     public var lastAppliedRemoteRevisionByDatasetID: [String: UInt64]
-    /// Successful one-way imports, scoped to remote location, account and dataset.
     public var completedMangaIdentityImports: Set<String>
-    /// Scope of the active new-format baseline, independent of import history.
     public var mangaIdentityBaselineScopeByDatasetID: [String: String]
-    /// The remote location and forum account whose receipt dictionaries are
-    /// valid. A mismatch forces a fresh reconciliation instead of allowing a
-    /// revision floor from another destination or account to suppress data.
     var receiptScope: WebDAVReceiptScope?
 
     public init(
@@ -125,8 +96,6 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case baseURLString
         case username
-        // Decoded for migration from the old UserDefaults blob only. Never
-        // emitted by encode(to:).
         case password
         case credentialReference
         case pendingCredentialDeletionReferences
@@ -145,11 +114,6 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         case receiptScope
     }
 
-    /// Every field decodes with `decodeIfPresent ?? default` (the same
-    /// tolerance pattern as `FavoriteLibrarySettings`): a stored blob written
-    /// before a field existed must keep decoding, because a decode failure
-    /// makes `UserDefaultsJSONStorage` degrade to defaults and would silently
-    /// drop the user's credentials along with all sync bookkeeping.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
@@ -175,9 +139,6 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         receiptScope = try container.decodeIfPresent(WebDAVReceiptScope.self, forKey: .receiptScope)
     }
 
-    /// Keep secrets out of the generic JSON storage. The old `password` key
-    /// remains decodable solely so the settings store can migrate it without
-    /// deleting the plaintext until a secure write succeeds.
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(baseURLString, forKey: .baseURLString)
@@ -200,9 +161,6 @@ public struct WebDAVSyncSettings: Codable, Equatable, Sendable {
         try container.encodeIfPresent(receiptScope, forKey: .receiptScope)
     }
 
-    /// Receipt state is disposable remote bookkeeping. Local content remains
-    /// in its feature stores and is fingerprinted again on the next automatic
-    /// round, so a new destination cannot inherit floors from the old one.
     mutating func clearRemoteReceiptState() {
         lastSyncedAt = nil
         lastRemoteUpdatedAt = nil

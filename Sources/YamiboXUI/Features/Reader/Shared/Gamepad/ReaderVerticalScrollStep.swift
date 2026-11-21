@@ -16,8 +16,6 @@ struct ReaderVerticalScrollStep {
         let down = direction == .down
         if down ? y >= range.upperBound - 0.5 : y <= range.lowerBound + 0.5 { return .atEdge }
 
-        // Rapid steps compound against the previous destination while its
-        // animation is still catching up.
         let now = CACurrentMediaTime()
         let start = pending.flatMap { now - $0.time < 0.45 ? $0.y : nil } ?? y
         let step = view.bounds.height * CGFloat(ReaderControlCommandResolver.verticalScrollViewportFraction)

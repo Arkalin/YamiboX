@@ -1,14 +1,6 @@
 import Foundation
 
-// Importing a thread as a favorite: what probing the thread page yields
-// (`FavoriteThreadProbeResult`), how an import can fail, the open route a
-// favorite's target resolves to, and the date resolver that feeds
-// `contentUpdatedAt` — one file because they only appear together on the
-// probe/import path.
 
-/// Public shell kept for API stability; the actual edit-note grammar and date
-/// formats live in `DiscuzEditedDateParser`, shared with the thread-page post
-/// parser so the two can no longer drift apart.
 public enum FavoriteContentUpdateDateResolver {
     public static func date(lastEditedText: String?, postedAtText: String?) -> Date? {
         DiscuzEditedDateParser.date(lastEditedText: lastEditedText, postedAtText: postedAtText)
@@ -80,10 +72,6 @@ enum FavoriteThreadImportFailure: Error, Equatable, Sendable {
 public enum FavoriteItemOpenRoute: Equatable, Sendable {
     case nativeThread(threadID: String)
     case novelDetail(threadID: String)
-    /// Renamed from `.mangaTitle(cleanBookName:)`: favorites no longer carry
-    /// a merged-directory identity, so this now names the single chapter
-    /// thread the favorite points at (smart-comic-mode design decision #9's
-    /// second correction).
     case mangaThread(threadID: String)
     case unsupported
 }

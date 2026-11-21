@@ -1,7 +1,5 @@
 import Foundation
 
-/// Shared command rules, but not shared session state. Each directory surface
-/// owns its own value and timer task.
 public struct MangaDirectoryCommandTiming: Sendable {
     private var cooldownExpiresAt: Date?
     private var forcedSearchShortcutExpiresAt: Date?
@@ -24,15 +22,12 @@ public struct MangaDirectoryCommandTiming: Sendable {
         }
     }
 
-    /// An unrelated failure without a known cooldown retains the prior state.
     public mutating func applyCooldown(until deadline: Date?) {
         guard let deadline else { return }
         cooldownExpiresAt = deadline
         forcedSearchShortcutExpiresAt = nil
     }
 
-    /// Resolve before mutating the owner's state; never hold inout access
-    /// across the asynchronous fallback lookup.
     public nonisolated(nonsending) static func failureCooldownExpiresAt(
         for error: any Error,
         now: () -> Date,

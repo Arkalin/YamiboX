@@ -1,10 +1,8 @@
 import Foundation
 
-/// Shared credential scoping and transport-level origin protection.
 enum YamiboNetworkPolicy {
     enum CookieStorageContext: Sendable {
         case standard
-        /// A private, ephemeral jar used only for the current forum's login flow.
         case isolatedLogin
     }
 
@@ -33,9 +31,6 @@ enum YamiboNetworkPolicy {
         cookieStorageContext: CookieStorageContext = .standard
     ) {
         if YamiboForumEnvironment.current.restrictsRequestsToForumOrigin {
-            // System cookie jars match domains, not origins (notably ignoring ports).
-            // Only the login flow's private jar may receive Set-Cookie and carry
-            // it to the next request. The redirect policy keeps it on this origin.
             request.httpShouldHandleCookies = cookieStorageContext == .isolatedLogin
                 && handlesCookies == true
                 && request.url.map(YamiboForumEnvironment.current.isForumURL) == true

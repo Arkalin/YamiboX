@@ -42,7 +42,6 @@ struct KeychainAccountVaultPersistence: AccountVaultPersisting {
     }
 }
 
-/// Ephemeral login attempts must never reach preferences or Keychain.
 final class MemoryAccountVaultPersistence: AccountVaultPersisting, @unchecked Sendable {
     private let lock = NSLock()
     private var data: Data?

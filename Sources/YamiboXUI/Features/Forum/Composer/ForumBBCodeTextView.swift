@@ -61,7 +61,6 @@ final class ForumBBCodeTextView: UITextView {
             do { data = try await Self.pasteData(from: provider, type: type) }
             catch {
                 guard let self, self.isEditable, session.view === self, session.bookmarkedSelection(anchor) != nil else { return }
-                // Some image pasteboards expose a UIImage but cannot vend its advertised raw representation.
                 if board.changeCount == clipboardRevision, [UTType.png.identifier, UTType.jpeg.identifier].contains(type),
                    let imageData = board.data(forPasteboardType: type) ?? board.image?.pngData() {
                     data = imageData
@@ -146,7 +145,6 @@ struct ForumBBCodeTextEditor: UIViewRepresentable {
     func updateUIView(_ view: ForumBBCodeTextView, context: Context) {
         let session = controller.bbcodeSession
         context.coordinator.text = $text
-        // A dismissed surface can receive a final update after its replacement has mounted.
         guard session.isFullScreen == isFullScreen else { return }
         let reattached = session.view !== view
         controller.view = view

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Immutable, session-local data shared by every position in one committed layout.
-/// Identity is deliberately independent of the presentation's progress revision.
 package final class NovelReaderPresentationStructure: Equatable, Sendable {
     package let id = UUID()
     package let generation: UInt64
@@ -47,8 +45,6 @@ package final class NovelReaderPresentationStructure: Equatable, Sendable {
         surfaceIndexesByView = indexesByView
         localPageNumbers = numbers
 
-        // Preserve original chapter order (including duplicate start pages).
-        // Sorting events once lets the page walk avoid a per-page chapter scan.
         let events = chapters.enumerated().sorted {
             if $0.element.startIndex != $1.element.startIndex {
                 return $0.element.startIndex < $1.element.startIndex

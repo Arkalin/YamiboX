@@ -60,8 +60,6 @@ public struct YamiboAccountService: Sendable {
         }
 
         let form = try await remote.fetchLoginForm()
-        // An explicit Cookie header must also carry the isolated login form's
-        // session cookies; clearance alone would hide them from the POST.
         let loginCookies = await cookieJar.cookies()
         let response = try await remote.submitLogin(
             YamiboLoginRequest(
@@ -86,8 +84,6 @@ public struct YamiboAccountService: Sendable {
         let credentials = YamiboRequestCredentials(cookies: cookies, userAgent: userAgent)
         let profile = try await fetchProfile(credentials: credentials)
         guard !profile.uid.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw YamiboError.accountUIDUnavailable }
-        // Profile validation may itself recover a challenge. Persist the
-        // candidate's latest clearance, not the snapshot from before that GET.
         let authenticatedCookies = await cookieJar.cookies()
         try Task.checkCancellation()
         guard await sessionStore.isCurrentGeneration(baseline.generation) else { throw CancellationError() }

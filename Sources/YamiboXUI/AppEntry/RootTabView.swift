@@ -38,15 +38,12 @@ public struct RootTabView: View {
         }
         .task(id: launchScreenDeadline) {
             guard !hasCompletedMinimumLaunchDisplay else { return }
-            // Carry the original deadline across storage and window preparation;
-            // those stages count toward the minimum rather than adding to it.
             let deadline = launchScreenDeadline ?? ContinuousClock.now.advanced(by: .seconds(1.7))
             do {
                 try await ContinuousClock().sleep(until: deadline)
                 guard !Task.isCancelled else { return }
                 hasCompletedMinimumLaunchDisplay = true
             } catch {
-                // A cancelled view task must not publish a completed launch.
             }
         }
         .task {
@@ -83,9 +80,6 @@ public struct RootTabView: View {
         ) {
             Button(L10n.string("common.ok")) { appModel.mangaOpenFailure = nil }
         }
-        // Deferred rather than dropped while the placeholder or a restored
-        // reader covers the tab content: the prompt state persists and the
-        // alert presents once this surface is visible again.
         .modifier(AppUpdateLaunchPromptAlert(
             prompter: appUpdateLaunchPrompter,
             isActive: !isShowingBootstrapPlaceholder && !appModel.hasActiveReaderPresentation

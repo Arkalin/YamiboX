@@ -75,7 +75,6 @@ public struct NovelReaderLayout: Hashable, Sendable {
             result.safeAreaInsets.trailing = 0
         }
 
-        // Pagination and display use the same inset, including on resize.
         if usesPadPresentation {
             let maximumTextWidth = 700 * max(1, settings.fontScale)
             let extraInset = max(0, result.readableFrame.width - maximumTextWidth) / 2

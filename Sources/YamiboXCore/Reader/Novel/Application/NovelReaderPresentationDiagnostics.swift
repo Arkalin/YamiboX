@@ -10,7 +10,6 @@ package struct NovelReaderPresentationDiagnostics: Equatable, Sendable {
     package init() {}
 }
 
-/// Opt-in timing; normal reading neither reads the clock nor emits per-update logs.
 package enum NovelReaderPerformance {
     package static let isEnabled = ProcessInfo.processInfo.environment["YAMIBOX_READER_PERF"] == "1"
 

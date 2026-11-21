@@ -2,8 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// State and commands for the peripherals page: Apple Pencil page turn,
-/// gamepad, hardware keyboard, and external display controls.
 @MainActor
 @Observable
 final class SettingsPeripheralsViewModel: AppSettingsPersisting {
@@ -31,10 +29,6 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         trackpadSensitivity = settings.trackpadSensitivity(for: settingsTarget)
     }
 
-    /// Reads this page's slice of the settings on its own, for presentations
-    /// that are not hosted by ``SystemSettingsViewModel`` — the reader
-    /// settings sheets open this page directly, so nobody else does the one
-    /// up-front read the settings tab's root performs.
     func load() async {
         activeAction = .loading
         defer { activeAction = nil }
@@ -64,7 +58,6 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         }.value
     }
 
-    // MARK: - Apple Pencil
 
     func updateApplePencilPageTurnEnabled(_ isEnabled: Bool) {
         persistSettings(\.applePencilPageTurn.isEnabled, to: isEnabled) {
@@ -78,7 +71,6 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         }
     }
 
-    // MARK: - Gamepad
 
     func updateGamepadEnabled(_ isEnabled: Bool) {
         persistSettings(\.gamepad.isEnabled, to: isEnabled) { $0.system.gamepad.isEnabled = isEnabled }
@@ -108,7 +100,6 @@ final class SettingsPeripheralsViewModel: AppSettingsPersisting {
         }
     }
 
-    // MARK: - Keyboard
 
     func updateKeyboardEnabled(_ isEnabled: Bool) {
         persistSettings(\.keyboard.isEnabled, to: isEnabled) { $0.system.keyboard.isEnabled = isEnabled }

@@ -1,14 +1,9 @@
 import SwiftUI
 import YamiboXCore
 
-/// One favorite row in the list layouts: cover thumbnail, two-line title,
-/// source, plain time lines, and tag chips. Taps follow the saved open
-/// preference; long-press opens the menu, swipes carry delete and tags.
 struct LocalFavoriteItemRow: View {
     let card: FavoriteCardProjection
     let showsCover: Bool
-    /// Mirrors `settings.favorites.smartMangaBadgeEnabled` (the "显示智能漫画
-    /// 标识" Settings switch) — badge only, never any other smart-card gate.
     let showsSmartCardBadge: Bool
     let isSelectionMode: Bool
     let isSelected: Bool
@@ -63,8 +58,6 @@ struct LocalFavoriteItemRow: View {
 
     private func handleTap() {
         if isSelectionMode {
-            // Smart-card selection expands to archived members when the
-            // organizer executes a bulk operation, just like pointer input.
             onToggleSelection()
         } else {
             actions.open(card, .preferred, bookOpeningTransition)
@@ -74,7 +67,6 @@ struct LocalFavoriteItemRow: View {
     private var rowContent: some View {
         HStack(spacing: 12) {
             if showsCover {
-                // Android row cards use a 92dp-wide 0.72-ratio cover.
                 BookCoverThumbnail(source: card.coverSource, title: card.resolvedTitle)
                     .frame(width: 92, height: 128)
                     .matchedTransitionSource(id: BookOpeningTransition.sourceID, in: bookNamespace)
@@ -90,21 +82,12 @@ struct LocalFavoriteItemRow: View {
                 LocalFavoriteCardTimeLines(card: card)
                 LocalFavoriteTagChipRow(tags: card.tags)
             }
-            // Text-only rows expand from their text block rather than a
-            // nonexistent thumbnail. The inactive ID never matches a destination.
             .matchedTransitionSource(id: showsCover ? "book-metadata" : BookOpeningTransition.sourceID, in: bookNamespace)
             Spacer(minLength: 0)
         }
-        // Matches `LocalFavoriteGridCard`'s own padding so the selection
-        // border below clears the text by the same margin in every layout.
         .padding(10)
         .contentShape(Rectangle())
-        // A smart card is selectable just like any other card — see the
-        // tap-gate above.
         .favoriteSelectionEmphasis(isSelectionMode: isSelectionMode, isSelected: isSelected, cornerRadius: 10)
-        // Layered after `favoriteSelectionEmphasis`, not before: see
-        // `LocalFavoriteGridCard` — its `.opacity()` would otherwise clip
-        // this badge's outward corner offset.
         .overlay(alignment: .topTrailing) {
             if showsSmartCardBadge, card.isModeOnMangaThread {
                 LocalFavoriteSmartCardBadge()

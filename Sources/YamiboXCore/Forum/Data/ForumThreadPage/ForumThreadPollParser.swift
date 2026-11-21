@@ -1,7 +1,5 @@
 import Foundation
 
-/// Parses poll ("投票") data: the poll block embedded in a post and the
-/// poll-voters popout (options, selected option, voter list).
 enum ForumThreadPollParser {
     static func poll(in container: Element, body: Element) -> ForumThreadPoll? {
         let candidates = (
@@ -194,7 +192,6 @@ enum ForumThreadPollParser {
         let value = text
             .replacingOccurrences(of: #"\d+(?:\.\d+)?%\s*(?:\(\d+\))?"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\d+\s*(?:票|人|votes?)"#, with: "", options: [.regularExpression, .caseInsensitive])
-            // Emptied vote-count parentheses left over from the removals above.
             .replacingOccurrences(of: #"[（(]\s*[)）]"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"^\s*[\[\]☑✓○●•\-\d.、]+\s*"#, with: "", options: .regularExpression)
         return value.htmlNormalized.nilIfBlank

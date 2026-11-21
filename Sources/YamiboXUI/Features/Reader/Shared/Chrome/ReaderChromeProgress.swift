@@ -42,8 +42,6 @@ public struct ReaderChromeProgress: Equatable, Sendable {
         progressIndexRange = range
     }
 
-    /// Reader-owned immutable indexes have already been clamped, sorted and deduplicated.
-    /// Public construction keeps its defensive normalization for other consumers.
     mutating func useValidatedScrubTargetIndexes(_ indexes: [Int]) {
         scrubTargetIndexes = indexes
     }
@@ -100,8 +98,6 @@ public struct ReaderChromeProgress: Equatable, Sendable {
         guard scrubTargetIndexes.count > 1 else {
             return scrubTargetIndexes.first ?? 0
         }
-        // Snap to real page positions, not equally spaced ranks: spread anchors
-        // can skip pages and the final spread can contain only one page.
         let pagePosition = clampedFraction * Double(progressIndexRange.count) - 1
             + Double(progressIndexRange.lowerBound)
         var low = 0
@@ -125,10 +121,6 @@ public struct ReaderChromeProgress: Equatable, Sendable {
         currentTick(forTargetIndex: targetIndex)?.title
     }
 
-    /// The tick whose chapter currently covers `targetIndex` — i.e. the
-    /// closest tick at or before it, not an exact-position match. This lets
-    /// callers detect that a chapter boundary was *crossed* even when a fast
-    /// drag jumps `targetIndex` past the tick's exact position in one step.
     public func tickTargetIndex(forTargetIndex targetIndex: Int) -> Int? {
         currentTick(forTargetIndex: targetIndex)?.targetIndex
     }

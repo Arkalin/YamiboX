@@ -27,9 +27,6 @@ public struct MangaAdjacentChapterPrefetchPolicy: Hashable, Sendable {
     }
 }
 
-/// Caller-isolated (non-`Sendable`): the workflow runs entirely in whatever
-/// isolation domain owns it, so its synchronous page-turn API stays synchronous
-/// and its `async` methods (`nonisolated(nonsending)`) never hop executors.
 public final class MangaReaderWorkflow {
     public private(set) var presentation: MangaReaderPresentation
     public private(set) var shouldAutoUpdateDirectoryAfterPrepare = false
@@ -42,10 +39,6 @@ public final class MangaReaderWorkflow {
     private let downloadStore: (any MangaDownloadStoring)?
     private let adjacentPrefetchPolicy: MangaAdjacentChapterPrefetchPolicy
     private var window: MangaChapterWindow?
-    // Async work may suspend while another reader action mutates the window.
-    // These generations are the workflow's commit boundary: UI-side result
-    // guards can prevent a stale publication, but only this owner can prevent
-    // a stale task from replacing the window underneath the next action.
     private var sessionGeneration: UInt64 = 0
     private var positionGeneration: UInt64 = 0
     private var navigationMutationGeneration: UInt64 = 0
@@ -69,8 +62,6 @@ public final class MangaReaderWorkflow {
         let directoryID: MangaDirectoryID
     }
 
-    // Directory-derived work is prepared only at directory replacement and
-    // sort/chapter boundaries, not on every page turn or cooldown tick.
     private struct PreparedDirectoryPanel {
         var displayChapters: [MangaChapter]
         var sortOrder: MangaDirectorySortOrder
@@ -147,14 +138,6 @@ public final class MangaReaderWorkflow {
             if context.isSmartModeEnabled {
                 resolution = try await directoryWorkflow.resolveInitialDirectory(context: context, projection: document)
             } else {
-                // Smart Comic Mode is off for this thread's board: per
-                // decision #12, skip `resolveInitialDirectory` entirely (no
-                // directory-related network activity at all), not just
-                // "resolve but ignore the result". Synthesize a single-
-                // chapter pseudo-directory containing only this chapter —
-                // this thread is read exactly like a normal thread, with no
-                // siblings and no auto-update, matching the "totally
-                // standalone" reading behavior mode-off documents.
                 resolution = MangaDirectoryResolutionResult(
                     directory: Self.standaloneDirectory(for: document, context: context)
                         .reidentified(as: resolvedDirectoryID ?? MangaDirectoryID(rawValue: "manga-thread:" + document.tid)),
@@ -200,18 +183,6 @@ public final class MangaReaderWorkflow {
         return presentation
     }
 
-    /// A single-chapter, never-persisted `MangaDirectory` used when Smart
-    /// Comic Mode is off for this chapter's board (decision #12). It exists
-    /// only to satisfy `MangaChapterWindow`'s non-optional `directory`
-    /// parameter with the least disruption to its existing shape — see the
-    /// Phase B report for why this was chosen over making `directory`
-    /// optional. Because it contains no sibling chapters,
-    /// `adjacentChapter`/`adjacentChapterForLoadedRange` naturally return
-    /// `nil`, so chapter-jump affordances are unavailable without any extra
-    /// gating. `strategy` is never read for anything persisted here — this
-    /// directory is never passed to `directoryStore.saveDirectory` — so
-    /// `.pendingSearch` is chosen only to mirror the existing single-chapter
-    /// offline fallback below.
     private static func standaloneDirectory(
         for document: MangaReaderProjection,
         context: MangaLaunchContext
@@ -359,10 +330,6 @@ public final class MangaReaderWorkflow {
         return result
     }
 
-    /// Seeds from the currently open chapter (falling back to the
-    /// directory's first known chapter, then the launch context's own
-    /// chapter) so a reset works even the moment after `prepare()`, before
-    /// any reading position has resolved.
     @discardableResult
     public nonisolated(nonsending) func resetDirectory() async throws -> MangaDirectoryUpdateResult {
         try Task.checkCancellation()
@@ -487,8 +454,6 @@ public final class MangaReaderWorkflow {
         )
     }
 
-    /// Both navigation entry points keep their own target lookup and cached fast
-    /// path, but share the loading and publication transaction.
     private nonisolated(nonsending) func loadChapterForNavigation(
         _ chapter: MangaChapter,
         localIndex: Int,
@@ -615,8 +580,6 @@ public final class MangaReaderWorkflow {
 
     public func currentDirectoryID() -> MangaDirectoryID? { window?.directory.id }
 
-    /// Other windows can rename or merge this identity while a chapter is open.
-    /// Resolve the latest metadata without discarding the loaded image pages.
     public nonisolated(nonsending) func refreshPersistedDirectory() async throws -> MangaReaderPresentation? {
         guard context.isSmartModeEnabled,
               let mutation = directoryObservationToken() else { return nil }
@@ -729,10 +692,6 @@ public final class MangaReaderWorkflow {
             )
         }
 
-        // Rebase the directory result onto the latest window rather than the
-        // snapshot that was captured before the external store/network work.
-        // This preserves a page turn or chapter load that completed while the
-        // directory command was suspended.
         commitWindow(current, directoryChanged: true)
         activeDirectoryMutationGeneration = nil
         directoryMutationGeneration &+= 1
@@ -894,8 +853,6 @@ public final class MangaReaderWorkflow {
         from previousSettings: MangaReaderSettings,
         to settings: MangaReaderSettings
     ) -> Bool {
-        // Cut, slide and quick fade use the same mounted collection. A change
-        // between them must not issue a placement that cancels an active turn.
         let changesPagingBackend = previousSettings.pagedTurnStyle != settings.pagedTurnStyle &&
             (settings.readingMode != .paged ||
              previousSettings.pagedTurnStyle == .pageCurl || settings.pagedTurnStyle == .pageCurl)

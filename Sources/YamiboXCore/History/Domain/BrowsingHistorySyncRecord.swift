@@ -1,6 +1,5 @@
 import Foundation
 
-/// Stable visit data, independent of the device's reader mode and progress projection.
 struct BrowsingHistorySyncRecord: Codable, Equatable, Sendable {
     var target: FavoriteContentTarget
     var threadID: String?
@@ -11,10 +10,6 @@ struct BrowsingHistorySyncRecord: Codable, Equatable, Sendable {
     var id: String { threadID.map { "source:\($0)" } ?? target.id }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        // Target equality intentionally compares identity only. A persisted sync
-        // record must also compare the display name: otherwise a rename-only
-        // merge is exported but skipped by the store's unchanged-snapshot guard,
-        // leaving its local fingerprint permanently different from the upload.
         lhs.target == rhs.target
             && lhs.target.mangaCleanBookName == rhs.target.mangaCleanBookName
             && lhs.threadID == rhs.threadID

@@ -39,10 +39,6 @@ final class ForumBoardViewModel {
     @ObservationIgnored private let repositoryProvider: @Sendable () async -> any ForumBoardPageLoading
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var handledRefreshRevision: UUID?
-    /// Serializes this view model's two unstructured settings writers (mode
-    /// saves and board-name-snapshot refreshes): each new write awaits the
-    /// previous one, so a slow earlier write can never land after — and
-    /// silently undo — a later one.
     @ObservationIgnored private var boardReaderWriteTask: Task<Void, Never>?
 
     init(fid: String, title: String?, initialPage: Int = 1, dependencies: ForumDependencies) {
@@ -126,11 +122,6 @@ final class ForumBoardViewModel {
         generation += 1
         let requestGeneration = generation
         isLoading = true
-        // Only the latest-generation request may clear the spinners — a
-        // superseded request finishing must not hide the indicator of the
-        // newer request still in flight. Both flags are cleared because a
-        // load/goToPage can supersede a refresh and vice versa; the stale
-        // request's own defer no longer runs its reset.
         defer {
             if requestGeneration == generation {
                 isLoading = false
@@ -155,10 +146,6 @@ final class ForumBoardViewModel {
     }
 
     func refresh() async {
-        // The reentry guard must precede the generation bump: a second
-        // refresh that early-returns after bumping would turn the in-flight
-        // refresh stale without starting a replacement, discarding its
-        // response and leaving `isRefreshing` stuck true forever.
         guard !isRefreshing else { return }
         generation += 1
         await refresh(requestGeneration: generation)
@@ -212,8 +199,6 @@ final class ForumBoardViewModel {
 
         do {
             let repository = await repositoryProvider()
-            // Success is a lightweight confirmation: surface it through the
-            // non-modal transient channel; only failures interrupt via alert.
             transientMessage = try await repository.addBoardFavorite(fid: fid, formHash: page?.formHash)
         } catch {
             if !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) {
@@ -227,24 +212,14 @@ final class ForumBoardViewModel {
         transientMessage = nil
     }
 
-    /// Single source of truth for the reader-settings sheet: the persisted
-    /// entry for this board, loaded when the sheet opens and optimistically
-    /// updated by `setBoardReaderMode(_:)`.
     func refreshBoardReaderEntry() async {
         guard let settingsStore else { return }
         let entryBeforeLoad = boardReaderEntry
         let loaded = await settingsStore.load().boardReader.entry(forumID: fid)
-        // An optimistic update from `setBoardReaderMode(_:)` during the load
-        // must not be clobbered by the stale stored value.
         guard boardReaderEntry == entryBeforeLoad else { return }
         boardReaderEntry = loaded
     }
 
-    /// Every mode — including `.normal` (an explicit 普通 choice writes an
-    /// entry rather than removing one, R12) — persists as an entry. Every
-    /// save stamps the current board-name snapshot: the loaded page's real
-    /// name, falling back to the entry's existing snapshot while the page is
-    /// unavailable, else `nil` — never a placeholder string.
     func setBoardReaderMode(_ mode: BoardReaderSettings.ReaderMode) {
         guard let settingsStore else { return }
         let previous = boardReaderEntry
@@ -257,9 +232,6 @@ final class ForumBoardViewModel {
         boardReaderWriteTask = Task {
             await previousWrite?.value
             do {
-                // Atomic entry-level mutation: `SettingsStore.update` applies
-                // it to freshly loaded settings inside the actor, so it can
-                // never clobber a concurrent writer's save with a stale blob.
                 try await settingsStore.update { settings in
                     settings.boardReader.setEntry(updated, forumID: fid)
                 }
@@ -362,10 +334,6 @@ final class ForumBoardViewModel {
         refreshBoardNameSnapshotIfNeeded(with: page.board.name)
     }
 
-    /// Visiting the board page silently refreshes an existing entry's
-    /// board-name snapshot (PRD decision #2). Only refreshes — never creates
-    /// an entry — and skips the write entirely when the stored name already
-    /// matches, so routine visits do not touch the settings store.
     private func refreshBoardNameSnapshotIfNeeded(with boardName: String) {
         guard let settingsStore, !boardName.isEmpty else { return }
         let fid = fid
@@ -373,12 +341,6 @@ final class ForumBoardViewModel {
         boardReaderWriteTask = Task {
             await previousWrite?.value
             do {
-                // Guarded inside the atomic mutation so it re-checks *fresh*
-                // state: if a serialized-just-before mode save removed the
-                // entry, this refresh sees that and skips — it can never
-                // resurrect a removed entry from a stale copy. An unchanged
-                // name leaves the settings untouched, so `update` skips the
-                // save entirely and routine visits don't touch the store.
                 try await settingsStore.update { settings in
                     guard var entry = settings.boardReader.entry(forumID: fid),
                           entry.boardName != boardName else { return }

@@ -105,10 +105,6 @@ struct NovelReaderTopChrome: View {
                 .padding(.vertical, 8)
                 .readerStyledChromePanel(cornerRadius: 18, tint: readerChromePanelTint(for: colorScheme))
         } else {
-            // Bare title, no glass panel: paged mode reserves a fixed top
-            // band (`pagedTopBandHeight`) above the text, so the title sits
-            // on the page background rather than over running text and needs
-            // no backing plate of its own.
             text
                 .frame(maxWidth: .infinity)
         }

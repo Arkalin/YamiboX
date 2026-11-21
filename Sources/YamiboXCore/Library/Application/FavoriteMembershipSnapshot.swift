@@ -1,6 +1,5 @@
 import Foundation
 
-/// The surface's subject, independent of the chapter used to create a favorite.
 public enum FavoriteMembershipScope: Equatable, Sendable {
     case thread(String)
     case manga(threadID: String, title: String, forumID: String?, directoryTitle: String? = nil)
@@ -30,9 +29,6 @@ public struct FavoriteMembership: Equatable, Sendable {
     public var isSmartManga: Bool { smartMangaTitle != nil }
 }
 
-/// One local batch read supplies all rows, filtering, and commands. Membership
-/// deliberately shares the favorite library's archive semantics, not a second
-/// chapter/title grouping algorithm.
 public struct FavoriteMembershipSnapshot: Sendable {
     public let document: FavoriteLibraryDocument
     public let boardReader: BoardReaderSettings
@@ -77,8 +73,6 @@ public struct FavoriteMembershipSnapshot: Sendable {
         if let directory {
             effectiveTitle = directory.cleanBookName
         } else if let confirmedTitle {
-            // A canonical history title has already been resolved/corrected;
-            // running a chapter-title cleaner again can change its identity.
             effectiveTitle = confirmedTitle
         } else if let item = direct.first(where: { $0.target.kind == .mangaThread }) {
             effectiveTitle = FavoriteCardProjection.resolvedTitle(item: item, mangaDirectory: directory, isModeOnMangaThread: true)
@@ -87,8 +81,6 @@ public struct FavoriteMembershipSnapshot: Sendable {
         }
         let groupKey = directory?.id.rawValue ?? "unresolved-title:" + effectiveTitle
         let members = archivedItemsByTitle[groupKey] ?? []
-        // Older, explicitly per-thread favorites must retain their direct
-        // match even when their board's reader configuration has changed.
         if members.isEmpty, !direct.isEmpty {
             return FavoriteMembership(items: direct, smartMangaTitle: nil)
         }
@@ -106,8 +98,6 @@ public struct FavoriteMembershipSnapshot: Sendable {
     }
 }
 
-/// Reuses grouping across concurrently mounted favorite controls. The database
-/// reads remain authoritative, including identity migrations and sibling writers.
 private actor FavoriteMembershipSnapshotCache {
     static let shared = FavoriteMembershipSnapshotCache()
     private struct Entry {
@@ -127,7 +117,6 @@ private actor FavoriteMembershipSnapshotCache {
             return entry.snapshot.withDirectories(directories)
         }
         let snapshot = FavoriteMembershipSnapshot(document: document, directories: memberDirectories, boardReader: boardReader)
-        // Bound lifetime even when isolated local stores are frequently created.
         if entries.count >= 16, entries[storeID] == nil { entries.removeAll(keepingCapacity: true) }
         entries[storeID] = Entry(document: document, directories: memberDirectories, boardReader: boardReader, snapshot: snapshot)
         return snapshot.withDirectories(directories)

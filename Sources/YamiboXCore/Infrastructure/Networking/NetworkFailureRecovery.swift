@@ -1,7 +1,5 @@
 import Foundation
 
-/// A completed network operation must not be restarted by a feature's own
-/// retry or browser fallback. Cached content remains usable unless cancelled.
 public enum NetworkFailureRecovery: Sendable {
     case cancelled
     case exhausted

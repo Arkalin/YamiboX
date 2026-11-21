@@ -2,9 +2,6 @@ import CoreText
 import Foundation
 import YamiboXCore
 
-/// Parsing font files and talking to the font service can block. Keep both on
-/// a non-main actor so file-picker dismissal and import feedback stay responsive.
-/// Only font metadata values cross back to the UI, never Core Text objects.
 actor ReaderFontFileRegistrar {
     func inspect(_ url: URL, existingNames: Set<String>) throws -> [ReaderImportedFontFace] {
         guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
@@ -28,8 +25,6 @@ actor ReaderFontFileRegistrar {
     }
 
     func register(_ url: URL) throws {
-        // A single app-private file needs no system installation or callback
-        // bridge. The process-scoped API reports completion and errors directly.
         var error: Unmanaged<CFError>?
         guard CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) else {
             throw error?.takeRetainedValue() as Error? ?? ReaderFontError("reader.font.invalid_file")

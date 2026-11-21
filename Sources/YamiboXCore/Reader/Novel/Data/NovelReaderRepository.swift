@@ -259,12 +259,8 @@ public actor NovelReaderRepository: NovelDetailDocumentLoading {
             view: onlinePage.projection.view,
             authorID: onlinePage.projection.resolvedAuthorID
         )
-        // One worker per page preserves save ordering. While it is suspended, keep only
-        // the newest source rather than starting competing file/metadata transactions.
         pendingOfflineRefreshes[identity] = onlinePage
         guard offlineRefreshTasks[identity] == nil else { return }
-        // Detail owns a temporary repository. Retain it until this finite worker
-        // drains, otherwise returning the projection could discard the refresh.
         offlineRefreshTasks[identity] = Task(priority: .utility) { [self] in
             await drainOfflineRefreshes(for: identity)
         }

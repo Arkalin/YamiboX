@@ -74,7 +74,6 @@ struct ForumThreadPostCard: View {
                 ForumThreadCommentsView(comments: post.comments, onUserTap: onUserTap)
             }
 
-            // Also normalize older cached pages that still contain duplicate listings.
             let footerAttachments = ForumThreadAttachmentBlock.uniqueFooterAttachments(post.attachments, excluding: post.contentBlocks)
             if !footerAttachments.isEmpty {
                 ForumThreadFooterAttachmentsView(attachments: footerAttachments, onURLTap: onURLTap, onAttachmentTap: onAttachmentTap)

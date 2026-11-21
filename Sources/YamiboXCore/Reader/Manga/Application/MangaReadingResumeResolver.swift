@@ -48,8 +48,6 @@ public struct MangaReadingResumeResolver: Sendable {
         if startsFromBeginning {
             ownThreadProgress = nil
         } else {
-            // A directory record can share the tid and be newer; only the
-            // exact single-thread identity belongs to this fallback.
             ownThreadProgress = try await readingProgressStore.load(for: .mangaThread(threadID: threadID))?.manga
         }
         let threadResolution = MangaReadingResumeResolution(

@@ -1,33 +1,5 @@
 import Foundation
 
-/// User-space private-message pages, touch template `space_pm.htm`:
-/// conversation list, single conversation, and the send-result page.
-///
-/// Verified against the live template markup. Conversation list:
-///
-/// ```html
-/// <div class="dhnv …"><a … class="flex mon">我的消息<strong>(5)</strong></a>…</div>
-/// <div id="pmlist" …><ul>
-///   <li>
-///     <span class="mimg"><a href="home.php?mod=space&do=pm&subop=view&touid=UID"><img …></a></span>
-///     <a href="home.php?mod=space&do=pm&subop=view&touid=UID">
-///       <p class="mtit"><span class="mtime">TIME</span><span class="mnum">N</span> NAME 对我说:</p>
-///       <p class="mtxt">MESSAGE</p>
-///     </a>
-///   </li>
-/// </ul></div>
-/// ```
-///
-/// Single conversation (`subop=view`, rows via `space_pm_node.htm`):
-///
-/// ```html
-/// <div class="msgbox b_m">
-///   <div class="friend_msg cl"><div class="avat z"><img …></div>
-///     <div class="dialog_green z"><div class="dialog_c">MESSAGE</div><div class="date">TIME</div></div></div>
-///   <div class="self_msg cl">…<div class="dialog_white y"><div class="dialog_c">MESSAGE</div>…</div></div>
-/// </div>
-/// <form id="pmform" … action="home.php?mod=spacecp&ac=pm&op=send&pmid=PMID&…">
-/// ```
 extension UserSpaceHTMLParser {
     static func parsePrivateMessageList(from html: String) throws -> UserSpacePrivateMessagePage {
         try YamiboHTMLPageInspector.ensureReadable(html)
@@ -36,8 +8,6 @@ extension UserSpaceHTMLParser {
         var seen = Set<String>()
 
         for container in privateMessageListItems(in: document) {
-            // Group conversations link via `plid=` instead and are skipped,
-            // matching the conversation screen which only supports `touid`.
             guard let link = container.selectFirst("a[href*='touid=']"),
                   let url = link.attrURL("href"),
                   let uid = url.queryItemValue("touid")?.nilIfBlank,
@@ -112,7 +82,6 @@ extension UserSpaceHTMLParser {
         )
     }
 
-    // MARK: Conversation list
 
     private static func privateMessageListItems(in document: Document) -> [Element] {
         for selector in ["#pmlist li", ".pmlist li", ".pm_list li"] {
@@ -121,7 +90,6 @@ extension UserSpaceHTMLParser {
                 return matches
             }
         }
-        // Older markup variants: derive rows from the conversation links.
         var containers: [Element] = []
         var seen = Set<String>()
         for link in document.selectAll("a[href*='touid=']") {
@@ -136,8 +104,6 @@ extension UserSpaceHTMLParser {
         return containers
     }
 
-    /// The `.mtit` line with the `.mtime`/`.mnum` spans excluded — its direct
-    /// text nodes are exactly "NAME 对我说:" / "我对 NAME 说:".
     private static func conversationTitleLine(in container: Element) -> String? {
         guard let titleElement = container.selectFirst(".mtit") else {
             return container.firstText(".title, .subject, h3, h4")
@@ -146,8 +112,6 @@ extension UserSpaceHTMLParser {
             ?? titleElement.normalizedText().nilIfBlank
     }
 
-    /// Extracts the conversation partner's name from the list-row title line
-    /// ("NAME 对我说:" or "我对 NAME 说:", plus the traditional variants).
     private static func conversationPartnerName(fromTitleLine titleLine: String) -> String? {
         var line = titleLine
         for suffix in ["说:", "說:", "说：", "說：", "说", "說"] where line.hasSuffix(suffix) {
@@ -169,7 +133,6 @@ extension UserSpaceHTMLParser {
         return line.nilIfBlank
     }
 
-    // MARK: Conversation page
 
     private static func parsePrivateMessages(in document: Document, toUID: String, toName: String?) -> [PrivateMessage] {
         var messages: [PrivateMessage] = []
@@ -300,7 +263,6 @@ extension UserSpaceHTMLParser {
             .nilIfBlank
     }
 
-    // MARK: Unread counts
 
     private static func unreadCount(in document: Document) -> Int? {
         try? MessageUnreadHTMLParser.count(for: "pm", in: document)

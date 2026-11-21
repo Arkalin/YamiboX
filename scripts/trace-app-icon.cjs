@@ -1,5 +1,3 @@
-// Reproduce the original artwork's silhouette without redrawing or repositioning it.
-// Temporary tooling dependencies and invocation are documented in docs/design/app-icon.md.
 const fs = require('node:fs');
 const path = require('node:path');
 const { PNG } = require('pngjs');
@@ -12,8 +10,6 @@ const source = PNG.sync.read(fs.readFileSync(path.join(root,
 const { width, height } = source;
 if (width !== 1024 || height !== 1024) throw new Error('Expected the original 1024px icon');
 
-// Representative original colors. Project onto their connecting line to recover
-// the half-coverage contour without interpreting raster color noise as new shapes.
 const background = [82, 28, 10];
 const foreground = [244, 237, 228];
 const delta = foreground.map((value, channel) => value - background[channel]);
@@ -29,7 +25,6 @@ for (let pixel = 0; pixel < mask.length; pixel++) {
   mask[pixel] = coverage[pixel] >= 0.5 ? 1 : 0;
 }
 
-// Trace at 4x using the original antialiasing, not a staircase of whole pixels.
 const scale = 4;
 const bitmap = new PNG({ width: width * scale, height: height * scale });
 for (let y = 0; y < bitmap.height; y++) {

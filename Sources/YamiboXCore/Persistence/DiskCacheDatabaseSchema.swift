@@ -1,10 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Schema for the generic disk cache metadata managed by `DiskCacheStore`.
-///
-/// The `cache_entries` table stores thin LRU/TTL metadata for JSON payloads kept on
-/// disk under `YamiboDatabase.cacheDirectoryName`, shared by forum and reader caches.
 enum DiskCacheDatabaseSchema: DatabaseSchemaModule {
     static func registerMigrations(in migrator: inout DatabaseMigrator) {
         migrator.registerMigration("disk_cache.v1") { db in

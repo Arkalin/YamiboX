@@ -237,10 +237,6 @@ public final class MangaReaderDownloadViewModel: ObservableObject {
 
     private func localFavoriteItem() async -> FavoriteItem? {
         guard let document = try? await localFavoriteLibraryStore.load() else { return nil }
-        // A `.mangaThread` favorite is keyed by its own chapter thread id now
-        // (no merged-directory identity left to look up by directoryTitle —
-        // smart-comic-mode Phase A decision #3/#9), so a direct threadID
-        // match is the only lookup that still applies.
         return document.items.first { item in
             item.target.threadID == context.originalThreadID
         }

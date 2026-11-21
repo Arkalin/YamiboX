@@ -1,9 +1,5 @@
 import Foundation
 
-/// Locates post containers on a thread page and assembles each into a `ForumThreadPost`:
-/// structural navigation (container, body, floor, author, timestamps, manage actions)
-/// plus delegation to the poll/rating/comment/attachment part parsers and the
-/// content-block pipeline.
 enum ForumThreadPostsParser {
     static func posts(in document: Document) throws -> [ForumThreadPost] {
         let capturedAt = Date()
@@ -156,13 +152,10 @@ enum ForumThreadPostsParser {
     }
 
     private static func postedAtText(in container: Element) -> String? {
-        // Desktop pages expose the exact timestamp in a tooltip even while
-        // the visible label says "3 小时前". Prefer that authoritative value.
         for element in container.selectAll("[id^=authorposton] [title], [id^=authorposton][title], .authi .mtime [title]") {
             let title = element.attr("title")
             if DiscuzEditedDateParser.date(from: title) != nil { return title }
         }
-        // Desktop-style markup prefixes the date with "发表于"/"發表於" inside `.authi`.
         let prefixedText = container.selectFirst(".authi")?.normalizedText() ?? ""
         if let prefixed = HTMLTextExtractor.firstMatch(pattern: #"(发表于|發表於)\s*([^|#]+)"#, in: prefixedText)?
             .dropFirst()
@@ -172,17 +165,7 @@ enum ForumThreadPostsParser {
             return prefixed
         }
 
-        // The mobile Discuz theme (what the app actually requests — see
-        // YamiboNetworkConfiguration.defaultMobileUserAgent) has no such prefix:
-        // `.mtime` holds a bare date/relative-time string, occasionally preceded
-        // by concatenated view/reply-count digits on the thread's first floor
-        // (e.g. "189623" immediately before "2026-7-5 11:49"), so pull out just
-        // the date/relative-time shape rather than trusting the whole node text.
-        // Scoped to `.authi .mtime` (not the whole container) so a coincidental
-        // "mtime"-classed element inside a quoted reply body can't be picked up.
         guard let mtime = container.selectFirst(".authi .mtime") else { return nil }
-        // Counters are siblings of the date, not part of it. In particular
-        // "20" views followed by "3 小时前" must not become "203 小时前".
         let mtimeText = mtime.getChildNodes().filter {
             guard let element = $0 as? Element else { return true }
             return !element.hasClass("y")
@@ -316,9 +299,6 @@ enum ForumThreadPostsParser {
         return DiscuzEditedDateParser.firstEditedNote(in: bodyText)
     }
 
-    /// A detached copy of the post body with footer metadata (edit status, rating log,
-    /// comments, polls) removed and the post's image attachments appended, so the
-    /// content pipeline sees every part of the message the web page shows.
     private static func bodyWithoutFooterMetadata(from body: Element, container: Element) throws -> Element {
         let fragment = ([body.html()] + attachmentImagesHTML(in: container, body: body)).joined()
         let document = try KannaSoup.parseBodyFragment(fragment, baseURL: YamiboDomain.baseURL.absoluteString)
@@ -343,19 +323,6 @@ enum ForumThreadPostsParser {
         return copy
     }
 
-    /// Markup for the image attachments Discuz renders *outside* the message body.
-    ///
-    /// Only images embedded with `[attachimg]` land inside `.message`; an image
-    /// uploaded without that tag is emitted after it — `<ul class="img_one">` in the
-    /// touch template (what the app requests, see
-    /// `template/oyeeh_com_baihe_f_x35/touch/forum/viewthread.htm`), `.pattl` in the
-    /// desktop one. The site's own lightbox treats both as post images
-    /// (`children: '.message a.orange, .img_one a.orange'`), so they belong in the
-    /// content pipeline; parsing only `.message` used to drop them entirely.
-    ///
-    /// Only the `<img>` elements are lifted, not their wrappers: the surrounding
-    /// markup is a download link plus upload/size chatter that
-    /// `ForumThreadAttachmentParser` already reports separately.
     static func attachmentImagesHTML(in container: Element, body: Element) -> [String] {
         var seen = Set(
             body.selectAll("img").compactMap {

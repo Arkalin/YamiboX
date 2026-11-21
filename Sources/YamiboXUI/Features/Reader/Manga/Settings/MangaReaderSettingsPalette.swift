@@ -72,8 +72,6 @@ struct MangaReaderSettingsPalette {
 }
 
 extension MangaReaderSettingsPalette: ReaderSettingsPalette {
-    /// Manga cards are outlined with the dedicated `cardStroke` (0.10 white
-    /// in dark mode) rather than the softer divider Novel uses.
     var sectionStroke: Color { cardStroke }
 }
 

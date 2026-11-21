@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Target-category picker shown before starting a remote favorite sync.
 struct FavoriteRemoteSyncCategorySheet: View {
     let categories: [FavoriteCategory]
     let selectedCategoryID: String

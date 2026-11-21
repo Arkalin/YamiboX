@@ -61,10 +61,6 @@ enum HTMLTextExtractor {
         return YamiboForumEnvironment.current.adaptedResourceURL(url, purpose: purpose)
     }
 
-    /// Payload of the `<root><![CDATA[…]]></root>` envelope Discuz wraps AJAX
-    /// responses in, or nil when the input is not such an envelope. Feeding the
-    /// raw envelope to the HTML parser destroys the first tag of the payload
-    /// and leaks a literal "]]>" text node into the body.
     static func discuzAjaxPayload(from html: String) -> String? {
         guard let startRange = html.range(of: "<![CDATA["),
               let endRange = html.range(of: "]]>", range: startRange.upperBound ..< html.endIndex) else {
@@ -77,8 +73,6 @@ enum HTMLTextExtractor {
         regexCache.regex(pattern: pattern, options: options)
     }
 
-    // Equivalent to `String.replacingOccurrences(of:with:options:.regularExpression)` but backed
-    // by cachedRegex, so repeated calls with the same pattern skip NSRegularExpression compilation.
     static func regexReplacing(_ text: String, pattern: String, with template: String) -> String {
         guard let regex = cachedRegex(pattern: pattern) else {
             YamiboLog.app.warning("HTMLTextExtractor: malformed regex pattern \(pattern, privacy: .public), leaving text unchanged")
@@ -88,7 +82,6 @@ enum HTMLTextExtractor {
         return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: template)
     }
 
-    // Equivalent to `String.range(of:options:.regularExpression) != nil` but backed by cachedRegex.
     static func regexContainsMatch(_ text: String, pattern: String) -> Bool {
         guard let regex = cachedRegex(pattern: pattern) else { return false }
         let range = NSRange(text.startIndex..., in: text)
@@ -98,10 +91,6 @@ enum HTMLTextExtractor {
     private static let regexCache = RegexCache()
 }
 
-// Some callers interpolate variable content (e.g. a thread ID) into patterns, so cache keys
-// aren't a small fixed set. NSCache is thread-safe without manual locking and evicts under
-// memory pressure, unlike a plain Dictionary; countLimit bounds the interpolated-key growth
-// over a long session without waiting for memory pressure.
 private final class RegexCache: @unchecked Sendable {
     private let storage = NSCache<NSString, NSRegularExpression>()
 

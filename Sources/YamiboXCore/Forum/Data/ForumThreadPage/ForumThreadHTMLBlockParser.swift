@@ -1,12 +1,6 @@
 import Foundation
 
-/// Turns a post body's HTML into renderable `ForumThreadContentBlock`s.
-///
-/// This is the pipeline entry: it sanitizes the fragment (jammer/hidden nodes)
-/// and walks the DOM with `ForumThreadBlockBuilder`. Text blocks follow content
-/// structure rather than an artificial character limit.
 enum ForumThreadHTMLBlockParser {
-    // Bump when cached content blocks need to be rebuilt from their HTML.
     static let cacheVersion = 1
 
     static func parseBlocks(in body: Element) throws -> [ForumThreadContentBlock] {
@@ -28,8 +22,6 @@ enum ForumThreadHTMLBlockParser {
             .parse(nodes: (document.body() ?? document).getChildNodes())
     }
 
-    /// The whitespace/newline normalization applied to every committed text run,
-    /// for callers that need to align externally stored text with parsed blocks.
     static func normalizeCommittedText(_ value: String) -> String {
         ForumThreadTextNormalizer.normalize(value).text
     }

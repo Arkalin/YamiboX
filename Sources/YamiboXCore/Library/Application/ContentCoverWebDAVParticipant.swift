@@ -1,19 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// WebDAV sync participant for content covers. Owns the payload format and
-/// newest-row-wins merge semantics for `content_cover` rows.
-///
-/// Covers live outside `FavoriteLibraryDocument` (in the `content_cover`
-/// table), so before this participant existed a favorite arriving via WebDAV
-/// had no cover row on the receiving device and rendered the text placeholder
-/// until the user happened to open the thread. Syncing the rows themselves
-/// fixes that and also carries the user-intent bits (manual cover, forced
-/// text cover, dynamic toggle) across devices.
-///
-/// Whole rows merge by `updatedAt` — the store bumps one `updatedAt` per row
-/// on every write, so the row is the store's own conflict granularity. There
-/// deletion history survives cleared content and directory identity changes.
 struct ContentCoverWebDAVParticipant: MangaIdentitySyncParticipant {
     var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
         MangaIdentityPayloadStrategy(
@@ -86,9 +73,6 @@ struct ContentCoverWebDAVPayload: Codable, Equatable, Sendable {
 
     var version: Int
     var updatedAt: Date
-    /// Monotonic per-dataset sync revision, stamped into the envelope by the
-    /// sync service after export; nil for payloads written before revisions
-    /// existed (decode falls back to `updatedAt` comparisons then).
     var syncRevision: UInt64?
     var covers: [ContentCover]
     var deletions: SyncDeletionState
@@ -139,11 +123,6 @@ struct ContentCoverWebDAVMerger: Sendable {
         updatedAt: Date
     ) -> ContentCoverWebDAVPayload {
         let deletions = local.deletions.merging(remote?.deletions ?? .init())
-        // `uniquingKeysWith` rather than `uniqueKeysWithValues`: Codable
-        // decoding bypasses the store's write paths, so a hand-edited or
-        // buggy-peer payload can carry duplicate keys — that must degrade to
-        // keep-newest, not crash every future sync round (same tolerance as
-        // `FavoriteLibraryWebDAVMerger`).
         var byKey = Dictionary(local.covers.map { ($0.key, $0) }, uniquingKeysWith: Self.newerCover)
         for cover in remote?.covers ?? [] {
             byKey[cover.key] = byKey[cover.key].map { Self.newerCover($0, cover) } ?? cover

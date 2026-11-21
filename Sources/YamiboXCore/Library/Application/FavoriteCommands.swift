@@ -1,37 +1,9 @@
 import Foundation
 
-/// Local-first quick actions for single favorites (reader star button, detail
-/// pages, favorite item menus), plus the shared decision/remember layer every
-/// favorite entry point routes through.
-///
-/// Adding writes the local library first and reports the optional Yamibo push
-/// separately — a remote failure never rolls the local favorite back. The
-/// quick `removeFavorite` command inverts that: the remote delete runs first, so its
-/// failure throws and leaves the local item intact (no half-deleted state).
-///
-/// ## Terminology (add/import/push/sync boundaries)
-/// - **add** — a user-initiated favorite creation: local write first, then
-///   an optional immediate Yamibo push per `FavoriteAddSyncDecision`.
-/// - **upsert** — the document-level write primitive
-///   (`FavoriteLibraryDocument.upsertItem`); replaces by target, never
-///   touches the network.
-/// - **import** — the sync engine materializing a remote favorite locally
-///   (`FavoriteLibraryDocument.importThreadFavorite`).
-/// - **push** — transmitting one existing local favorite to Yamibo
-///   (`pushFavoriteItemToYamibo`); no local content change beyond the
-///   remote mapping.
-/// - **sync** — reserved for the bidirectional union engine
-///   (`FavoriteYamiboSyncEngine`), which never deletes on either side.
-/// - **remove/delete** — local record removal; whether the Yamibo
-///   counterpart is deleted too is a separate decision resolved through
-///   `FavoriteRemoveRemoteDecision` (never implied by the operation itself).
 public enum FavoriteCommands {
-    /// Outcome of a Yamibo push attached to an add or single-item sync.
     public enum RemotePushResult: Equatable, Sendable {
         case notAttempted
         case synced
-        /// Pushed to Yamibo, but the favorite id could not be resolved yet;
-        /// the next sync run backfills the mapping.
         case syncedWithoutMapping
         case failed(String)
     }
@@ -51,10 +23,6 @@ public enum FavoriteCommands {
         forumName: String? = nil,
         contentUpdatedAt: Date? = nil,
         localTargetKindOverride: FavoriteItemTargetKind? = nil,
-        /// Locations to file the new favorite under, e.g. from the star
-        /// button's long-press location picker. Nil or empty falls back to
-        /// the default category — every existing call site keeps working
-        /// unchanged.
         locations: [FavoriteLocation]? = nil,
         formHash: String?,
         syncToRemote: Bool,
@@ -99,8 +67,6 @@ public enum FavoriteCommands {
         }
     }
 
-    /// With `removeRemote`, an unmapped favorite gets one remote lookup;
-    /// finding nothing just means there is nothing to delete on the website.
     public static func removeFavorite(
         _ favorite: Favorite,
         removeRemote: Bool,
@@ -117,18 +83,6 @@ public enum FavoriteCommands {
             }
         }
         try await localFavoriteLibraryStore.update { document in
-            // Classification is now forumID-dependent (decision #4), but
-            // `Favorite` carries no forumID and every toggle-favorite call
-            // site passes `.other` regardless of board — re-deriving the
-            // target from `favorite` alone here (as `localTarget(for:)` did
-            // pre-Phase-F) would risk computing a different `.id` than the
-            // one actually persisted for a manga-board thread (e.g.
-            // `manga-thread:704` vs `thread:normal:704`), silently turning
-            // this into a no-op for exactly the boards this phase adds
-            // support for. Look up the *actually stored* item by threadID
-            // and remove its real target instead; only fall back to
-            // re-deriving a target when no matching item exists (nothing to
-            // look up — e.g. a concurrent removal already won).
             let target = document.items.first { $0.target.threadID == favorite.threadID }?.target
                 ?? (try? localTarget(for: favorite, forumID: nil, boardReaderSettings: boardReaderSettings))
             guard let target else { return }
@@ -136,17 +90,6 @@ public enum FavoriteCommands {
         }
     }
 
-    /// Re-pins an already-favorited item to exactly `locations` — the star
-    /// button's long-press location picker, applied to an item that's
-    /// already favorited. A diff/replace (built from the existing
-    /// single-location `addLocation`/`removeLocation` primitives, additions
-    /// applied before removals so the item is never transiently locationless),
-    /// not an additive append — matching Android's "重新指定位置" semantics.
-    /// Local-only: unlike add/remove, relocating never asks about Yamibo,
-    /// since location membership has no server counterpart. No-ops (returns
-    /// without writing) for an empty `locations` — callers must route an
-    /// empty selection through the normal remove flow instead, since a
-    /// favorite can never end up with zero locations.
     public static func relocateFavorite(
         threadID: String,
         locations: [FavoriteLocation],
@@ -166,8 +109,6 @@ public enum FavoriteCommands {
         }
     }
 
-    /// Pushes one existing favorite item to Yamibo (favorites item menu's
-    /// "sync to Yamibo" action).
     public static func pushFavoriteItemToYamibo(
         _ item: FavoriteItem,
         localFavoriteLibraryStore: FavoriteLibraryStore,
@@ -191,13 +132,6 @@ public enum FavoriteCommands {
         return remoteFavoriteID == nil ? .syncedWithoutMapping : .synced
     }
 
-    // MARK: - Remembered sync choices
-
-    /// Persists a remembered "sync new favorites to Yamibo?" choice: turns
-    /// the add prompt off and records the picked default. The one shared
-    /// write path for every entry point offering a remember variant (detail
-    /// pages, thread reader, browsing history) and for the system settings
-    /// UI's re-editable switches.
     public static func rememberAddSyncChoice(_ syncToRemote: Bool, settingsStore: SettingsStore) async {
         do {
             _ = try await settingsStore.update { settings in
@@ -209,9 +143,6 @@ public enum FavoriteCommands {
         }
     }
 
-    /// Same shared write path for the delete flow's "also remove from
-    /// Yamibo?" remembered choice, including the favorites page's
-    /// delete-everywhere prompt.
     public static func rememberRemoveRemoteChoice(_ removeRemote: Bool, settingsStore: SettingsStore) async {
         do {
             _ = try await settingsStore.update { settings in
@@ -222,8 +153,6 @@ public enum FavoriteCommands {
             YamiboLog.library.error("Failed to save remembered remove-remote choice: \(error)")
         }
     }
-
-    // MARK: - Helpers
 
     @discardableResult
     private static func upsertLocalFirstFavorite(
@@ -238,11 +167,6 @@ public enum FavoriteCommands {
     ) async throws -> FavoriteItem {
         let target: FavoriteItemTarget
         if let localTargetKindOverride {
-            // Callers that already know the content's form (the browsing
-            // history page: its rows carry the identity kind recorded at
-            // read time) skip the fid-based classification below — a manga
-            // history row has no fid to classify with, and re-deriving would
-            // misfile it as `.normalThread`.
             target = FavoriteItemTarget(kind: localTargetKindOverride, threadID: favorite.threadID)
         } else {
             target = try localTarget(for: favorite, forumID: forumID, boardReaderSettings: boardReaderSettings)
@@ -265,18 +189,6 @@ public enum FavoriteCommands {
         }
     }
 
-    /// Classifies a favorite's target kind: `.novelThread` keeps its
-    /// existing priority over board classification (a novel-type favorite
-    /// never becomes a manga thread just because it happens to share a board
-    /// id), then falls back to `.mangaThread` purely by the thread's board
-    /// fid via `BoardReaderSettings.threadKind(forumID:)` — independent of
-    /// that board's Smart Comic Mode bit (the bit only affects display
-    /// grouping/routing, not classification). Kind is stamped at add time
-    /// and never rewritten by later configuration changes. `forumID` is
-    /// optional because not every call site can supply one (see
-    /// `removeFavorite`, which looks up the stored target instead of relying
-    /// on this classification when possible) — a missing/blank fid simply
-    /// can't classify as manga.
     private static func localTarget(
         for favorite: Favorite,
         forumID: String?,

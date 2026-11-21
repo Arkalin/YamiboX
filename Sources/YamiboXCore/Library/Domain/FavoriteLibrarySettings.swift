@@ -1,6 +1,5 @@
 import Foundation
 
-/// Source-compatible name; the serialized background fields are unchanged.
 public typealias FavoriteBackgroundSettings = CustomBackgroundSettings
 
 public enum FavoriteLibraryLayoutMode: String, Codable, Hashable, CaseIterable, Identifiable, Sendable {
@@ -27,15 +26,10 @@ public enum FavoriteLibraryLayoutMode: String, Codable, Hashable, CaseIterable, 
     public var systemImageName: String {
         switch self {
         case .fixedGrid:
-            // Uniform grid of even cells.
             "square.grid.2x2"
         case .staggered:
-            // Off-grid, unevenly-sized tiles — matches the masonry/waterfall
-            // layout instead of looking like another uniform grid.
             "rectangle.3.offgrid"
         case .rowCard:
-            // List rows with a portrait accessory, matching the actual
-            // portrait-oriented cover thumbnails this mode shows.
             "list.bullet.rectangle.portrait"
         case .rowCardText:
             "list.bullet"
@@ -50,10 +44,6 @@ public enum FavoriteRemoteSyncTaskStatus: String, Codable, Hashable, Sendable {
     case interrupted
 }
 
-/// Five-phase Yamibo favorite sync, mirroring the Android reference:
-/// fetch remote pages, import remote-only items, upload local-only items,
-/// then reconcile the remote mapping. The local library is the source of
-/// truth; sync converges both sides to their union and never deletes.
 public enum FavoriteRemoteSyncPhase: String, Codable, Hashable, Sendable {
     case queued
     case preparing
@@ -66,9 +56,6 @@ public enum FavoriteRemoteSyncPhase: String, Codable, Hashable, Sendable {
     case interrupted
 }
 
-/// Semantic log events recorded during a remote favorite sync run.
-/// The presentation layer maps these to localized text; the model never
-/// stores display copy.
 public enum FavoriteRemoteSyncLogEntry: Codable, Hashable, Sendable {
     case started(categoryName: String)
     case fetchedPage(page: Int, totalPages: Int, accumulatedCount: Int)
@@ -98,16 +85,6 @@ public enum FavoriteRemoteSyncWarning: Codable, Hashable, Sendable {
     case uploadFailedItem(title: String, reason: String)
     case reconcileFailed(reason: String)
     case remoteFavoritesEmptyBeforeBulkUpload(count: Int)
-    /// A newly-imported `.mangaThread` chapter turned out to share a
-    /// `MangaDirectory` with a chapter the user had already favorited before
-    /// this sync run started — the Favorites page will show them merged into
-    /// one card (smart-comic-mode design decision #8's remote-sync half).
-    /// Only recorded when *both* the new chapter's board and the
-    /// already-favorited sibling's board currently have Smart Comic Mode on —
-    /// mirrors the two-sided check `ForumThreadReaderViewModel
-    /// .autoAttributionDirectoryTitle` uses for the local star-favorite half,
-    /// since a `MangaDirectory` can span boards and either side's toggle
-    /// being off means the Favorites page keeps them as separate cards.
     case importedIntoExistingMangaDirectory(title: String, cleanBookName: String)
 }
 
@@ -186,9 +163,6 @@ public struct FavoriteRemoteSyncSnapshot: Codable, Hashable, Identifiable, Senda
     }
 }
 
-/// Baseline for an append-only engine mutation. Counts are stored with the
-/// metadata, so a failed/missing checkpoint can fall back to an exact full save
-/// without reading or comparing the entire previous log on every item.
 public struct FavoriteRemoteSyncEntryCounts: Equatable, Sendable {
     public let logs: Int
     public let warnings: Int
@@ -201,9 +175,6 @@ public struct FavoriteRemoteSyncEntryCounts: Equatable, Sendable {
     }
 }
 
-/// How often favorite update checks run automatically (BGAppRefreshTask plus
-/// a foreground catch-up). iOS decides the actual background timing; these
-/// are the earliest-run intervals, mirroring the Android options.
 public enum FavoriteUpdateCheckInterval: String, Codable, Hashable, CaseIterable, Identifiable, Sendable {
     case off
     case sixHours
@@ -211,11 +182,6 @@ public enum FavoriteUpdateCheckInterval: String, Codable, Hashable, CaseIterable
     case day
     case threeDays
     case week
-    /// Adaptive: checks twice a day as long as any update was detected in
-    /// the last 7 days (see `FavoriteUpdateMonitor.hasRecentEvents`), then
-    /// backs off to every two days. The 7-day window means a single event
-    /// keeps the aggressive cadence for up to a week even without further
-    /// activity — that's deliberate smoothing, not a bug.
     case smart
 
     public var id: String { rawValue }
@@ -232,7 +198,6 @@ public enum FavoriteUpdateCheckInterval: String, Codable, Hashable, CaseIterable
         }
     }
 
-    /// Seconds until the next automatic check, or nil when disabled.
     public func nextDelay(hasRecentEvents: Bool) -> TimeInterval? {
         switch self {
         case .off: nil
@@ -246,22 +211,11 @@ public enum FavoriteUpdateCheckInterval: String, Codable, Hashable, CaseIterable
     }
 }
 
-/// Separate, LONGER-only sibling of `FavoriteUpdateCheckInterval` for
-/// smart-manga chapter checking. Deliberately has no 6h/12h-class tier by
-/// construction (not merely by convention): chapters change far less often
-/// than forum replies, and — critically — checking hits the manga
-/// directory's own search mechanism, which risks the forum's own
-/// flood-control if hammered. A misconfigured fast tier simply cannot exist
-/// for this enum.
 public enum SmartMangaUpdateCheckInterval: String, Codable, Hashable, CaseIterable, Identifiable, Sendable {
     case off
     case day
     case threeDays
     case week
-    /// Adaptive: mirrors `FavoriteUpdateCheckInterval.smart`'s shape
-    /// (checks more often while updates keep arriving, backs off otherwise)
-    /// but at chapter-appropriate cadence — the aggressive tier here is
-    /// still only once a day, never sub-day.
     case smart
 
     public var id: String { rawValue }
@@ -276,7 +230,6 @@ public enum SmartMangaUpdateCheckInterval: String, Codable, Hashable, CaseIterab
         }
     }
 
-    /// Seconds until the next automatic check, or nil when disabled.
     public func nextDelay(hasRecentEvents: Bool) -> TimeInterval? {
         switch self {
         case .off: nil
@@ -339,27 +292,8 @@ public struct FavoriteLibrarySettings: Codable, Hashable, Sendable {
     /// notifications. Off by default; enabling it prompts for notification
     /// permission, so the toggle only ever turns on after a grant.
     public var updateNotificationsEnabled: Bool
-    /// Separate cadence for smart-manga chapter checking (see
-    /// `SmartMangaUpdateCheckInterval`). Defaults to `.threeDays` rather than
-    /// `.off`: unlike the thread-check interval (whose `.off` default avoids
-    /// surprising a user who never asked for update checks), smart-manga
-    /// checking is additionally gated on smart-comic-mode being on AND a
-    /// directory already being resolved — both opt-in actions the user has
-    /// already taken — so a conservative-but-nonzero default doesn't spring
-    /// unexpected network activity on anyone who hasn't touched smart manga.
     public var smartMangaUpdateCheckInterval: SmartMangaUpdateCheckInterval
-    /// Whether smart-comic cards, work-level stars and the multi-select
-    /// toolbar are allowed to delete a work — deleting a smart card means
-    /// deleting every favorite currently archived under it, not just its
-    /// representative member. On by default; turning it off restores the
-    /// original behavior where only the dedicated "查看归档收藏" archive page
-    /// can delete an individual archived member.
     public var smartMangaBulkDeleteEnabled: Bool
-    /// Whether smart-comic cards show the sparkles corner badge
-    /// (`LocalFavoriteSmartCardBadge`). Purely visual: turning it off hides
-    /// the badge without affecting any smart-card behavior (merged grouping,
-    /// archive page, bulk-delete gating all stay keyed off
-    /// `isModeOnMangaThread` as before).
     public var smartMangaBadgeEnabled: Bool
 
     public init(

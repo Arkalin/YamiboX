@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-// Shared presentation for ratings, comments, and replies. Entry points only
-// supply their state and actions; editor styling belongs in this module.
 enum ForumComposerStyle {
     static let contentInset: CGFloat = 16
     static let controlSize: CGFloat = 44

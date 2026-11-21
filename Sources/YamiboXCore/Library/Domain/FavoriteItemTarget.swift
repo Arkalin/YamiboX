@@ -1,29 +1,11 @@
 import Foundation
 
-/// Favorites-only target kind (`FavoriteItem.target`). Physically cannot
-/// represent the reading-progress-side `.mangaTitle` merged-directory
-/// identity — see `FavoriteItemTarget`.
 public enum FavoriteItemTargetKind: String, Codable, CaseIterable, Sendable {
     case normalThread
     case novelThread
     case mangaThread
 }
 
-/// Favorites-only target type. Introduced by smart-comic-mode design decision
-/// #9's second correction: favorites and reading progress used to share
-/// `FavoriteContentTarget`, but the user explicitly rejected keeping a dead
-/// `.mangaTitle` fallback branch in favorites' exhaustive switches just to
-/// satisfy the compiler. This type has exactly three cases — every switch
-/// over it is exhaustive without a `.mangaTitle` option, so a favorite simply
-/// cannot be constructed with the old merged-directory identity.
-///
-/// `.mangaThread(threadID:)` is a *different* case from the reading-progress
-/// side's `FavoriteContentTarget.mangaThread(threadID:)` — same name, two
-/// unrelated enums, one per consumer (`FavoriteItem.target` vs
-/// `ReadingProgressRecord.contentTarget`). Their `.id` strings are
-/// deliberately formatted identically (`"manga-thread:\(threadID)"`) so a
-/// favorite and its own per-thread reading progress line up by direct id
-/// lookup (design decision #15).
 public enum FavoriteItemTarget: Codable, Hashable, Identifiable, Sendable {
     case normalThread(threadID: String)
     case novelThread(threadID: String)
@@ -56,12 +38,6 @@ public enum FavoriteItemTarget: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    /// Every case carries a real Yamibo thread tid — unlike the old shared
-    /// `FavoriteContentTarget.mangaTitle`, there is no case here without one.
-    /// Kept `String?` (rather than a non-optional `String`) purely to match
-    /// the shape favorites-side call sites already expect from the shared
-    /// type this replaces, minimizing churn at existing `guard let`/`?? `
-    /// call sites.
     public var threadID: String? {
         switch self {
         case let .normalThread(threadID), let .novelThread(threadID), let .mangaThread(threadID):

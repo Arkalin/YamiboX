@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Two plain text lines mirroring the Android card: a reading line with the
-/// progress merged in ("最近阅读 3天前 · 62%"), and a content update line.
-/// Lines without data simply do not render.
 struct LocalFavoriteCardTimeLines: View {
     let card: FavoriteCardProjection
 
@@ -34,7 +31,6 @@ struct LocalFavoriteCardTimeLines: View {
         return line
     }
 
-    /// Manga shows the chapter/page position, novels the surface percent.
     private var progressSuffix: String? {
         if card.item.target.kind == .mangaThread {
             return card.chapterPageProgress
@@ -52,8 +48,6 @@ struct LocalFavoriteCardTimeLines: View {
     }
 }
 
-/// Relative wording within a week ("3天前"), calendar dates beyond it, with
-/// the year attached once it differs from the current one.
 @MainActor
 enum LocalFavoriteRelativeDate {
     private static let relativeFormatter: RelativeDateTimeFormatter = {
@@ -92,7 +86,6 @@ enum LocalFavoriteRelativeDate {
     }
 }
 
-/// Row of up to three tag chips with a "+N" overflow marker.
 struct LocalFavoriteTagChipRow: View {
     let tags: [FavoriteTag]
 

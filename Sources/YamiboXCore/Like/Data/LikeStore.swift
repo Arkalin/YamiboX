@@ -1,9 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Result of `upsertTextLike`: the stored (possibly merged) item plus the ids
-/// of any existing text Like Items it subsumed, so callers can drop stale
-/// highlights for those ids.
 public struct LikeTextUpsertResult: Hashable, Sendable {
     public var item: LikeItem
     public var replacedIDs: [String]
@@ -14,28 +11,18 @@ public struct LikeTextUpsertResult: Hashable, Sendable {
     }
 }
 
-/// Persists the local-first Like Library: liked text excerpts and images,
-/// independent of the Favorite Library. Liking never requires or creates a
-/// favorite, and deleting a favorite never deletes Like Items.
 public actor LikeStore: ReaderLikeMutating {
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
 
     public init(databasePool: DatabasePool? = nil) {
-        // `.standard` is the resolver's "shared production pool" signal, so
-        // the nil-pool fallback and the convenience below stay one code path.
         self.database = databasePool
             ?? YamiboDatabasePoolResolver.resolvePool(defaults: .standard, key: "yamibox.likeStore")
     }
 
-    /// Isolated-storage convenience mirroring `ContentCoverStore`: standard
-    /// defaults use the shared database, any other suite gets its own pool in
-    /// a temporary directory (tests and previews).
     public init(defaults: UserDefaults, key: String = "yamibox.likeStore") {
         self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
@@ -48,16 +35,10 @@ public actor LikeStore: ReaderLikeMutating {
         try await database.read { db in try Self.fetchLikes(workKey: workKey, in: db) }
     }
 
-    /// Work-level rows for the My Likes first level, ordered by most recent
-    /// like activity.
     public func workSummaries() async throws -> [LikeWorkSummary] {
         try await database.read { db in try Self.fetchWorkSummaries(in: db) }
     }
 
-    /// Adds a text Like Item, merging it with any existing text Like Items in
-    /// the same chapter whose ranges overlap or touch the new range. The
-    /// caller is responsible for re-capturing `excerptText` over the union
-    /// range before calling this; the replaced items are deleted here.
     @discardableResult
     public func upsertTextLike(
         id: String = UUID().uuidString,
@@ -81,8 +62,6 @@ public actor LikeStore: ReaderLikeMutating {
                 }
                 replacedIDs.append(candidate.id)
             }
-            // Keep merged-away highlights as tombstones so an old remote
-            // snapshot cannot restore them over the replacement highlight.
             try Self.softDeleteRows(ids: replacedIDs, date: date, in: db)
             let previous = try Self.fetchLike(id: id, in: db)
             let createdAt = previous?.createdAt ?? date
@@ -99,9 +78,6 @@ public actor LikeStore: ReaderLikeMutating {
                 excerptPrefix: excerptPrefix,
                 excerptSuffix: excerptSuffix,
                 anchor: .novelText(anchor),
-                // New style wins over every style it subsumes: the user
-                // just picked one, and the merged range is a single
-                // annotation that can only have one.
                 style: style,
                 note: note,
                 chapterTitle: LikeItem.normalizedChapterTitle(chapterTitle) ?? retainedTitle,
@@ -113,10 +89,6 @@ public actor LikeStore: ReaderLikeMutating {
         }
     }
 
-    /// Adds or replaces an image Like Item, reusing any live item at this anchor.
-    /// Position deduplication and insertion share a transaction across all callers.
-    /// Image bytes are stored separately by `LikeImageStore`; this only
-    /// persists the metadata row.
     @discardableResult
     public func upsertImageLike(
         id: String = UUID().uuidString,
@@ -156,11 +128,6 @@ public actor LikeStore: ReaderLikeMutating {
         }
     }
 
-    /// Changes an item's highlight style.
-    ///
-    /// Deliberately its own write path rather than a round trip through
-    /// `upsertTextLike`: recolouring is not a new selection, so it must not
-    /// swallow the neighbours that an overlap merge would.
     @discardableResult
     public func updateStyle(id: String, style: LikeStyle, date: Date = .now) async throws -> LikeItem? {
         return try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster, shouldNotify: { $0 != nil }) { db -> LikeItem? in
@@ -172,12 +139,6 @@ public actor LikeStore: ReaderLikeMutating {
         }
     }
 
-    /// Sets or clears an item's note.
-    ///
-    /// Its own write path for the same reason `updateStyle` is: writing a note
-    /// is not a new selection, so it must not run the overlap merge. A
-    /// whitespace-only note is stored as nil, which is how clearing the editor
-    /// deletes the note without deleting the annotation.
     @discardableResult
     public func updateNote(id: String, note: String?, date: Date = .now) async throws -> LikeItem? {
         let normalized = note?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -191,15 +152,10 @@ public actor LikeStore: ReaderLikeMutating {
         }
     }
 
-    /// Soft-deletes an item (WebDAV tombstone, ADR-0049): the row stays, marked
-    /// `deleted_at`, so it disappears from every read below but a stale remote
-    /// snapshot can't resurrect it on merge.
     public func delete(id: String, date: Date = .now) async throws {
         try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in try Self.softDeleteRow(id: id, date: date, in: db) }
     }
 
-    /// Soft-deletes several items in one write transaction (multi-select
-    /// batch delete on the My Likes list screens).
     public func delete(ids: [String], date: Date = .now) async throws {
         guard !ids.isEmpty else { return }
         try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
@@ -207,15 +163,10 @@ public actor LikeStore: ReaderLikeMutating {
         }
     }
 
-    /// Every Like Item including soft-deleted rows, for WebDAV export.
     public func allIncludingDeleted() async throws -> [LikeItem] {
         try await database.read { db in try Self.fetchAllIncludingDeleted(in: db) }
     }
 
-    /// Replaces the entire local Like Library with a WebDAV-merged snapshot.
-    /// Items may carry `deletedAt` to persist a tombstone alongside its known
-    /// data; the merge/export logic that builds this array lives in
-    /// `LikeLibraryWebDAVParticipant`, not here.
     public func replaceAll(_ items: [LikeItem]) async throws {
         try await StoreWriteTransaction.perform(in: database, notifying: changeBroadcaster) { db in
             try db.execute(sql: "DELETE FROM like_items")
@@ -242,15 +193,6 @@ public actor LikeStore: ReaderLikeMutating {
         }
     }
 
-    /// Sharpens the book-order keys of one work's annotations once a reader
-    /// session has laid a forum page out and therefore knows where each post
-    /// sits on it.
-    ///
-    /// Deliberately does NOT touch `updated_at`: the sort key is local derived
-    /// state, so bumping it would mark the whole Like dataset dirty and upload
-    /// it on every reader launch. It also does not post a change notification
-    /// unless a row actually moved, so a no-op resolve cannot loop the reader's
-    /// store observers.
     public func resolveChapterOrdinals(
         _ ordinalsByChapterIdentity: [NovelChapterIdentity: Int],
         for workKey: ReadingWorkKey
@@ -277,15 +219,6 @@ public actor LikeStore: ReaderLikeMutating {
         }
     }
 
-    /// Fills in the clause context around excerpts once a reader session has
-    /// the chapter text in hand — the healing path for items captured before
-    /// the context fields existed, or synced from another device (the fields
-    /// never travel in the WebDAV payload).
-    ///
-    /// Same contract as `resolveChapterOrdinals`: local derived state, so
-    /// `updated_at` is deliberately untouched (bumping it would dirty the whole
-    /// Like dataset on every reader launch), and the change notification only
-    /// fires when a row actually gained context.
     public func resolveExcerptContexts(
         _ contextsByItemID: [String: (prefix: String?, suffix: String?)]
     ) async {
@@ -314,8 +247,6 @@ public actor LikeStore: ReaderLikeMutating {
         try await database.read { db in try Self.syncSnapshot(in: db) }
     }
 
-    /// Fills missing metadata without changing edit timestamps or reviving deleted items.
-    /// Rechecks the anchor inside the transaction because a sync may have replaced the row.
     @discardableResult
     public func resolveChapterTitles(_ snapshots: [LikeItem]) async throws -> Bool {
         guard !snapshots.isEmpty else { return false }
@@ -455,9 +386,6 @@ public actor LikeStore: ReaderLikeMutating {
                 item.style.rawValue,
                 item.note,
                 LikeItem.normalizedChapterTitle(item.chapterTitle),
-                // Always recomputed here rather than trusted from the caller:
-                // the key is derived state, and a stale one silently reorders
-                // the panel.
                 LikeSortKey.of(item.anchor, chapterOrdinal: item.chapterOrdinal),
                 item.chapterOrdinal,
                 item.createdAt.timeIntervalSince1970,

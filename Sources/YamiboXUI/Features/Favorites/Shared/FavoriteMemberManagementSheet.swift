@@ -86,8 +86,6 @@ struct FavoriteMemberManagementSheet: View {
     }
 }
 
-/// Shared with the favorites tab's selection move sheet. Partial membership
-/// is displayed explicitly instead of replacing every member with a union.
 struct FavoriteLocationMembershipList: View {
     let categories: [FavoriteCategory]
     let collections: [LocalFavoriteCollection]

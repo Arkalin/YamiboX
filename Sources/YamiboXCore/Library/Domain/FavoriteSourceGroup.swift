@@ -2,8 +2,6 @@ import Foundation
 
 public enum FavoriteSourceGroup: Codable, Hashable, Sendable {
     case forumBoard(id: String, label: String)
-    /// A resolved directory group, identified by its persisted directory ID.
-    /// The name is a display snapshot and is not part of identity equality.
     case smartManga(mangaID: String, cleanBookName: String)
     case unknown
 

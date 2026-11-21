@@ -60,8 +60,6 @@ public enum YamiboRoute: Sendable {
     case postLocation(url: URL)
     case ratingReasons(url: URL)
 
-    /// Explicit read allowlist. New routes, actions and read-marking message
-    /// views remain non-replayable until their business semantics are audited.
     var requestDefinition: ForumRequestDefinition {
         switch self {
         case .favorites, .boardFavorites, .favoriteDeleteForm, .login, .currentProfile,
@@ -265,9 +263,6 @@ public enum YamiboRoute: Sendable {
                 .init(name: "page", value: String(max(1, page)))
             ])
         case let .thread(url, page, authorID):
-            // Unlike every constant route below, this one re-anchors a URL we
-            // were handed (possibly host-relative, possibly HTML-escaped), so
-            // it cannot go through `makeURL`.
             let decodedURLString = HTMLTextExtractor.decodeHTMLEntities(url.absoluteString)
             var components = URLComponents(
                 url: URL(string: decodedURLString, relativeTo: YamiboDomain.baseURL)?.absoluteURL ?? url.absoluteURL,
@@ -300,7 +295,6 @@ public enum YamiboRoute: Sendable {
             var items: [URLQueryItem] = [
                 .init(name: "mobile", value: "2"),
                 .init(name: "mod", value: "viewthread"),
-                // An omitted order inherits the thread's reverse-default bit.
                 .init(name: "ordertype", value: reverse ? "1" : "2"),
                 .init(name: "page", value: String(max(1, page))),
                 .init(name: "tid", value: tid.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -358,9 +352,6 @@ public enum YamiboRoute: Sendable {
             }
             return Self.makeURL(path: "/home.php", queryItems: items)
         case let .userSpaceThreads(uid, page):
-            // `view=me` is required: without it Discuz serves the OWN-threads
-            // list empty (verified against the live site; other users' uids
-            // happen to default sensibly, one's own does not).
             return userSpaceURL(
                 uid: uid,
                 doValue: "thread",
@@ -369,8 +360,6 @@ public enum YamiboRoute: Sendable {
                 extraItems: [.init(name: "order", value: "dateline")]
             )
         case let .userSpaceReplies(uid, page):
-            // The reply tab is selected by `type=reply` (with `view=me`);
-            // `view=reply` is not a Discuz view and falls back to the thread list.
             return userSpaceURL(
                 uid: uid,
                 doValue: "thread",
@@ -381,7 +370,6 @@ public enum YamiboRoute: Sendable {
         case let .userSpaceBlogs(uid, page):
             return userSpaceURL(uid: uid, doValue: "blog", page: page, view: "me")
         case let .userSpaceMyBlogs(uid, page):
-            // Same `view=me` requirement as the thread list.
             return userSpaceURL(uid: uid, doValue: "blog", page: page, view: "me")
         case let .userSpaceFriendBlogs(page):
             return userSpaceURL(uid: nil, doValue: "blog", page: page, view: "we")
@@ -431,7 +419,6 @@ public enum YamiboRoute: Sendable {
         case let .userSpaceNotices(page):
             return userSpaceURL(uid: nil, doValue: "notice", page: page)
         case .userSpaceSendPrivateMessage:
-            // Compose entry used by the touch template itself (no `op`).
             return Self.makeURL(path: "/home.php", queryItems: [
                 .init(name: "mod", value: "spacecp"),
                 .init(name: "ac", value: "pm"),
@@ -594,8 +581,6 @@ public enum YamiboRoute: Sendable {
     }
 
     private func privateMessageURL(uid: String, page: Int?) -> URL {
-        // Touch conversation view (`space_pm.htm` subop=view branch). The
-        // desktop `spacecp&ac=pm&op=showmsg` form has no touch template.
         var items: [URLQueryItem] = [
             .init(name: "mod", value: "space"),
             .init(name: "do", value: "pm"),
@@ -620,13 +605,6 @@ public enum YamiboRoute: Sendable {
         ])
     }
 
-    /// Every constant route hangs off `YamiboDomain.baseURL` with just a path
-    /// and query, so this factory is the single home for that boilerplate.
-    /// The force unwraps are deliberate: `baseURL` is a compile-time constant
-    /// known to parse, and `path`/`queryItems` are code-constructed values —
-    /// a nil from either call can only mean a malformed route definition,
-    /// i.e. a programmer error that should trap in development rather than
-    /// limp along with a wrong URL.
     private static func makeURL(path: String, queryItems: [URLQueryItem]) -> URL {
         var components = URLComponents(url: YamiboDomain.baseURL, resolvingAgainstBaseURL: false)!
         components.path = path
@@ -634,9 +612,6 @@ public enum YamiboRoute: Sendable {
         return components.url!
     }
 
-    /// Variant for `search`, whose Discuz endpoint needs hand-percent-encoded
-    /// pairs (`srchfid%5B%5D=...`) that `queryItems` would encode differently.
-    /// Same force-unwrap rationale as above.
     private static func makeURL(path: String, percentEncodedQuery: String) -> URL {
         var components = URLComponents(url: YamiboDomain.baseURL, resolvingAgainstBaseURL: false)!
         components.path = path

@@ -13,8 +13,6 @@ enum ContentDetailAction {
     case discussion(ThreadNovelLaunchContext)
 }
 
-/// Entry-point-independent page assembly. The host owns the navigation stack
-/// and decides how to present readers, authors and the original discussion.
 struct ContentDetailScreen: View {
     @Namespace private var bookNamespace
     let destination: ContentDetailDestination

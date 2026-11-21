@@ -1,8 +1,6 @@
 import Foundation
 
 public struct SessionState: Codable, Hashable, Sendable {
-    /// The production site's prefix is fixed; the local Discuz installation
-    /// generates its own prefix, so local sessions match the auth suffix.
     public static let authenticationCookieName = YamiboForumEnvironment.productionAuthenticationCookieName
 
     public static func isAuthenticationCookieName(_ name: String) -> Bool {
@@ -10,8 +8,6 @@ public struct SessionState: Codable, Hashable, Sendable {
     }
 
     public var cookies: [YamiboCookie]
-    /// Compatibility projection for callers that still need a Cookie header.
-    /// New code must retain cookie metadata through `cookies` instead.
     public var cookie: String {
         get { YamiboRequestCredentials(cookies: cookies, userAgent: userAgent).cookieHeader(for: YamiboDomain.baseURL) }
         set { cookies = YamiboCookie.legacyCookies(from: newValue, capturedAt: lastUpdatedAt ?? .now) }
@@ -43,7 +39,6 @@ public struct SessionState: Codable, Hashable, Sendable {
     mutating func mergeWAFCookies(_ incoming: [YamiboCookie], replacingCurrent: Bool) {
         var merged = Dictionary(uniqueKeysWithValues: YamiboCookie.canonicalCookies(cookies).map { ($0.identity, $0) })
         for cookie in incoming where YamiboCookie.isWAFCookie(cookie.name) && !cookie.isExpired() && YamiboDomain.isYamiboCookieDomain(cookie.domain) {
-            // A freshly read WebKit snapshot must not replace longer-lived clearance.
             if !replacingCurrent, let current = merged[cookie.identity], !current.isExpired(),
                (current.expiresAt ?? .distantFuture) >= (cookie.expiresAt ?? .distantFuture) { continue }
             merged[cookie.identity] = cookie

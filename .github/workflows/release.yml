@@ -1,9 +1,3 @@
-# Builds an unsigned .ipa from the YamiboX scheme, publishes it as a
-# GitHub Release asset, and registers the new version in app-repo.json
-# (the AltStore source / in-app update feed) on main.
-# Unsigned because distribution is via AltStore-style sideloading, which
-# re-signs the .ipa locally at install time.
-
 name: Release
 
 on:
@@ -155,11 +149,6 @@ jobs:
           tag="${RELEASE_TAG}"
           download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${IPA_NAME}"
 
-          # The notes are Markdown for the GitHub Release: each line ends with a
-          # "(shorthash[, …] · @author[, …])" group (GitHub auto-links the SHAs and
-          # the @handles) under "### 新增/变更/修复" category headings. The in-app
-          # update popup (localizedDescription) is plain text, so strip that trailing
-          # group and turn each "### X" heading into "【X】" before storing it.
           description="$(printf '%s\n' "${NOTES:-}" | sed -E \
             -e 's/[[:space:]]*\([0-9a-fA-F]{7,}[^)]*\)[[:space:]]*$//' \
             -e 's/^###[[:space:]]+(.*[^[:space:]])[[:space:]]*$/【\1】/')"

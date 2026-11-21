@@ -1,11 +1,5 @@
 import Foundation
 
-/// Stateful DOM walker that flattens a sanitized post-body fragment into content blocks.
-///
-/// Inline markup accumulates into a pending text run (with links, styles, rubies and smileys);
-/// block-level markup commits the pending run and emits structural blocks
-/// (quote, image, code, table, collapse, locked, attachment, ...). One instance
-/// parses one fragment; nested fragments recurse through `ForumThreadHTMLBlockParser`.
 final class ForumThreadBlockBuilder {
     private struct PendingTextLink {
         var start: Int
@@ -414,14 +408,10 @@ final class ForumThreadBlockBuilder {
     }
 
     private func appendText(_ value: String) {
-        // Kanna already decoded text nodes. Decoding again corrupts literal &lt; examples.
         let decoded = value
         guard !decoded.isEmpty else { return }
         let start = textCharacterCount
         let decodedCount = decoded.count
-        // Only the trailing grapheme can change when concatenating text. Account
-        // for cross-node combining marks, CRLF and emoji joins without recounting
-        // the entire accumulated run. Recorded spans keep their original offsets.
         if let last = text.last {
             textCharacterCount += (String(last) + decoded).count - 1
         } else {

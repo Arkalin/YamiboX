@@ -4,8 +4,6 @@ enum ForumBlacklistHTMLParser {
     static func parse(_ html: String) throws -> ForumBlacklistPage {
         try YamiboHTMLPageInspector.ensureReadable(html)
         let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
-        // The desktop form is present even on an empty list. A generic error,
-        // login page or an unsupported touch template must never clear the cache.
         guard let form = document.selectFirst("form[action*='op=blacklist']"),
               form.selectFirst("input[name=blacklistsubmit]") != nil,
               let hash = DiscuzFormHashParser.formHash(in: document, html: html) else {
@@ -20,8 +18,6 @@ enum ForumBlacklistHTMLParser {
                   let uid = deleteUID(url) else {
                 throw YamiboError.parsingFailed(context: L10n.string("blacklist.title"))
             }
-            // Interaction menus also link to this profile ("visit", "view
-            // profile"). Only the primary heading link carries its username.
             let name = row.selectAll("h4 > a[href]").first { link in
                 guard let profileURL = link.attrURL("href") else { return false }
                 return !profileURL.absoluteString.contains("spacecp")

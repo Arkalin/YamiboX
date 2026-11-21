@@ -1,8 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Thin façade over the shared `ReaderProjectionDiskStore`: owns only the
-/// manga namespace and key semantics, so it needs no isolation of its own.
 public final class MangaReaderProjectionStore: MangaReaderProjectionPersisting, Sendable {
     public static let projectionNamespace = "manga-reader-projections"
 

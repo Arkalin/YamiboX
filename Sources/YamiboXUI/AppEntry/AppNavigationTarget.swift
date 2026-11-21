@@ -1,7 +1,6 @@
 import Foundation
 import YamiboXCore
 
-/// Semantic navigation input. Argument parsing belongs to the app composition root.
 public enum AppNavigationTarget: Hashable, Sendable {
     case tab(AppTab)
     case search

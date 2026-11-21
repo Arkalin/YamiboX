@@ -1,14 +1,8 @@
 import Foundation
 import YamiboXCore
 
-/// Owns the manga reader's cover management: the mode-gated cover key,
-/// manual cover set/restore from a long-pressed page, and the one-shot
-/// automatic `.thread(tid:)` cover resolution that mode-off sessions run
-/// after a successful prepare. Outcomes surface through the cover store and
-/// the caller's feedback toasts; failure snapshots are transient, not published.
 @MainActor
 final class MangaReaderCoverModule {
-    /// Reading context supplied by the owning view model.
     struct Reading {
         var isSmartModeEnabled: Bool
         var chapterTID: String
@@ -30,24 +24,10 @@ final class MangaReaderCoverModule {
     }
 
     deinit {
-        // The resolution task rides the module's lifetime (it was moved
-        // here from the view model together with the logic it serves).
         autoThreadCoverResolutionTask?.cancel()
     }
 
     private var mangaCoverKey: ContentCoverKey? {
-        // Smart Comic Mode off (design decisions #2's 总原则 and #16): this
-        // chapter is read exactly like a normal thread, so the cover entry
-        // writes the same `.thread(tid:)` key `ImageBrowserCoverActions`
-        // uses for a normal thread's "设为封面" action, keyed by this
-        // chapter's own thread id. This branches on `context
-        // .isSmartModeEnabled` directly rather than, say, whether
-        // `workflow?.currentDirectoryCleanBookName()` happens to be
-        // non-nil — the mode-off synthesized single-chapter pseudo-
-        // directory (`MangaReaderWorkflow.standaloneDirectory`) has a
-        // non-nil cleanBookName too, which is exactly the proxy-signal trap
-        // that caused the Like-feature and AppContinuityWorkflow bugs in
-        // earlier phases.
         guard reading.isSmartModeEnabled else {
             return .thread(tid: reading.chapterTID)
         }
@@ -94,21 +74,6 @@ final class MangaReaderCoverModule {
         }
     }
 
-    /// Smart Comic Mode off (design decisions #2's 总原则 and #16): this
-    /// chapter is read exactly like a normal thread, so it gets the same
-    /// automatic `.thread(tid:)` cover resolution `ForumThreadReaderViewModel`
-    /// already performs for normal threads — reusing the same
-    /// `ThreadCoverResolver` mechanism. `ForumThreadReaderViewModel` hangs its
-    /// call off adding the thread to favorites (it has no other lifecycle
-    /// hook); the manga reader has no favorite-toggle action of its own, so
-    /// opening the reader (a successful `prepare()`) is its closest
-    /// equivalent trigger. Like that reference call site, this doesn't check
-    /// for an existing cover first — it unconditionally overwrites the
-    /// automatic cover, same as `setAutomaticCover` always does.
-    ///
-    /// Mode-on chapters never do this: their cover comes from the existing
-    /// smartManga backfill mechanism elsewhere (design decision #13, a later
-    /// phase), not from the reader itself.
     func startAutoThreadCoverResolutionIfNeeded() {
         guard !reading.isSmartModeEnabled,
               reading.isReaderLoaded(),
@@ -120,8 +85,6 @@ final class MangaReaderCoverModule {
         }
     }
 
-    /// Reader-session teardown (retryInitialLoad): abandon an in-flight
-    /// resolution so the fresh session can schedule its own.
     func cancelAutoThreadCoverResolution() {
         autoThreadCoverResolutionTask?.cancel()
         autoThreadCoverResolutionTask = nil

@@ -3,15 +3,7 @@ import YamiboXCore
 
 extension FavoriteLibraryOrganizer {
 
-    // MARK: - Manga directory grouping (smart-comic-mode decision #3/#5)
 
-    /// Resolves the tid → `MangaDirectory` map virtual favorites grouping
-    /// needs, in one batched read. Retain all manga identities for unread
-    /// indicators, then return only mode-on members for virtual grouping.
-    /// Disabling smart presentation must not hide existing unread events.
-    /// Called only from `load()`/`reload()`, never from
-    /// `refreshDerivedState()` or any SwiftUI-observed computed property —
-    /// performance constraint #2.
     func resolveMangaDirectories(
         for items: [FavoriteItem],
         boardReaderSettings: BoardReaderSettings

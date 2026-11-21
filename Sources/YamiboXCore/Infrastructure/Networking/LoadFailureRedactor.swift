@@ -6,8 +6,6 @@ enum LoadFailureRedactor {
 
     static func redact(_ text: String) -> String {
         var result = text
-        // Use the HTML parser to identify credential fields, but replace in the
-        // source spans rather than serializing the DOM (malformed markup matters).
         result = replacing(#"(?is)<(?:input|meta)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>?"#, in: result) { tag in
             let node = (try? KannaSoup.parse(tag))?.selectFirst("input, meta")
             let field = node?.attr("name") ?? ""
@@ -25,8 +23,6 @@ enum LoadFailureRedactor {
                   matches(secretKey, in: node.attr("name") + " " + node.attr("id")) else { return tag }
             return replacing(#"(?is)(?<=\>).*?(?=</textarea)"#, in: tag) { _ in marker }
         }
-        // Header values and script/JSON/form assignments can occur in plain text
-        // as well as HTML. Never enumerate arbitrary NSError userInfo contents.
         result = replacing(#"(?im)\b(?:authorization|(?:set-)?cookie)\s*:\s*[^\r\n<]+"#, in: result) { value in
             String(value.prefix { $0 != ":" }) + ": " + marker
         }

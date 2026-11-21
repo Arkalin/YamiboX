@@ -47,9 +47,6 @@ enum ReaderProjectionFallbackPolicy {
         if let urlError = error as? URLError {
             return urlError.code != .cancelled
         }
-        // Favorite-action and persistence failures keep the classification
-        // their old `YamiboError` cases had before the domain split: neither
-        // is a transport failure, so neither triggers the offline fallback.
         if error is FavoriteActionError || error is YamiboPersistenceError {
             return false
         }
@@ -57,8 +54,6 @@ enum ReaderProjectionFallbackPolicy {
             return false
         }
         switch yamiboError {
-        // Discuz also returns deleted/restricted posts as successful HTTP
-        // responses. Their page/readability errors must not hide a download.
         case .offline, .underlying, .invalidResponse, .unreadableBody, .emptyHTML,
              .parsingFailed, .floodControl, .securityVerificationRequired, .notAuthenticated:
             return true
@@ -167,8 +162,6 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
             guard ReaderProjectionFallbackPolicy.isEligibleOfflineFallbackTrigger(error) else {
                 throw error
             }
-            // A server-side login failure can use saved content; a revoked
-            // client/session generation cannot publish an old operation.
             try await strategy.validateSession()
             guard let fallback = await loadOfflineFallback(request, failure: LoadFailureDetails(error: error)) else {
                 throw error
@@ -208,8 +201,6 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
                 identity: identity,
                 ignoresCache: ignoresCache
             )
-            // The novel path overlaps source persistence with projection
-            // derivation, but both writes finish before a load reports success.
             async let sourceCacheWrite: Void = sourceLoad.persistSourceIfNeeded()
             try Task.checkCancellation()
             let fingerprint = strategy.fingerprint(sourcePage: sourceLoad.sourcePage, identity: identity)
@@ -286,8 +277,6 @@ actor ReaderProjectionLoader<Strategy: ReaderProjectionLoadingStrategy> {
         loadID: UUID,
         key: ReaderProjectionLoadKey<Strategy.Identity>
     ) {
-        // A cancelled load may still finish after a replacement starts under
-        // this key. Its completion must not remove the replacement's waiters.
         guard var load = inFlightTasks[key], load.id == loadID,
               load.consumers.remove(consumerID) != nil else { return }
         if load.consumers.isEmpty {

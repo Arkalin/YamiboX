@@ -80,9 +80,6 @@ enum NovelTextPreviewLayout {
 }
 
 extension NovelTextLayout {
-    /// Standalone one-shot layout through the production TextKit adapter.
-    /// Test-facing convenience; production reading always goes through
-    /// `NovelReadingWorkflow`'s runtime transactions.
     package static func layout(
         document: NovelReaderProjection,
         settings: NovelReaderAppearanceSettings,

@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Category management sheet: select, rename, reorder, and delete categories.
 struct LocalFavoriteCategoryManagementSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pendingDeleteCategory: FavoriteCategory?

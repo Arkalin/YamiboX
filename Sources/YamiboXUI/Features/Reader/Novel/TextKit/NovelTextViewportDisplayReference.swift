@@ -2,10 +2,6 @@ import CoreGraphics
 import Foundation
 import YamiboXCore
 
-/// Opaque drawing handle for one generation-scoped reader surface. Holds only
-/// a weak runtime-owner reference plus the surface identity; every query and
-/// draw is forwarded through the runtime owner so stale references never draw
-/// previous content.
 public final class NovelTextViewportDisplayReference {
     public let surfaceIdentity: NovelReaderSurfaceIdentity
     var surfaceOrdinal: Int { surfaceIdentity.ordinal }
@@ -141,9 +137,6 @@ extension NovelTextViewportRuntimeOwner {
 }
 
 extension NovelReadingWorkflow {
-    /// SwiftUI requests opaque display references through the workflow by
-    /// complete surface identity; a reference is returned only when that
-    /// identity belongs to the active generation.
     public func displayReference(
         for surfaceIdentity: NovelReaderSurfaceIdentity
     ) -> NovelTextViewportDisplayReference? {

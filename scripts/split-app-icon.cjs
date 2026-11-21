@@ -1,5 +1,3 @@
-// Separate the already traced artwork, without fitting or moving any curves.
-// Run after trace-app-icon.cjs; dependencies are in docs/design/app-icon.md.
 const fs = require('node:fs');
 const path = require('node:path');
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
@@ -21,9 +19,6 @@ for (const command of parsePath(sourcePath.getAttribute('d'))) {
   subpaths.at(-1).push(command);
 }
 
-// These are the original compound path's connected contours in tracing order.
-// Slits (1, 5, 7) stay with their enclosing petal to preserve even-odd holes.
-// All tiny flower-center contours are retained.
 const layers = [
   { name: 'petal-top', contours: [0, 1] },
   { name: 'petal-upper-left', contours: [2, 3] },
@@ -57,8 +52,6 @@ const generated = layers.map(layer => {
   return { ...layer, svg: serializer.serializeToString(doc) };
 });
 
-// Recombine without materials: splitting must introduce no silhouette changes,
-// at both the original resolution and a larger scale that exposes curve edits.
 const recombined = document.cloneNode(true);
 const root = recombined.documentElement;
 root.removeChild(recombined.getElementsByTagName('path')[0]);
@@ -89,8 +82,6 @@ for (const layer of generated) {
   fs.writeFileSync(path.join(assets, `${layer.name}.svg`), layer.svg.trimEnd() + '\n');
 }
 
-// The in-app scene uses the same curves, not the flattened icon preview.
-// Groups are front-to-back in Icon Composer; extrusion is built back-to-front.
 const icon = JSON.parse(fs.readFileSync(path.join(assets, '../icon.json'), 'utf8'));
 const geometry = {
   canvasSize: 1024,

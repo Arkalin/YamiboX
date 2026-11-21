@@ -1,8 +1,5 @@
 import Foundation
 
-/// Simplified/traditional pairs of the profile labels.
-/// Top-level `private` (not nested in the extension) so the same-named groups
-/// in the sibling `UserSpaceHTMLParser+…` files stay strictly file-scoped.
 private enum Labels {
     static let userGroup = ["用户组", "用戶組"]
     static let totalPoints = ["总积分", "總積分"]
@@ -10,15 +7,6 @@ private enum Labels {
     static let points = ["积分", "積分"]
 }
 
-/// User-space profile page ("home.php?mod=space&do=profile&…", touch template
-/// `space_profile.htm`). Verified against the live template markup:
-/// - identity:  `.avatar_bg` holds `.avatar_m img` and `<h2 class="name">`
-/// - credits:   `.user_box li` = `<span>VALUE UNIT</span>LABEL` — the value
-///   `<span>` comes BEFORE the label text, so credits must be read from the
-///   span, never as "label followed by number" running text
-/// - info rows: `.myinfo_list li` = `LABEL<span>VALUE</span>` — no colon
-///   separator between label and value
-/// - background: emitted as a `background-image:url(…)` inline style
 extension UserSpaceHTMLParser {
     static func parseProfile(from html: String, uidHint: String? = nil, titleHint: String? = nil) throws -> UserSpaceProfile {
         try YamiboHTMLPageInspector.ensureReadable(html)
@@ -56,10 +44,6 @@ extension UserSpaceHTMLParser {
         )
     }
 
-    /// Credit values from `.user_box li`. The row's `<span>` holds the value
-    /// ("55990 点") and the credit name is the text outside it, so extraction
-    /// stays independent of their order. "总积分" is matched before "积分"
-    /// because the former contains the latter.
     private static func parseCredits(in document: Document) -> (totalPoints: Int?, points: Int?, partner: Int?) {
         var totalPoints: Int?
         var points: Int?

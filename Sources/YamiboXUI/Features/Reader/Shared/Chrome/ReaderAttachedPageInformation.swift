@@ -40,12 +40,9 @@ struct ReaderAttachedInformationConfiguration: Equatable {
     var titleSidePadding: CGFloat = 76
     var titleLift: CGFloat = 0
     var contentTopInset: CGFloat = 0
-    // UIKit page hosts do not inherit the reader's SwiftUI environment.
     var toolbarStyle: ReaderToolbarStyle = .liquidGlass
 }
 
-// Hosted pages observe only this presentation channel. Updating chrome must not
-// replace their text/image hosts or invalidate a native zoom interaction.
 @MainActor @Observable
 final class ReaderAttachedInformationState {
     private(set) var configuration = ReaderAttachedInformationConfiguration()
@@ -108,8 +105,6 @@ private struct ReaderAttachedInformationPage: View {
     }
 }
 
-/// A vertical reader has no attached page host. While the device menu is up,
-/// display the same edge information as a read-only overlay on the scroll view.
 struct ReaderExternalVerticalInformation: View {
     let page: ReaderAttachedPageInformation
     let topInset: CGFloat

@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Composition root for the favorites tab: creates the library organizer,
-/// the remote sync session, and the update monitor, and routes resolved open
-/// targets into the app-level readers or a full-screen thread overlay.
 struct LocalFavoritesRootView: View {
     @State private var organizer: FavoriteLibraryOrganizer
     @State private var favoriteShare: FavoriteShareFlowModel
@@ -112,8 +109,6 @@ struct LocalFavoritesRootView: View {
                     item: item,
                     dependencies: forumDependencies,
                     appModel: appModel,
-                    // Opening a favorite is a real visit, not a discussion
-                    // companion of a running reader; it records history.
                     rootIsDiscussionView: false
                 )
             }
@@ -130,11 +125,6 @@ struct LocalFavoritesRootView: View {
             async let remoteSyncLoad: Void = remoteSync.load()
             async let updateMonitorLoad: Void = updateMonitor.load()
             _ = await (organizerLoad, remoteSyncLoad, updateMonitorLoad)
-            // Foreground catch-up for automatic update checking: background
-            // refresh timing is only best-effort. A larger non-tag directory
-            // cap than the background task's is safe here — this runs while
-            // the user is actively looking at the screen, not against a
-            // BGAppRefreshTask's tight execution budget.
             await updateMonitor.startCheckIfDue(nonTagMangaDirectoryCheckCap: 3)
         }
     }
@@ -163,9 +153,6 @@ struct LocalFavoritesRootView: View {
         }
     }
 
-    /// Re-derives and opens a smart-manga update event's target from its
-    /// `cleanBookName` alone (a directory-mode event carries no pointer to
-    /// one specific favorite — see `FavoriteUpdateTargetKey.mangaDirectory`).
     private func openMangaDirectoryEvent(directoryID: MangaDirectoryID) async {
         guard !isOpeningFavorite, !appModel.isReaderCoverVisible else { return }
         isOpeningFavorite = true
@@ -200,15 +187,10 @@ struct LocalFavoritesRootView: View {
             appModel.presentNovelReader(context, bookOpeningTransition: transition)
         case let .mangaReader(context):
             await appModel.requestMangaReader(context, bookOpeningTransition: transition).value
-            // Manga validation can fail after target resolution without ever
-            // presenting a reader. Acknowledgement requires this actual launch.
             guard let session = appModel.presentedReaderSession, !session.isClosed,
                   case let .manga(openedContext) = session.content else { return false }
             return openedContext == context
         case let .nativeThread(url, title):
-            // Plain-post favorites open in a full-screen overlay so the
-            // favorites tab stays put underneath, mirroring the reader's
-            // 打开原帖 behavior.
             threadOpeningTransition = transition
             isThreadCoverVisible = true
             threadOverlayItem = ForumThreadOverlayItem(url: url, title: title)

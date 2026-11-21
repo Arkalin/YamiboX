@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Top-bar counterpart of `SelectionBottomToolbar`: the "select all /
-/// invert selection" toggle shown while selection mode is active.
 struct SelectAllToolbarButton: View {
     let isSelectionComplete: Bool
     var isDisabled = false
@@ -31,7 +29,6 @@ struct SelectAllToolbarButton: View {
     }
 }
 
-/// The "select ⇄ done" button that enters and leaves selection mode.
 struct SelectionModeToggleButton: View {
     let isSelecting: Bool
     var isDisabled = false

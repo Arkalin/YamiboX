@@ -57,8 +57,6 @@ struct ReaderInformationVisibility: ViewModifier {
     }
 }
 
-// Only one text/plate copy exists. Cancelled tasks cannot publish an obsolete
-// label after a rapid chrome toggle or after the hosted page is reused.
 struct ReaderInformationFooterReplacement<Content: View>: View {
     let value: ReaderInformationFooterValue
     @ViewBuilder let content: (ReaderInformationFooterValue) -> Content

@@ -31,7 +31,6 @@ final class MangaSurfaceRuntime {
         var needsPlacement = true
     }
 
-    // Paging queries these snapshots; SwiftUI does not render native motion.
     @ObservationIgnored private(set) var transform = MangaSurfaceTransform()
     @ObservationIgnored private(set) var configuration = MangaInteractionConfiguration()
     @ObservationIgnored private(set) var geometry: MangaSurfaceGeometry = .spread(viewport: .zero)

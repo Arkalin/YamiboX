@@ -208,11 +208,7 @@ extension ReaderPagedPageCurlTransition {
         let backSlot = readingDirection == .rightSwipeAdvances ? 0 : 1
         guard animated else { return [target[1 - backSlot]] }
 
-        // setViewControllers takes the visible front first for either edge spine,
-        // even when the data source's physical order puts the back first.
         var displayed = [target[1 - backSlot], target[backSlot]]
-        // Turning away from the spine exposes the departing sheet's back.
-        // Turning toward it exposes the arriving sheet's back instead.
         let usesDepartingBack = readingDirection == .rightSwipeAdvances
             ? navigationDirection == .reverse : navigationDirection == .forward
         if usesDepartingBack, current.count == 2 {
@@ -422,7 +418,6 @@ final class ReaderPagedPagingDriver {
     ) {
         let animationRequest = matchingScrollAnimationRequest(inputs: inputs)
         guard didChangeContentIdentity else {
-            // SwiftUI can echo the departing selection or acknowledge the target mid-turn.
             if animationRequest == nil, let slideTransition,
                collectionView.bounds.size == slideTransition.viewportSize,
                inputs.selectionIndex == slideTransition.sourceSelectionIndex ||
@@ -507,7 +502,6 @@ final class ReaderPagedPagingDriver {
         let consumesBeforeLayout = inputs.pagedTurnStyle == .none ||
             (commitsQuickFadeSelectionImmediately && inputs.pagedTurnStyle == .quickFade)
         if consumesBeforeLayout {
-            // Novel layout callbacks must not replay the placement being applied here.
             self.pendingSelectionIndex = nil
         }
         collectionView.layoutIfNeeded()
@@ -543,7 +537,6 @@ final class ReaderPagedPagingDriver {
             return false
         }
 
-        // Consume repeated taps without restarting the animation or falling through to a boundary turn.
         guard !isPerformingSlideTransition else { return true }
 
         guard inputs.itemCount > 0,
@@ -718,9 +711,6 @@ final class ReaderPagedPagingDriver {
         }
         cancelSlideTransition(in: collectionView, inputs: inputs)
         if animated, inputs.pagedTurnStyle == .quickFade, isPerformingQuickFadeTransition {
-            // A rapid second turn mid-fade must not be swallowed: perform it
-            // as an immediate cut underneath the in-flight snapshot, which
-            // keeps fading out over the newest target page.
             return performSelectionTransition(
                 to: selectionIndex,
                 targetContentOffsetX: targetContentOffsetX,
@@ -734,7 +724,6 @@ final class ReaderPagedPagingDriver {
         let targetOffset = CGPoint(x: targetContentOffsetX, y: collectionView.contentOffset.y)
         guard animated, inputs.pagedTurnStyle != .none else {
             resetPageTurnVisuals(in: collectionView, inputs: inputs)
-            // Layout callbacks must not replay an immediate placement in progress.
             pendingSelectionIndex = nil
             collectionView.setContentOffset(targetOffset, animated: false)
             collectionView.layoutIfNeeded()
@@ -746,7 +735,7 @@ final class ReaderPagedPagingDriver {
 
         switch inputs.pagedTurnStyle {
         case .none:
-            break // Handled by the immediate-placement path above.
+            break
         case .slide, .pageCurl:
             pendingSelectionIndex = nil
             startSlide(to: selectionIndex, offset: targetOffset, in: collectionView, inputs: inputs) {

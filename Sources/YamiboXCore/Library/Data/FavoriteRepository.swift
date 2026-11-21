@@ -1,10 +1,5 @@
 import Foundation
 
-/// Remote-only gateway to the Yamibo website's favorite list — every method
-/// here is an HTTP operation; none touches the local `FavoriteLibraryStore`.
-/// Despite the shared `add`/`delete` word roots, do not confuse these with
-/// the application layer's local-first orchestration (`FavoriteCommands`,
-/// which owns the add/import/push/sync terminology glossary).
 public actor FavoriteRepository {
     private let client: YamiboClient
 
@@ -37,11 +32,6 @@ public actor FavoriteRepository {
         return parsed
     }
 
-    /// Fetches one page of the remote board-favorite (`type=forum`) list.
-    /// Board favorites are network-only — no local store mirrors them — so
-    /// callers render this result directly. Deleting one goes through the
-    /// shared `deleteFavorite(remoteFavoriteID:)` (the delete endpoint is
-    /// `type=all` and works for any favorite kind).
     public func fetchBoardFavoritesPage(page: Int = 1) async throws -> BoardFavoriteRemotePage {
         let html = try await client.fetchHTML(for: .boardFavorites(page: page))
         let parsed = FavoriteHTMLParser.parseBoardFavoritePage(from: html)
@@ -58,8 +48,6 @@ public actor FavoriteRepository {
         )
     }
 
-    /// Fetches the session's formHash once so bulk operations (sync upload)
-    /// can reuse it instead of re-fetching the profile per request.
     public func currentFormHash() async throws -> String {
         try await ensureFormHash(preferred: nil)
     }

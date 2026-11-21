@@ -60,9 +60,6 @@ enum FavoriteHTMLParser {
                 }
             }
             if malformedRows {
-                // Never turn a partially understood list into an empty,
-                // authoritative page. The repository rejects this status so
-                // sync cannot mistake it for a valid end-of-pagination page.
                 return FavoritePageResult(
                     favorites: [],
                     currentPage: parseCurrentPage(in: document),
@@ -149,10 +146,6 @@ enum FavoriteHTMLParser {
         }
     }
 
-    /// Parses the `type=forum` variant of the favorite list. Same mobile
-    /// template as the thread list (`.sclist li` rows with an `mdel` delete
-    /// link carrying the favid), but each row links to a board
-    /// (`forumdisplay`/`forum-N-M.html`) instead of a thread.
     static func parseBoardFavoritePage(from html: String) -> BoardFavoritePageResult {
         guard let document = try? KannaSoup.parse(html) else {
             return BoardFavoritePageResult(
@@ -324,10 +317,6 @@ enum FavoriteHTMLParser {
             return true
         }
 
-        // Discuz/local-forum variants may keep an empty list shell (often a
-        // `.findbox` around an empty `<ul>`) while rendering no message.
-        // Only accept an empty shell whose own text is blank or an explicit
-        // empty marker; a nonempty unrecognized shell remains uncertain.
         for selector in [".findbox", ".sclist", ".fav_list", ".favorite"] {
             for element in document.select(selector) where element.tagName().lowercased() != "li" {
                 guard element.select("li").isEmpty else { continue }
@@ -372,8 +361,6 @@ enum FavoriteHTMLParser {
                     .first
                     .flatMap(Int.init)
             }
-        // On the last page every `page=` link points backwards — never report
-        // fewer total pages than the current page.
         return max(1, max(linkedPages.max() ?? 1, parseCurrentPage(in: document)))
     }
 }

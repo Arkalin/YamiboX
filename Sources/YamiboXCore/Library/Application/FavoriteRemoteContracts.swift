@@ -6,7 +6,6 @@ public protocol ForumThreadFavoriteRemoteOperating: Sendable {
     func remoteFavorite(forThreadID threadID: String, maxPages: Int) async throws -> Favorite?
 }
 
-/// Remote operations required by the bidirectional favorite sync workflow.
 public protocol FavoriteRemoteSyncOperating: Sendable {
     func fetchFavoritesPage(page: Int) async throws -> FavoriteRemotePage
     func currentFormHash() async throws -> String
@@ -18,6 +17,5 @@ public protocol BoardFavoriteManaging: Sendable {
     func deleteFavorite(remoteFavoriteID: String) async throws
 }
 
-/// Assembly carries the combined capabilities; consumers request only their part.
 public typealias FavoriteLibraryRemoteOperating = ForumThreadFavoriteRemoteOperating
     & FavoriteRemoteSyncOperating & BoardFavoriteManaging

@@ -27,8 +27,6 @@ struct ForumThreadImageBlockView: View {
         }
     }
 
-    /// Posts are full of animated smileys and GIFs, so thread content plays
-    /// them rather than freezing on the first frame.
     private var image: some View {
         YamiboRemoteImage(
             source: YamiboImageSource(url: block.url, refererPageURL: refererURL),

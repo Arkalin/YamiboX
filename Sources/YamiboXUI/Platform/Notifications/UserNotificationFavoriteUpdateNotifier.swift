@@ -2,7 +2,6 @@ import Foundation
 import UserNotifications
 import YamiboXCore
 
-/// Production notifier backed by `UNUserNotificationCenter`.
 public struct UserNotificationFavoriteUpdateNotifier: FavoriteUpdateNotifying {
     public init() {}
 

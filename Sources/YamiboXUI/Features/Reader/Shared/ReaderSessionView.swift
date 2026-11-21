@@ -58,7 +58,6 @@ struct ReaderSessionScreen: View {
                         }
                     }
                     .overlay {
-                        // Only the device window can receive Pencil gestures.
                         if let viewport = display.applePencilPageTurnViewport(for: session) {
                             let settings = display.applePencilPageTurnSettings
                             ApplePencilPageTurnInteractionOverlay(settings: settings, canTurnPage: true) { delta in
@@ -175,7 +174,6 @@ struct ReaderSessionScreen: View {
     }
 
     private func synchronizeExternalOffer() {
-        // An already-owned external panel is not a local system presentation.
         let owned = appModel.externalReader?.isKeepingOwner(session) == true
         if owned, !session.isClosed, session.content.resumeRoute == nil {
             appModel.externalReader?.pauseForReaderNavigation(session)
@@ -208,7 +206,6 @@ private struct ReaderDeviceNovelGeometryProbe: View {
                 }
                 .background(ReaderWindowSafeAreaInsetsProbe(insets: $windowInsets))
         }
-        // Match the local reader's usable width, including landscape cutouts.
         .ignoresSafeArea(.container, edges: .vertical)
     }
 }
@@ -238,8 +235,6 @@ private struct ReaderDeviceMenuOverlay: View {
                 .accessibilityLabel(L10n.string("reader.external.dismiss_menu"))
                 .readerChromeFadeVisibility(isVisible)
 
-                // Keep the chrome mounted so its original per-row timeline
-                // can interpolate in both directions without a new transition.
                 menu(insets, isVisible)
                     .animation(.easeInOut(duration: ReaderChromeVisibilityAnimationPresentation.fade.duration), value: isVisible)
             }
@@ -267,7 +262,6 @@ private struct ReaderDevicePreparationFrame: UIViewRepresentable {
     func updateUIView(_ view: UIView, context: Context) {}
 }
 
-/// The navigation column relinquishes its session when reading goes full-screen.
 struct ReaderSessionDestinationView: View {
     @State private var session: ReaderSession
     let navigator: ForumDestinationNavigator
@@ -321,8 +315,6 @@ struct ReaderSessionContentView: View {
     var body: some View {
         ZStack {
             content
-                // Only the mode surface transitions; reader layout and restored
-                // scroll positions must settle without inheriting its animation.
                 .transaction { $0.animation = nil }
                 .id(ObjectIdentifier(externalViewport ?? session.viewport))
                 .transition(modeTransition)

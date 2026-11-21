@@ -1,13 +1,9 @@
 import os
 
-/// Shared os.Logger categories, mirroring the app's bundle identifier as the subsystem.
-/// Use the category matching the file you're editing; add a new case only when an
-/// existing category is a poor fit for the whole subsystem.
 public enum YamiboLog {
     private static let subsystem = "com.arkalin.YamiboX"
 
     public static let persistence = Logger(subsystem: subsystem, category: "persistence")
-    // Historical technical-cache category; user downloads have their own logger.
     public static let offlineCache = Logger(subsystem: subsystem, category: "offline-cache")
     public static let download = Logger(subsystem: subsystem, category: "downloads")
     public static let sync = Logger(subsystem: subsystem, category: "sync")

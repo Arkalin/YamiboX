@@ -2,8 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// Retains invalidations while destination views are off-screen. Shared by
-/// the forum tab and reader stacks; each loaded model consumes its own copy.
 @MainActor
 @Observable
 final class ForumContentRefreshState {
@@ -21,8 +19,6 @@ final class ForumContentRefreshState {
             if let forumID {
                 boards[forumID] = change.id
             } else {
-                // Reply forms often omit fid. Invalidate lists, not unrelated
-                // thread readers, rather than guessing the containing board.
                 allBoards = change.id
                 boards = [:]
             }

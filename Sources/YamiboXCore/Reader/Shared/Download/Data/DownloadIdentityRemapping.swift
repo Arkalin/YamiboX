@@ -2,7 +2,6 @@ import CryptoKit
 import Foundation
 @preconcurrency import GRDB
 
-/// Rewrites only this feature's references using the caller's transaction.
 enum DownloadIdentityRemapping {
     static func normalize(snapshot: MangaDirectoryIdentitySnapshot, legacy: Bool, in db: Database) throws {
         for (table, childTables, predicate) in [
@@ -27,9 +26,6 @@ enum DownloadIdentityRemapping {
                     }
                 }
                 if preferSource {
-                    // Read children first, then delete/copy parents. Cascades are
-                    // disabled during GRDB schema migrations, so remove children
-                    // explicitly as well. No payload files or assets are touched.
                     for childTable in childTables {
                         try db.execute(sql: "DELETE FROM \(childTable) WHERE \(whereClause)", arguments: [id, tid])
                         try db.execute(sql: "DELETE FROM \(childTable) WHERE \(whereClause)", arguments: [owner, tid])
@@ -50,8 +46,6 @@ enum DownloadIdentityRemapping {
         }
     }
 
-    /// The app places downloads beside the database. Only conflicting
-    /// memberships need I/O; compare existing payloads without renaming files.
     private static func downloadCompleteness(_ row: Row, in db: Database) throws -> Int {
         guard let mainDatabase = try Row.fetchAll(db, sql: "PRAGMA database_list").first(where: { $0["name"] as String == "main" }),
               let path: String = mainDatabase["file"], !path.isEmpty else { return 0 }

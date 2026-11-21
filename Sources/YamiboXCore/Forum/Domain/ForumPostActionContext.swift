@@ -1,6 +1,5 @@
 import Foundation
 
-/// A verified post in the unfiltered thread, independent of reader pagination.
 public struct ForumPostActionContext: Equatable, Sendable {
     public let threadID: String
     public let post: ForumThreadPost

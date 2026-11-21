@@ -1,7 +1,6 @@
 import Foundation
 
 public struct AppChangelogLoader: Sendable {
-    // Source identity stays stable for Debug builds and re-signed installations.
     public static let defaultBundleIdentifier = "com.arkalin.YamiboX"
 
     public enum Failure: Error, LocalizedError, Sendable {
@@ -38,7 +37,6 @@ public struct AppChangelogLoader: Sendable {
             guard let app = source.apps.first(where: { $0.bundleIdentifier == currentBundleIdentifier }) else {
                 throw Failure.sourceDoesNotContainCurrentApp
             }
-            // The source defines the display order, just as it defines the latest update.
             return app.versions
         } catch {
             throw LoadDiagnosticError.attaching(to: error, requestContext: sourceURL.absoluteString)

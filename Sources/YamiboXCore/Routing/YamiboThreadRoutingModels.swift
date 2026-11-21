@@ -30,12 +30,6 @@ public enum YamiboThreadRouteIntent: String, Codable, Hashable, Sendable {
     case nativeThreadReader
 }
 
-/// A one-off reading-mode choice made at the tap site (论坛帖子卡片长按菜单).
-///
-/// It outranks every classification input for this navigation only — the
-/// board's `BoardReaderSettings` entry, `knownThreadKind`, and the fetched
-/// thread metadata — and is never persisted: the board keeps whatever mode it
-/// was configured with, so the next plain tap behaves exactly as before.
 public enum YamiboThreadReaderOverride: String, Codable, Hashable, Sendable {
     case plainThread
     case novel
@@ -62,8 +56,6 @@ public struct YamiboThreadRouteRequest: Codable, Hashable, Sendable {
     public var targetPostID: String?
     public var knownThreadKind: YamiboThreadKind?
     public var intent: YamiboThreadRouteIntent
-    /// Set only by an explicit per-tap reading-mode choice; `nil` keeps the
-    /// normal configuration-driven classification.
     public var readerOverride: YamiboThreadReaderOverride?
     public var tapContext: YamiboThreadTapContext
 
@@ -98,11 +90,6 @@ public struct ThreadNovelLaunchContext: Codable, Hashable, Sendable {
     public var initialPage: Int
     public var targetPostID: String?
     public var authorID: String?
-    /// True when this reader session is a novel/manga detail page's
-    /// "查看讨论" companion view: it shares the work's tid, so it must not
-    /// produce its own browsing-history row — the work's main-form row is
-    /// the only history entry for that tid (browsing-history decision #14).
-    /// Anchor reading progress is still written and restored as usual.
     public var isDiscussionView: Bool
     public var explicitReadingState: ThreadExplicitReadingState?
 
@@ -181,18 +168,11 @@ public struct YamiboThreadRoutePayload: Hashable, Sendable {
 public enum YamiboThreadRouteTarget: Hashable, Sendable {
     case novel(YamiboThreadRoutePayload)
     case manga(YamiboThreadRoutePayload)
-    /// Same classification as `.manga` (still a thread on a board the user
-    /// configured as manga in `BoardReaderSettings`), but the board's Smart
-    /// Comic Mode bit is off, so the caller should open the manga reader
-    /// directly for this one thread instead of routing through
-    /// `MangaDetailView`.
     case mangaDirect(YamiboThreadRoutePayload)
     case thread(YamiboThreadRoutePayload)
     case webFallback(URL)
 }
 
-/// Ephemeral page data from the same authenticated request that located a post.
-/// Kept out of hashable navigation identities and persisted launch contexts.
 public struct YamiboThreadRouteResolution: Sendable {
     public let target: YamiboThreadRouteTarget
     public let preloadedPage: ForumThreadPage?

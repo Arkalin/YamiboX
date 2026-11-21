@@ -1,23 +1,11 @@
 import Foundation
 
-/// The single decoder of Discuz "last edited" notes ("本帖最后由 X 于 <日期> 编辑"
-/// and its variants) plus the site's date formats. Two drifted copies used to
-/// exist — the favorites content-update resolver and the thread-page post
-/// parser — with different simplified/traditional pairings; this is their
-/// union: each token alternates 简/繁 independently, so mixed-variant pages
-/// match too. Pure text in, text/Date out — deliberately free of any DOM
-/// dependency so both HTML parsers and domain code can share it.
 enum DiscuzEditedDateParser {
-    // Group 1 captures the timestamp; the whole match is the sentence. One
-    // pattern list serves both note location and timestamp extraction so the
-    // two capabilities cannot fork again.
     private static let notePatterns = [
         #"(?:本帖最后由|本帖最後由)\s+.+?\s+(?:于|於)\s+(.+?)\s+(?:编辑|編輯)"#,
         #"(?:最后编辑于|最後編輯於)\s*(.+)"#
     ]
 
-    /// The full edit-note sentence located inside free text, or nil. Used by
-    /// the post parser when no dedicated `.pstatus`-style node carries it.
     static func firstEditedNote(in text: String) -> String? {
         for pattern in notePatterns {
             guard let regex = HTMLTextExtractor.cachedRegex(pattern: pattern) else { continue }
@@ -31,8 +19,6 @@ enum DiscuzEditedDateParser {
         return nil
     }
 
-    /// The moment the content last changed: the edit note's timestamp when one
-    /// is present, otherwise whatever date the posted-at text yields.
     static func date(lastEditedText: String?, postedAtText: String?, relativeTo: Date? = nil) -> Date? {
         [date(from: extractedEditTime(from: lastEditedText), relativeTo: relativeTo),
          date(from: postedAtText, relativeTo: relativeTo)].compactMap { $0 }.max()
@@ -47,13 +33,6 @@ enum DiscuzEditedDateParser {
             #"(\d{4}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}(?::\d{2})?)"#,
             #"(\d{4}-\d{1,2}-\d{1,2})"#
         ]
-        // Locale/calendar/timeZone never vary across patterns or formats, so
-        // one DateFormatter is built per call and reused for every attempt
-        // instead of re-constructing it (expensive: loads ICU data) on each
-        // loop iteration. Kept local to this call rather than a shared
-        // `static let` because DateFormatter is not thread-safe and this
-        // parser has no guarantee against concurrent callers (e.g. parallel
-        // Swift Testing test functions).
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -77,8 +56,6 @@ enum DiscuzEditedDateParser {
         return relativeDate(from: normalized, relativeTo: relativeTo)
     }
 
-    /// Only call with the page's capture time. Reinterpreting cached relative
-    /// text against today's clock would make unchanged content appear newer.
     private static func relativeDate(from text: String, relativeTo: Date) -> Date? {
         if text == "刚刚" || text == "剛剛" { return relativeTo }
         if let match = HTMLTextExtractor.firstMatch(
@@ -119,8 +96,6 @@ enum DiscuzEditedDateParser {
             }
             return String(text[matchRange]).nilIfBlank
         }
-        // Callers pass bare timestamps here too, not just edit notes; text
-        // that matches no note shape still deserves a date-parse attempt.
         return text
     }
 

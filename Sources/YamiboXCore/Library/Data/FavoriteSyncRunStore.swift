@@ -1,35 +1,23 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Persists Yamibo favorite sync run snapshots in the shared GRDB database.
-/// Run state is runtime task bookkeeping, deliberately kept out of the app
-/// settings (which sync across devices over WebDAV).
 public actor FavoriteSyncRunStore {
     private static let keptRunCount = 10
 
     private let database: DatabasePool
     private let encoder = JSONEncoder()
-    // A full authoritative save changes the persisted revision, even when
-    // counts stay equal. Unknown/replaced baselines must never admit a delta.
     private var appendRevisions: [String: String] = [:]
     private var saveEpoch: UInt64 = 0
 
     public init(databasePool: DatabasePool? = nil) {
-        // `.standard` is the resolver's "shared production pool" signal, so
-        // the nil-pool fallback and the convenience below stay one code path.
         self.database = databasePool
             ?? YamiboDatabasePoolResolver.resolvePool(defaults: .standard, key: "yamibox.favoriteSyncRuns")
     }
 
-    /// Isolated-storage convenience mirroring `FavoriteLibraryStore`: standard
-    /// defaults use the shared database, any other suite gets its own pool in
-    /// a temporary directory (tests and previews).
     public init(defaults: UserDefaults, key: String = "yamibox.favoriteSyncRuns") {
         self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
     }
 
-    /// The most recently updated run, regardless of status; callers decide
-    /// whether an old `running` snapshot needs downgrading to interrupted.
     public func latestSnapshot() async -> FavoriteRemoteSyncSnapshot? {
         do {
             return try await database.read { db in
@@ -58,21 +46,15 @@ public actor FavoriteSyncRunStore {
         }
     }
 
-    /// Authoritative replacement, including edits to existing entries. Used by
-    /// presentation edits, legacy restore, and callers without an append baseline.
     public func save(_ snapshot: FavoriteRemoteSyncSnapshot) async throws {
         appendRevisions[snapshot.runID] = nil
         try await save(snapshot, appendingAfter: nil)
     }
 
-    /// Engine mutations append entries. Each checkpoint is still durable before
-    /// publication; interruption/terminal checkpoints need no deferred flush.
     public func saveAppending(_ snapshot: FavoriteRemoteSyncSnapshot, after previousCounts: FavoriteRemoteSyncEntryCounts) async throws {
         try await save(snapshot, appendingAfter: previousCounts)
     }
 
-    /// Presentation owns only this flag. A stale UI snapshot must not replace
-    /// the engine's newer durable progress or log prefix while it is hiding.
     public func hideCard(runID: String) async throws {
         do {
             try await database.write { db in
@@ -131,8 +113,6 @@ public actor FavoriteSyncRunStore {
                         && row["error_count"] as Int == previous.errors
                 } ?? false
                 let revision = canAppend ? knownRevision! : newRevision
-                // UPDATE on conflict preserves child rows; REPLACE would cascade
-                // a deletion and lose the prefix we are intentionally reusing.
                 try db.execute(sql: """
                     INSERT INTO favorite_sync_runs
                     (run_id, status, snapshot_json, started_at, updated_at, separated_entries, entries_revision, log_count, warning_count, error_count)
@@ -160,8 +140,6 @@ public actor FavoriteSyncRunStore {
                     """, arguments: [Self.keptRunCount])
                 return revision
             }
-            // A reentrant authoritative save invalidates even a same-count
-            // prefix. Only the most recent append operation establishes reuse.
             if epoch == saveEpoch {
                 if counts != nil { appendRevisions[snapshot.runID] = revision }
                 else { appendRevisions[snapshot.runID] = nil }

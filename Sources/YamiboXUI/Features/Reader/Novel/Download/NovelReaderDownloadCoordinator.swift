@@ -1,21 +1,14 @@
 import SwiftUI
 import YamiboXCore
 
-/// Aggregated downloads presentation state for the novel reader.
 struct NovelReaderDownloadState: Equatable {
     var views = NovelDownloadViewsSnapshot()
     var queueEntryCount = 0
     var operation = NovelReaderDownloadOperationState()
 }
 
-/// Owns the novel reader's downloads concerns: the aggregated download
-/// state (per-view snapshots, download-queue count, running batch
-/// operation), the batch-operation module, and the download repository.
-/// The view model supplies the live reading context; download views bind this
-/// coordinator directly.
 @MainActor
 final class NovelReaderDownloadCoordinator: ObservableObject {
-    /// Live reading context supplied by the owning view model.
     struct Reading {
         var maxView: @MainActor () -> Int
         var displayedView: @MainActor () -> Int
@@ -78,8 +71,6 @@ final class NovelReaderDownloadCoordinator: ObservableObject {
             await refreshTask.value
             return
         }
-        // Navigation owns a waiter, not the refresh. Canceling an old navigation
-        // must not strand a newer request that joined this database read.
         let task = Task { [weak self] in
             guard let self else { return }
             await refreshSnapshots()

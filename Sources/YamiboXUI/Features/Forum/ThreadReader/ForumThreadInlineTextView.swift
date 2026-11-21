@@ -41,11 +41,7 @@ struct ForumThreadTextRenderer: TextRenderer {
     var displayPadding: EdgeInsets { EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8) }
 }
 
-/// One Text keeps native line breaking and selection across text and smileys.
-/// Only image frames change during playback; attachment dimensions stay fixed.
 struct ForumThreadInlineTextView: View {
-    // The custom per-run renderer stops painting sufficiently tall Text views.
-    // Before text blocks were kept intact, it only ever drew at most 320 characters.
     private static let maxSyntheticItalicCharacters = 320
 
     let refererURL: URL
@@ -66,8 +62,6 @@ struct ForumThreadInlineTextView: View {
         var runs: [PreparedRun] = []
         var urls: Set<URL> = []
         var ordinaryStart = attributedText.startIndex
-        // Rebuilt with the input value, not image playback state. Static text
-        // slices and modifiers must not be reconstructed for every GIF frame.
         for run in attributedText.runs {
             let inline = run[ForumThreadInlineImageKey.self]
             let italic = run[ForumThreadItalicKey.self] == true
@@ -141,15 +135,12 @@ struct ForumThreadInlineTextView: View {
                 let attachment = Text(image)
                     .accessibilityLabel(Text(verbatim: inline.altText ?? L10n.string("forum.thread.image")))
                     .baselineOffset(-imageSize / 7)
-                // Adjacent identical smileys coalesce into one attributed run.
                 parts.append(contentsOf: repeatElement(attachment, count: count))
             case let .text(text):
                 parts.append(text)
             }
         }
 
-        // SwiftUI resolves interpolated Text recursively. Pairing adjacent parts
-        // keeps that depth logarithmic, including for runs of identical smileys.
         while parts.count > 1 {
             var next: [Text] = []
             next.reserveCapacity((parts.count + 1) / 2)

@@ -42,8 +42,6 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
                     let url = try await store.fileURL(file.relativePath)
                     do { try await registrar.register(url) }
                     catch {
-                        // Collection registration can partially succeed. Keep
-                        // those faces from conflicting with a later repair.
                         _ = CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil)
                         throw error
                     }
@@ -53,7 +51,6 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
                 }
             }
         } catch {
-            // Do not overwrite an unreadable index with an empty library.
             issue = L10n.string("reader.font.restore_failed") + "\n" + error.localizedDescription
         }
         refreshEntries()
@@ -113,8 +110,6 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
 
     func refreshEntries() {
         if canMutate, registeredFiles.isSuperset(of: files.map(\.id)) { issue = nil }
-        // Retain other curated IDs for persisted-settings compatibility, but
-        // offer only the built-in defaults. Additional fonts come from files.
         entries = [ReaderCuratedFont.pingFangSC, .pingFangTC].map { font in
             let selection = ReaderFontSelection.curated(font)
             let available = !resolve(selection).isFallback
@@ -163,7 +158,6 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
                 registeredFiles.insert(file.id)
                 reports.append(source.lastPathComponent + ": " + L10n.string("reader.font.import_success"))
             } catch {
-                // A failed unregister must keep the registered file at its stable URL.
                 var canRemove = true
                 if let registeredURL {
                     var failure: Unmanaged<CFError>?
@@ -200,7 +194,6 @@ public final class ReaderFontLibrary: ReaderFontLibraryServing {
         }
         let remaining = files.filter { $0.id != id }
         do {
-            // Commit the index first: failure leaves both the index and file recoverable.
             try await store.save(remaining)
             do { try await store.remove(file.relativePath) }
             catch { try await store.save(files); throw error }

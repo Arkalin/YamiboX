@@ -1,9 +1,5 @@
 import SwiftUI
 
-/// One action shown in a `SelectionBottomToolbar`. Hide an action (don't
-/// include it in the array) rather than merely disabling it when the
-/// current selection can't use it at all — an available-but-empty selection
-/// should make the whole bar disappear instead of showing dead buttons.
 struct SelectionToolbarAction: Identifiable {
     let id: String
     let title: String
@@ -16,27 +12,9 @@ struct SelectionToolbarAction: Identifiable {
     let action: () -> Void
 }
 
-/// Shared multi-select bottom bar: icon-over-title buttons evenly split
-/// across the available width, in the visual language originally designed
-/// for the favorites screen. Every selection-mode screen in the app renders
-/// through this one component instead of hand-rolling its own bar.
-///
-/// Mounting is always `ToolbarItem(placement: .bottomBar)`: on iOS 26+ the
-/// system renders that placement as a floating Liquid Glass capsule on its
-/// own, so this view stays bare there; earlier systems get a flat bar from
-/// `.bottomBar` instead, so callers mount the same content via
-/// `.safeAreaInset(edge: .bottom)` wrapped in `.selectionBottomToolbarCapsule()`
-/// there to reproduce the floating-capsule look by hand. See
-/// `usesSystemSelectionBottomToolbar` for the switch every call site uses to
-/// pick between the two paths.
 struct SelectionBottomToolbar: View {
     let actions: [SelectionToolbarAction]
 
-    /// Matches the system tab bar's item title (`UITabBarItem` defaults to
-    /// `UIFont.systemFont(ofSize: 10)`) — one point below `.caption2`, the
-    /// smallest built-in `Font.TextStyle`, so no semantic style reaches it.
-    /// `@ScaledMetric` keeps this fixed base scaling with Dynamic Type the
-    /// way a plain `.system(size:)` wouldn't.
     @ScaledMetric(relativeTo: .caption2) private var captionFontSize: CGFloat = 10
 
     var body: some View {
@@ -65,22 +43,10 @@ struct SelectionBottomToolbar: View {
             }
         }
         .padding(.horizontal, 8)
-        // 6pt instead of a rounder 8-10: with the buttons' 44pt minimum
-        // touch-target height this lands the capsule at ~61pt — the same
-        // height as the system floating tab bar this bar replaces while
-        // selection mode is active.
         .padding(.vertical, 6)
     }
 }
 
-/// Lays the action buttons out in equal-width cells sized to the widest
-/// button, so the bar's *ideal* width already has room for every caption.
-/// The iOS 26 system bottom bar sizes its floating Liquid Glass capsule to
-/// that ideal — a plain `HStack` of `maxWidth: .infinity` buttons collapses
-/// there to the sum of the buttons' tight sizes and then splits it evenly,
-/// cramming the icons together and truncating the longest caption. Proposed
-/// more than its ideal (the pre-iOS-26 full-width mounting), it spreads the
-/// extra evenly across the cells, reproducing the classic full-width bar.
 private struct SelectionToolbarEqualWidthLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard !subviews.isEmpty else { return .zero }
@@ -124,9 +90,6 @@ struct SelectionBottomToolbarActionAnchorKey: PreferenceKey {
     }
 }
 
-/// Reproduces the floating rounded-capsule Liquid Glass look by hand for
-/// pre-iOS-26 systems, where a bare `.bottomBar` renders as a flat
-/// edge-to-edge bar rather than a floating capsule.
 private struct SelectionBottomToolbarCapsuleBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -141,19 +104,11 @@ private struct SelectionBottomToolbarCapsuleBackground: ViewModifier {
 }
 
 extension View {
-    /// Applies the pre-iOS-26 floating-capsule background + outer margin to
-    /// a `SelectionBottomToolbar` mounted via `.safeAreaInset`. Don't apply
-    /// this to the iOS 26+ `ToolbarItem(placement: .bottomBar)` path — the
-    /// system already supplies that look there.
     func selectionBottomToolbarCapsule() -> some View {
         modifier(SelectionBottomToolbarCapsuleBackground())
     }
 }
 
-/// Whether `ToolbarItem(placement: .bottomBar)` renders as a floating
-/// Liquid Glass capsule on its own (iOS 26+). When false, callers fall back
-/// to `.safeAreaInset(edge: .bottom)` + `.selectionBottomToolbarCapsule()`
-/// to get the same look by hand.
 var usesSystemSelectionBottomToolbar: Bool {
     if #available(iOS 26.0, *) {
         return true

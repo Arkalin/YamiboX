@@ -1,7 +1,5 @@
 import Foundation
 
-/// Shared deletion rules, independent of each dataset's conflict resolution,
-/// wire format and position deduplication. Historical migrations do not use this.
 enum SyncSoftDeletionRules {
     static func tombstones<Records: Sequence>(
         in records: Records,

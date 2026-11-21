@@ -1,6 +1,5 @@
 import Foundation
 
-/// Shared by history destinations without importing the entire favorites feature package.
 public struct BrowsingHistoryDependencies: Sendable {
     public let browsingHistoryStore: BrowsingHistoryStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow

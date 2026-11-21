@@ -1,12 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Builds the selection-mode bottom bar's actions for the favorites screen —
-/// rendering itself is delegated to the shared `SelectionBottomToolbar`.
-/// Each action is omitted (not merely disabled) when the current selection
-/// can't use it, and the whole bar disappears once nothing is available
-/// (i.e. nothing is selected — every action needs at least one selected
-/// entry).
 struct LocalFavoriteSelectionActionBar: View {
     let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
@@ -78,10 +72,6 @@ struct LocalFavoriteSelectionActionBar: View {
         return actions
     }
 
-    // MARK: - Availability
-
-    /// Move only relocates the selected favorites; a mixed selection would
-    /// silently leave any selected collection untouched.
     private var canMove: Bool {
         selection.selectedFavoriteCount > 0 && selection.selectedCollectionCount == 0
     }
@@ -90,8 +80,6 @@ struct LocalFavoriteSelectionActionBar: View {
         selection.canCreateCollectionFromSelection
     }
 
-    /// Tags only apply to favorites, not collections — same pure-item
-    /// requirement as move.
     private var canEditTags: Bool {
         selection.selectedFavoriteCount > 0 && selection.selectedCollectionCount == 0
     }
@@ -105,36 +93,15 @@ struct LocalFavoriteSelectionActionBar: View {
         selection.selectedCollectionCount > 0 && selection.selectedFavoriteCount == 0
     }
 
-    /// When `FavoriteLibrarySettings.smartMangaBulkDeleteEnabled` is off, a
-    /// smart card can be selected but contributes nothing to delete
-    /// (`FavoriteLibraryOrganizer.deleteSelection` skips every smart-card
-    /// id in that mode) — `hasDeletableSelection` accounts for that, so a
-    /// selection made up entirely of smart cards hides this button instead
-    /// of showing one that silently does nothing when tapped. When the
-    /// setting is on, a smart-card-only selection is fully deletable (its
-    /// whole archive), so the button shows.
     private var canDelete: Bool {
         organizer.hasDeletableSelection
     }
 }
 
-/// Marks selection state on a whole row/card instead of a leading circle:
-/// an unselected item dims while multi-selection is active, and a selected
-/// one stays full-color with an accent-color border (Android card-selection
-/// parity).
 struct LocalFavoriteSelectionEmphasis: ViewModifier {
     let isSelectionMode: Bool
     let isSelected: Bool
     var cornerRadius: CGFloat = 8
-    /// Space between the border and the content it marks.
-    ///
-    /// Zero by default because a card row already carries its own padding, and
-    /// the border wants to sit on the card's edge. Flat rows — ones drawn
-    /// straight onto the list background with no inner padding of their own —
-    /// pass a value here, or the stroke lands on the glyphs.
-    ///
-    /// Applied unconditionally rather than only while selected, so entering
-    /// selection mode never reflows the list.
     var contentInset: CGFloat = 0
     @Environment(\.appTheme) private var appTheme
 

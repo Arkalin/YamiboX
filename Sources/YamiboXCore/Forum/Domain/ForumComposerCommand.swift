@@ -19,8 +19,6 @@ public struct ForumComposerTransaction: Sendable {
     public let selection: ForumComposerSelection
 }
 
-/// One temporary index for the repeated ancestor-boundary queries in a tool
-/// transaction. Keep the original first-span/atomic affinity rules at ties.
 private struct ForumComposerSourceOffsetIndex {
     let projection: ForumComposerProjection
     let rangesAreOrdered: Bool
@@ -33,8 +31,6 @@ private struct ForumComposerSourceOffsetIndex {
     }
 
     func visibleOffset(forSourceOffset offset: Int, affinity: ForumComposerSelection.Affinity = .upstream) -> Int {
-        // Preserve the linear reference semantics if a future projection ever
-        // emits source ranges out of order or with overlapping extents.
         guard rangesAreOrdered else { return projection.visibleOffset(forSourceOffset: offset, affinity: affinity) }
         let spans = projection.spans
         var low = 0, high = spans.count
@@ -128,7 +124,6 @@ extension ForumComposerDocument {
             guard let node = node(id: id), let tag = node.tag else { throw ForumComposerDocumentError.missingNode }
             guard !node.isSystem else { throw ForumComposerDocumentError.protectedNode }
             let markup = try ForumComposerSyntax.markup(tag: tag, parameter: parameter, body: body)
-            // Preserve original delimiters if only a block's content changed.
             let replacement = parameter == node.parameter && !tag.isSingleton ? node.opening + body + node.closing : markup
             edits = [.init(range: node.range, replacement: replacement)]
             selection.sourceRange = .init(location: node.range.location + replacement.utf16.count)
@@ -163,7 +158,6 @@ extension ForumComposerDocument {
         let right = projection.spans.last { $0.range.location < range.end && $0.range.end >= range.end && $0.kind != .boundary }?.ancestors
             ?? ancestors(at: sourceRange.end)
         let common = zip(left, right).prefix { $0.id == $1.id }.count
-        // Balance differently styled edges without serializing either unselected side.
         let repair = range.length == 0 ? "" : left.dropFirst(common).reversed().map(\.closing).joined() + right.dropFirst(common).map(\.opening).joined()
         return .init(range: sourceRange, replacement: text + repair)
     }

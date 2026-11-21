@@ -1,6 +1,5 @@
 import Foundation
 
-/// Completion validates the admitted context, never the finger's final direction.
 struct MangaNavigationSession {
     struct Context: Equatable {
         let viewportGeneration: UInt64

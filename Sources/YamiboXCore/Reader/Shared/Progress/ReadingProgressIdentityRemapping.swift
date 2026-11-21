@@ -1,7 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Rewrites only this feature's references using the caller's transaction.
 enum ReadingProgressIdentityRemapping {
     static func normalize(snapshot: MangaDirectoryIdentitySnapshot, legacy: Bool, in db: Database) throws {
         let rows = try Row.fetchAll(db, sql: "SELECT * FROM reading_progress WHERE target_kind = 'mangaTitle' ORDER BY updated_at ASC, id ASC")

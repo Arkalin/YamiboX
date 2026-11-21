@@ -38,16 +38,8 @@ final class NovelTextSelectionController {
         selectionRangeValue != nil
     }
 
-    /// Why the edit menu can or cannot offer 加入喜欢 for the current selection.
     enum LikeAvailability: Equatable {
-        /// No selection, no capture identity, or content the reader cannot
-        /// give a semantic position to (A3: no chapter title -> no chapter
-        /// identity -> nothing to anchor to). The action is omitted entirely.
         case unavailable
-        /// Anchorable at each end, but the two ends are in different posts. The
-        /// action stays visible and disabled with a reason, because dragging
-        /// past a post boundary is almost always a slip and silently hiding the
-        /// action leaves the user with no idea what happened.
         case crossesChapters
         case available
     }
@@ -141,10 +133,6 @@ final class NovelTextSelectionController {
         refreshSelectionDisplay()
     }
 
-    /// Seeds `baseAnchor` at the endpoint opposite the dragged handle, then
-    /// dragging reuses `updateSelection(in:at:)` unchanged: it always builds
-    /// the range between `baseAnchor` and the current touch point, and
-    /// `selectionRange(from:to:)` normalizes the pair regardless of order.
     func beginHandleDrag(_ kind: HandleKind, generation: UInt64) -> Bool {
         guard let selectionRangeValue, selectionRangeValue.generation == generation else {
             return false
@@ -229,24 +217,10 @@ final class NovelTextSelectionController {
         onLikeFailure = onFailure
     }
 
-    /// Called when the edit menu offers the like action, before the user can
-    /// possibly tap it — the hook the reader uses to `prepare()` its haptic
-    /// generator so the success haptic doesn't fire on a cold Taptic Engine.
     func noteLikeActionOffered() {
         onLikeActionOffered?()
     }
 
-    /// Captures the selection as an annotation.
-    ///
-    /// - Parameters:
-    ///   - style: the style to capture in. The style row is now the way in to
-    ///     capturing at all, so the colour is known up front and there is no
-    ///     "created, now recolour it" step to follow. `nil` keeps the sticky
-    ///     default, which is what the note action wants — it is capturing on
-    ///     the way to somewhere else and never asked about colour.
-    ///   - thenAddNote: opens the note editor on whatever the capture resolved
-    ///     to, so 「添加笔记」 on a fresh selection is one action rather than
-    ///     like-then-find-it-again.
     func likeSelection(style: LikeStyle? = nil, thenAddNote: Bool = false,
                        admitsNote: @escaping () -> Bool = { true },
                        didCapture: ((LikeItem) -> Void)? = nil) {
@@ -262,16 +236,10 @@ final class NovelTextSelectionController {
             view: endpoints.documentView,
             resolvedAuthorID: endpoints.resolvedAuthorID,
             chapterTitle: endpoints.chapterTitle,
-            // "Whatever colour I used last time" — read at capture time rather
-            // than cached, so a change made in another reader session applies
-            // immediately.
             style: style ?? ReaderHighlightStyleDefault.current(),
             excerptPrefix: endpoints.excerptPrefix,
             excerptSuffix: endpoints.excerptSuffix
         )
-        // Picking a colour also makes it the default for the next annotation;
-        // that stickiness is the whole reason the row does not reset to yellow
-        // every time.
         if let style {
             ReaderHighlightStyleDefault.set(style)
         }
@@ -293,8 +261,6 @@ final class NovelTextSelectionController {
         }
     }
 
-    /// Set by the reader so the UIKit style capsule can hand a note request
-    /// back up to SwiftUI, which owns the sheet slot.
     func configureNoteEditor(_ handler: @escaping (LikeItem) -> Void) {
         onRequestNoteEditor = handler
     }
@@ -309,16 +275,6 @@ final class NovelTextSelectionController {
         }
     }
 
-    /// `registeredViews` commonly holds more than one live view at once
-    /// (adjacent prefetched pages in paged mode, multiple visible surfaces in
-    /// vertical mode), all sharing the same `generation` — it only changes on
-    /// content reload, not per page. Matching on `generation` alone and
-    /// taking the hash table's (unordered) first hit can resolve to a
-    /// different on-screen surface than the one the selection actually lives
-    /// on. `selectionRects`/`viewportSample` are per-surface windowed
-    /// queries, so querying the wrong surface silently returns empty rects —
-    /// this is why `canLike` used to fail even for an ordinary, single-
-    /// segment selection. Prefer the exact surface the selection started on.
     private func firstCurrentDisplayReference() -> NovelTextViewportDisplayReference? {
         let candidates = registeredViews
             .allObjects
@@ -331,20 +287,6 @@ final class NovelTextSelectionController {
         return candidates.first
     }
 
-    /// There is no forwarding API that converts a raw document offset to a
-    /// semantic position directly, only point-based ones (`viewportSample`).
-    /// This recovers character-precise positions for both selection
-    /// endpoints by hit-testing the exact rects `selectionRects(for:)`
-    /// already computes for drawing the selection highlight.
-    ///
-    /// `documentView` comes straight off `start`'s `NovelTextViewportSample`
-    /// — the exact forum page the selection's own surface is showing, not a
-    /// coarser "reader's current page" signal. In vertical mode, several
-    /// surfaces (adjacent pages) can be concurrently registered, so a
-    /// same-generation, non-active surface can legitimately be on a
-    /// different page than whatever the reader chrome currently reports as
-    /// "visible" — using anything less precise here would reintroduce the
-    /// same wrong-page bug `NovelTextLikeAnchor.view` exists to fix.
     private func likeAnchorEndpoints() -> (
         start: NovelTextViewportSemanticTextPosition,
         end: NovelTextViewportSemanticTextPosition,
@@ -359,14 +301,6 @@ final class NovelTextSelectionController {
         return (resolved.start, resolved.end, resolved.excerptText, resolved.excerptPrefix, resolved.excerptSuffix, resolved.documentView, resolved.resolvedAuthorID, resolved.chapterTitle)
     }
 
-    /// Resolves both selection endpoints to semantic positions, reporting
-    /// whether they landed in different chapters instead of refusing outright —
-    /// the caller decides what to do about that.
-    ///
-    /// The two endpoints may now sit in different text *segments*: the whole
-    /// projection is one contiguous TextKit document, so a range crossing the
-    /// illustration that splits a chapter's text renders and resolves without
-    /// any change below this layer.
     private typealias ResolvedEndpoints = (
         start: NovelTextViewportSemanticTextPosition,
         end: NovelTextViewportSemanticTextPosition,
@@ -387,19 +321,11 @@ final class NovelTextSelectionController {
               !excerptText.isEmpty else {
             return nil
         }
-        // Sliced while the laid-out document is in hand — the panel row has no
-        // access to chapter text, so this is the only cheap moment to learn
-        // what the clause around the highlight says. 80 characters comfortably
-        // covers the context caps in `NovelLikeExcerptContext`.
         let surrounding = displayReference.surroundingText(for: selectionRangeValue, radius: 80)
         let context = NovelLikeExcerptContext.make(
             textBefore: surrounding?.before ?? "",
             textAfter: surrounding?.after ?? ""
         )
-        // `selectionRects` is intentionally clipped to one surface. It remains
-        // useful for the projection metadata below, but must not decide either
-        // persisted endpoint: a vertical selection can start on one surface and
-        // finish on the next.
         let rects = displayReference.selectionRects(for: selectionRangeValue)
         guard let firstRect = rects.first,
               let metadataSample = displayReference.viewportSample(
@@ -645,10 +571,6 @@ extension NovelTextSelectionController {
     }
 }
 
-/// Converts glyph hit-test samples into the half-open endpoints stored by
-/// `NovelTextLikeAnchor`. The end sample deliberately lands inside the last
-/// selected glyph, so its offset needs advancing to keep that glyph visible
-/// when the highlight is reconstructed.
 enum NovelTextLikeAnchorEndpointResolver {
     static func resolve(
         start: NovelTextViewportSemanticTextPosition,

@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Builds the selection-mode bottom bar's single "delete selected" action,
-/// shared by Like lists and reader annotation segments; rendering is
-/// delegated to the shared `SelectionBottomToolbar`.
 enum LikeSelectionActions {
     static func delete(selectedCount: Int, onDelete: @escaping () -> Void) -> [SelectionToolbarAction] {
         [

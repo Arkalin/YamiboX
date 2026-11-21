@@ -637,8 +637,6 @@ public struct FavoriteShareService: Sendable {
 }
 
 private extension FavoriteShareService {
-    /// Positions belong to the fresh document inside this import transaction.
-    /// Appends have a new thread ID, so existing positions stay valid until finish.
     struct ImportItemIndex {
         private var firstByThreadID: [String: Int] = [:]
         private var hasAppendedItems = false
@@ -660,10 +658,6 @@ private extension FavoriteShareService {
             document: inout FavoriteLibraryDocument,
             normalizationIndex: FavoriteLibraryDocument.ItemNormalizationIndex
         ) {
-            // The old single-item upsert sorted the entire array after the first
-            // insertion. Reproduce its new first-by-thread choice without moving
-            // the array: stable id ordering keeps the original first for equal ids.
-            // A decoded document may contain duplicate targets; keep all of them.
             if !hasAppendedItems {
                 for (position, existing) in document.items.enumerated() {
                     guard let threadID = existing.target.threadID,

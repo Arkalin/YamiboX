@@ -1,7 +1,6 @@
 #if os(iOS)
 import UIKit
 
-/// Owns recognizers, not reading rules or a paging coordinator.
 @MainActor
 final class MangaNavigationInput: NSObject, UIGestureRecognizerDelegate {
     enum Role { case tap, doubleTap, navigationPan }

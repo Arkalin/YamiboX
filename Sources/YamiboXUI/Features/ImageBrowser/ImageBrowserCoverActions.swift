@@ -1,36 +1,20 @@
 import Foundation
 import YamiboXCore
 
-/// One cover-related menu entry in the image browser. The browser stays
-/// ignorant of the library: callers inject the actions that apply to their
-/// context and the browser only renders and invokes them.
 struct ImageBrowserCoverAction: Identifiable, Sendable {
     let id: String
     let title: String
     let systemImage: String
-    /// Performs the action for the currently displayed image and returns the
-    /// success feedback message. Throws (or returns nil) on failure.
     let perform: @Sendable (YamiboImageSource) async throws -> String?
 }
 
 typealias ImageBrowserCoverActionsProvider = @Sendable () async -> [ImageBrowserCoverAction]
 
-/// Builds the cover actions for images viewed inside a forum thread: the
-/// thread cover entry always applies; when the thread is a chapter of a
-/// locally known manga directory, a second entry sets the manga's cover, and
-/// restore entries appear for whichever keys currently hold a manual cover.
 enum ImageBrowserThreadCoverActions {
     static func provider(
         tid: String,
         contentCoverStore: @escaping @Sendable () async -> ContentCoverStore?,
         mangaDirectoryStore: @escaping @Sendable () async -> (any MangaDirectoryPersisting)? = { nil },
-        // Smart Comic Mode gate: when the tapped thread's board is not
-        // currently configured as a smart-enabled manga board, the browser
-        // has no manga-directory-aware UI at all, even if a `MangaDirectory`
-        // technically still exists for this tid (e.g. a leftover from when
-        // the board was previously configured). No default — every caller
-        // supplies its own explicit configuration query (or `{ false }`
-        // when it has no settings store to ask).
         isSmartComicModeEnabled: @escaping @Sendable () async -> Bool
     ) -> ImageBrowserCoverActionsProvider {
         {

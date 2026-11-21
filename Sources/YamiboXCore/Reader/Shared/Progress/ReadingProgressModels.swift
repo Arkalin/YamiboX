@@ -3,16 +3,12 @@ import Foundation
 public enum ReadingProgressKind: String, Codable, Hashable, Sendable {
     case novel
     case manga
-    /// Normal forum threads (browsing-history decisions #6/#7): page +
-    /// floor-level anchor, restored on every entrance (decision #8).
     case thread
 }
 
 public struct ThreadReadingProgressRecord: Codable, Hashable, Sendable {
     public var lastPage: Int
     public var pageCount: Int?
-    /// Topmost visible post id when the reader last saved — the floor-level
-    /// half of the resume position (the page is the coarse half).
     public var anchorPostID: String?
 
     public init(lastPage: Int = 1, pageCount: Int? = nil, anchorPostID: String? = nil) {

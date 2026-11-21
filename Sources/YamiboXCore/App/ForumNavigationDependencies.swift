@@ -1,6 +1,5 @@
 import Foundation
 
-/// Cross-feature packages used only when assembling navigation destinations.
 public struct ForumDestinationDependencies: Sendable {
     public let novelDetail: NovelDetailDependencies
     public let mangaDetail: MangaDetailDependencies
@@ -20,7 +19,6 @@ public struct ForumDestinationDependencies: Sendable {
     }
 }
 
-/// Navigation hosts carry both packages; individual forum pages receive only `forum`.
 public struct ForumNavigationDependencies: Sendable {
     public let forum: ForumDependencies
     public let destinations: ForumDestinationDependencies

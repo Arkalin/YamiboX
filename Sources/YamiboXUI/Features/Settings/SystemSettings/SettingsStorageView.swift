@@ -4,14 +4,8 @@ import YamiboXCore
 struct SettingsStorageView: View {
     let dependencies: SettingsDependencies
     let viewModel: SettingsStorageViewModel
-    /// This page owns the navigation into the two management sub-pages, so it
-    /// carries their view models purely to hand them on.
     let downloadManagement: DownloadManagementViewModel
     let mangaDirectoryManagement: MangaDirectoryManagementViewModel
-    /// Called after a successful reset, before `viewModel.resetApplication()`'s
-    /// caller-provided completion runs — lets the owning navigation stack pop
-    /// back out of Settings first, since the app state it just wiped includes
-    /// whatever this stack is showing.
     let onReset: () async -> Void
     @Environment(\.appTheme) private var appTheme
     @Environment(\.scenePhase) private var scenePhase

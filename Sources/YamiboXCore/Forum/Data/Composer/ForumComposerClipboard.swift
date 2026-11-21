@@ -1,8 +1,6 @@
 import Foundation
 
 public enum ForumComposerClipboard {
-    /// Parse with the existing DOM adapter, not NSAttributedString's HTML importer.
-    /// Images and executable elements never cause requests during a paste.
     public static func importHTML(_ html: String) throws -> String {
         guard html.utf8.count <= 2 * 1024 * 1024 else { throw ForumPageError.fieldTooLong("HTML", 2 * 1024 * 1024) }
         let document = try KannaSoup.parseBodyFragment(html)

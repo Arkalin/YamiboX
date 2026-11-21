@@ -68,7 +68,6 @@ final class ForumTagViewModel {
             } catch {
                 guard !Task.isCancelled, generation == requestGeneration,
                       !LoadDiagnosticError.isCancellation(error) else { return }
-                // Retain the last successful page during refresh/pagination errors.
                 errorMessage = error.localizedDescription
                 errorDetails = LoadFailureDetails(error: error)
             }

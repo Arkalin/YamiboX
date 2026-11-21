@@ -1,7 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Rewrites only this feature's references using the caller's transaction.
 enum FavoriteLibraryIdentityRemapping {
     static func normalize(_ document: FavoriteLibraryDocument, identities: MangaDirectoryIdentitySnapshot, legacy: Bool) -> FavoriteLibraryDocument {
         var result = document

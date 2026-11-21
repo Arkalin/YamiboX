@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Renders the sheet selected by `LocalFavoritesRoutes`, wiring each sheet to
-/// the organizer, sync session, and update monitor it operates on.
 struct LocalFavoritesSheetContent: View {
     let sheet: LocalFavoritesRoutes.Sheet
     let organizer: FavoriteLibraryOrganizer

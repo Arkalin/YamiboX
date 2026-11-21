@@ -2,18 +2,7 @@ import Foundation
 import Observation
 import YamiboXCore
 
-// MARK: - Cross-page activity surface
 
-/// The one in-flight action and pending error message shared by every system
-/// settings page.
-///
-/// These two pieces of state are deliberately *not* split per page: the root
-/// settings screen gates navigation on `isBusy` so a still-running action on
-/// one page (e.g. Storage) can never become reachable-but-frozen on another
-/// page the user navigates to next, and every page installs the same error
-/// alert so a fire-and-forget save that fails *after* the user navigated away
-/// still surfaces wherever they are now. Keeping a single shared instance
-/// preserves exactly the behavior the former monolithic view model had.
 @MainActor
 @Observable
 final class SystemSettingsActivity {
@@ -55,13 +44,9 @@ final class SystemSettingsActivity {
         guard var edits = settingsEdits[key],
               let index = edits.firstIndex(where: { $0.id == editID }) else { return }
         if succeeded {
-            // A committed edit is the new rollback floor. Older failures
-            // cannot undo it, even when newer edits repeat an earlier value.
             edits.removeFirst(index + 1)
         } else {
             edits[index].hasFailed = true
-            // A previous optimistic value may itself still be uncommitted.
-            // Retain that history until every newer failure is rolled back.
             while let latest = edits.last, latest.hasFailed {
                 edits.removeLast()
                 guard latest.rollback() else {
@@ -74,11 +59,6 @@ final class SystemSettingsActivity {
     }
 }
 
-/// Anything that surfaces busy state and errors through the shared
-/// ``SystemSettingsActivity``. The passthrough accessors keep view and test
-/// call sites (`viewModel.isBusy`, `viewModel.errorMessage = nil`, …) exactly
-/// as they were before the per-page split — the sharing is an implementation
-/// detail the views never have to know about.
 @MainActor
 protocol SystemSettingsActivityReporting: AnyObject {
     var activity: SystemSettingsActivity { get }
@@ -105,14 +85,7 @@ extension SystemSettingsActivityReporting {
     }
 }
 
-// MARK: - Cross-page storage usage
 
-/// File sizes and logical data-size estimates for the Storage page.
-///
-/// A shared model rather than Storage-page-private state because the offline
-/// cache and manga directory management pages delete data those counters
-/// describe: they refresh this model after a deletion so the Storage page the
-/// user pops back to never shows stale byte counts.
 @MainActor
 @Observable
 final class SettingsStorageUsage {
@@ -194,7 +167,6 @@ final class SettingsStorageUsage {
             historyBytes = try? await dependencies.library.browsingHistoryStore.estimatedDataUsageBytes()
         }
         let coverBytes = try? await dependencies.contentCoverStore.totalDiskUsageBytes()
-        // A clear/reset or newer refresh must win over an older suspended read.
         guard generation == refreshGeneration, !Task.isCancelled else { return }
         webReaderCacheBytes = novelBytes + mangaProjectionBytes + forumBytes
         contentCoverBytes = coverBytes
@@ -235,9 +207,6 @@ final class SettingsStorageUsage {
         networkLogBytes = bytes.map { Int(clamping: $0) }
     }
 
-    /// Application reset zeroes the counters directly instead of re-reading
-    /// the stores: the wipe just succeeded, so a re-read would only race
-    /// against it for the same answer.
     func resetToZero() {
         refreshGeneration += 1
         networkLogRefreshGeneration += 1

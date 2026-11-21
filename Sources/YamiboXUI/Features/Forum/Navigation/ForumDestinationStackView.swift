@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// The `NavigationStack` + `navigationDestination` wiring shared by the forum
-/// tab and every reader-overlay forum stack, so all of them resolve the same
-/// destinations identically.
 struct ForumDestinationStackView<Root: View>: View {
     @Environment(\.forumBrowserSourceIsList) private var fromBrowserList
     private let navigator: ForumDestinationNavigator

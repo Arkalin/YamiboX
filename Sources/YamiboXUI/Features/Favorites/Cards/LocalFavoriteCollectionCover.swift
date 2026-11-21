@@ -1,16 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Small sparkles badge overlaid on a smart-comic card's cover
-/// (`FavoriteCardProjection.isModeOnMangaThread`), signaling this card's
-/// title/content is Smart Comic Mode-managed — a locally-cleaned or shared
-/// manga book name rather than the representative favorite's own raw post
-/// title, whether or not it has actually merged with any sibling favorite
-/// yet. Mirrors the styling technique — not the content — of
-/// `LocalFavoritesOrganizationView`'s toolbar bell unread-count badge: a
-/// small white glyph on a colored shape, offset to hang over the corner.
-/// Purely a supplementary visual cue (the card's own accessibility label
-/// already conveys its title), so it is hidden from the accessibility tree.
 struct LocalFavoriteSmartCardBadge: View {
     @Environment(\.appTheme) private var appTheme
     @Environment(\.colorScheme) private var colorScheme
@@ -26,10 +16,6 @@ struct LocalFavoriteSmartCardBadge: View {
     }
 }
 
-/// Width-filling 2x2 cover mosaic for the grid collection card: square tiles,
-/// empty slots (fewer than 4 members) staying as collection-tinted squares.
-/// Each occupied tile carries its own member's title, so a member with no
-/// cover image renders its own text-fallback tile instead of being dropped.
 struct LocalFavoriteCollectionMosaic: View {
     let color: Color
     let tiles: [LocalFavoriteCollectionPreviewTile]
@@ -51,10 +37,6 @@ struct LocalFavoriteCollectionMosaic: View {
     private func tile(at index: Int) -> some View {
         Group {
             if index < tiles.count {
-                // Not layered under a background fill: BookCoverTextFallback's
-                // own background is only ~12% opaque, so a collection-tinted
-                // rectangle painted underneath it would bleed through and tint
-                // every text-fallback tile with the collection's color.
                 BookCoverThumbnail(source: tiles[index].coverSource, title: tiles[index].title)
             } else {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -67,11 +49,6 @@ struct LocalFavoriteCollectionMosaic: View {
     }
 }
 
-/// Flexible 2x2 cover mosaic, sized entirely by whatever frame the caller
-/// applies (list rows size it to match an item row's cover so collection and
-/// favorite rows come out the same height; pickers can use a small square).
-/// Each tile carries its own member's title, so a member with no cover image
-/// renders its own text-fallback tile instead of being dropped.
 struct LocalFavoriteCollectionCoverPreview: View {
     let color: Color
     let tiles: [LocalFavoriteCollectionPreviewTile]

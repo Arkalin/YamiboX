@@ -87,7 +87,6 @@ final class ForumBBCodeSession {
 
     func captureSelection(userInitiated: Bool = false) {
         guard let view, !isRendering, view.markedTextRange == nil else { return }
-        // UIKit can notify selection changes before the corresponding text edit.
         guard !userInitiated || (view.text ?? "") == projection.text else { return }
         let next = ForumComposerSelection(sourceRange: isVisual ? projection.sourceRange(forVisibleRange: .init(view.selectedRange)) : .init(view.selectedRange))
         if userInitiated, next != selection { typingMarks = [:]; history.breakTypingGroup() }
@@ -172,8 +171,6 @@ final class ForumBBCodeSession {
                 if tag == .sub { typingMarks[.sup] = .some(nil) }
                 let active = marks[tag] == .on
                 if active {
-                    // A collapsed removal splits inherited formatting only
-                    // when text is actually entered, so a toggle alone is not an edit.
                     typingMarks[tag] = .some(nil)
                 } else { typingMarks[tag] = .some(parameter) }
                 marks[tag] = active ? .off : .on
@@ -348,7 +345,6 @@ final class ForumBBCodeSession {
                 let replacementRange = NSRange(location: difference.range.location, length: difference.replacement.utf16.count)
                 view.textStorage.replaceCharacters(in: difference.range.nsRange, with: attributed.attributedSubstring(from: replacementRange))
             }
-            // Commands can change attributes without changing visible characters.
             attributed.enumerateAttributes(in: NSRange(location: 0, length: attributed.length)) { attributes, range, _ in
                 view.textStorage.setAttributes(attributes, range: range)
             }

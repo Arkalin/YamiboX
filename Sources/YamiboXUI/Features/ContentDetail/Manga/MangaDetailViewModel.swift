@@ -16,11 +16,6 @@ final class MangaDetailViewModel {
     }
     private(set) var errorDetails: LoadFailureDetails?
 
-    /// Directory command surface mirroring the reader directory sheet's
-    /// update/search button: a single in-flight flag shared by "update
-    /// directory" and "save correction" (they mutate the same directory row),
-    /// plus the search-cooldown countdown and the short post-update window in
-    /// which the button escalates to a forced global search.
     var isDirectoryActionRunning = false
     var directoryCooldownRemaining = 0
     var forcedSearchShortcutRemaining: Int?
@@ -29,9 +24,6 @@ final class MangaDetailViewModel {
     }
     var directoryActionErrorDetails: LoadFailureDetails?
 
-    /// Favorite-star state and actions (add/remove/relocate prompts, location
-    /// picker, transient feedback) — shared orchestration with the novel
-    /// detail page.
     let favoriteActions: FavoriteActionController
 
     let context: MangaDetailLaunchContext
@@ -64,13 +56,6 @@ final class MangaDetailViewModel {
             scope: .manga(threadID: context.thread.tid, title: context.directoryNameHint ?? context.title, forumID: context.thread.fid),
             mangaDirectoryStore: dependencies.mangaDirectoryStore
         )
-        // Stamp the launching board's fid over the injected configuration
-        // (mirroring MangaReaderViewModel's construction): the detail page's
-        // 更新目录 action reaches `workflow.updateDirectory` → search, which
-        // must query THIS board — never the test-convenience default "30"
-        // (pluggable-reader-config decision #6). A fid-less route (routing
-        // always sets one today) keeps the injected configuration's own
-        // value, i.e. exactly the pre-stamping behavior.
         var configuration = workflowConfiguration
         if let fid = context.thread.fid {
             configuration.searchForumID = fid
@@ -90,14 +75,6 @@ final class MangaDetailViewModel {
             guard let self else { return }
             contentCover = await self.loadContentCover()
         }
-        // Without this, renaming/updating this manga's directory from
-        // elsewhere while this page stays open — the manga reader's own
-        // directory sheet, a background smart-manga update check
-        // ([[smart-manga-update-check-design]]) — would leave `directory`
-        // (and the `.smartManga` cover derived from its `cleanBookName`)
-        // stale until some unrelated action happened to trigger a reload.
-        // Mirrors `FavoriteLibraryOrganizer.reloadMangaDirectories()`'s
-        // listener for the Favorites tab.
         mangaDirectoryUpdatesTask = StoreChangeObservation.task(
             changes: { [store = dependencies.mangaDirectoryStore] in store.changes() },
             changeID: { [store = dependencies.mangaDirectoryStore] in store.changeID }
@@ -190,8 +167,6 @@ final class MangaDetailViewModel {
     }
 
     func refresh() async {
-        // A refresh-control task may be cancelled while its view updates.
-        // Keep the user-requested reload alive, and await its actual completion.
         await Task { await reload(ignoresCache: true) }.value
     }
 
@@ -210,8 +185,6 @@ final class MangaDetailViewModel {
                 displayTitle: context.title,
                 source: .forum,
                 directoryName: context.directoryNameHint,
-                // Both forum and favorite callers establish Smart Comic Mode
-                // before opening this work-level detail page.
                 isSmartModeEnabled: true,
                 forumID: context.thread.fid
             )
@@ -249,15 +222,9 @@ final class MangaDetailViewModel {
             favoriteMembershipTask = Task { [weak self] in
                 await self?.refreshFavoriteMembership()
             }
-            // Progress and membership need the resolved directory identity;
-            // neither should delay the independent initial projection request.
             readingProgress = try await loadReadingProgress()
             contentCover = await loadContentCover()
             if resolution.shouldAutoUpdateAfterInitialLoad {
-                // The imminent directory update may rewrite the chapter
-                // list (and thus which chapter is "first"), so cover
-                // resolution waits for `performDirectoryUpdate` to trigger
-                // it with the updated directory.
                 startAutomaticDirectoryUpdate()
             } else {
                 startAutomaticCoverResolutionIfNeeded()
@@ -300,8 +267,6 @@ final class MangaDetailViewModel {
             initialPage: manga?.mangaPageIndex ?? 0,
             directoryName: directory.cleanBookName,
             directoryID: directory.id,
-            // See the comment in `reload()`: this view model only exists
-            // for mode-on boards.
             isSmartModeEnabled: true,
             forumID: context.thread.fid
         )
@@ -316,14 +281,11 @@ final class MangaDetailViewModel {
             chapterView: chapter.view,
             directoryName: directory?.cleanBookName ?? context.directoryNameHint,
             directoryID: directory?.id,
-            // See the comment in `reload()`: this view model only exists
-            // for mode-on boards.
             isSmartModeEnabled: true,
             forumID: context.thread.fid
         )
     }
 
-    // MARK: - Directory update (search)
 
     func updateDirectoryFromDetail() async {
         automaticDirectoryUpdateTask?.cancel()
@@ -331,9 +293,6 @@ final class MangaDetailViewModel {
         await performDirectoryUpdate(isForcedSearch: directoryCommandState.shouldForceSearchOnUpdate)
     }
 
-    /// Discards the locally cached directory (including manual corrections)
-    /// and rebuilds it from the network, mirroring the reader directory
-    /// sheet's reset action (`MangaReaderViewModel.resetDirectory`).
     func resetDirectoryFromDetail() async {
         automaticDirectoryUpdateTask?.cancel()
         automaticDirectoryUpdateTask = nil
@@ -417,7 +376,6 @@ final class MangaDetailViewModel {
         }
     }
 
-    // MARK: - Favorite
 
     private func refreshFavoriteMembership() async {
         await favoriteActions.updateScope(.manga(
@@ -426,13 +384,10 @@ final class MangaDetailViewModel {
         ))
     }
 
-    /// Title recorded when the star creates a favorite: the resolved
-    /// directory's clean book name once loaded, else the launch title.
     private var favoriteTitle: String {
         directory?.cleanBookName ?? context.title
     }
 
-    // MARK: - Correction
 
     func saveCorrection(_ draft: MangaDirectoryEditDraft) async {
         guard let directory, !isDirectoryActionRunning else { return }
@@ -469,7 +424,6 @@ final class MangaDetailViewModel {
         }
     }
 
-    // MARK: - Countdown timing
 
     @ObservationIgnored private var directoryTiming = MangaDirectoryCommandTiming()
 
@@ -514,7 +468,6 @@ final class MangaDetailViewModel {
         }
     }
 
-    // MARK: - Loading helpers
 
     private func makeDirectoryWorkflow() -> MangaDirectoryWorkflow {
         MangaDirectoryWorkflow(
@@ -540,15 +493,6 @@ final class MangaDetailViewModel {
         return await dependencies.contentCoverStore.cover(for: .smartManga(directoryID: directory.id))
     }
 
-    /// Re-resolves `directory` (and its derived `contentCover`/
-    /// `readingProgress`) in response to a `MangaDirectoryStore
-    /// .changes()` element fired by a rename or update performed
-    /// elsewhere while this page stays open. Looks the directory back up by
-    /// `context.thread.tid` — stable across a rename, unlike `cleanBookName`
-    /// itself (the directory's own primary key) — rather than trusting the
-    /// already-loaded `directory` value, which is exactly what this handler
-    /// exists to correct. Skipped while `directory` is still nil so this
-    /// never races ahead of the initial `reload()`.
     private func reloadDirectoryAfterExternalChange() async {
         guard directory != nil,
               let refreshed = try? await dependencies.mangaDirectoryStore.directory(containingTID: context.thread.tid) else {
@@ -560,13 +504,6 @@ final class MangaDetailViewModel {
         contentCover = await loadContentCover()
     }
 
-    /// Resolves a missing `.smartManga` automatic cover for the loaded
-    /// directory, mirroring `FavoriteLibraryOrganizer`'s backfill (smart-
-    /// comic-mode decision #13): the earliest chapter's floor-1 owner image
-    /// via `ThreadCoverResolver` → `setAutomaticCover`. That backfill only
-    /// runs over *favorited* directories during favorites organization, so
-    /// without this, a detail page opened for an unfavorited manga (or
-    /// before the favorites page ever organized) never shows a cover.
     private func startAutomaticCoverResolutionIfNeeded() {
         guard automaticCoverResolutionTask == nil, let directory else { return }
         let cleanBookName = directory.cleanBookName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -575,9 +512,6 @@ final class MangaDetailViewModel {
               !attemptedAutomaticCoverBookNames.contains(directory.id.rawValue) else {
             return
         }
-        // Same missing-check as the favorites backfill: a text-cover-forced
-        // row is a deliberate "no image", not a missing cover, and any
-        // resolved URL means there is nothing to do.
         if let contentCover, contentCover.textCoverForced || contentCover.resolvedImageSource != nil {
             return
         }
@@ -598,27 +532,10 @@ final class MangaDetailViewModel {
             YamiboLog.library.error("Failed to set automatic smartManga cover from manga detail for \(directory.cleanBookName): \(error.localizedDescription)")
             return
         }
-        // `setAutomaticCover` also posts the store's change notification,
-        // but reloading directly keeps this page's cover from depending on
-        // notification delivery ordering.
         guard !Task.isCancelled else { return }
         contentCover = await loadContentCover()
     }
 
-    /// Once `directory` is known, its stable `mangaID`+`cleanBookName`
-    /// identity is the precise lookup key for this manga's reading progress
-    /// — mirrors `LocalFavoriteOpenTargetResolver.mangaDirectoryResumeTarget`.
-    /// `ReadingProgressStore.saveMangaTitle` upserts a single directory-level
-    /// row whose `thread_id`/`manga_chapter_thread_id` columns both hold
-    /// whatever chapter tid was current *at save time* — so a chapter that
-    /// was never the "current" one when that row was written can still have
-    /// its own stale `.mangaThread` row sharing this same tid. The generic
-    /// `load(threadID:)` OR-matches on either column and would happily
-    /// return whichever row was updated most recently regardless of kind,
-    /// coincidentally latching onto that stale per-chapter row instead of
-    /// the directory's true current position. Before `directory` resolves
-    /// there is no directory identity yet to query by, so the coincidental
-    /// OR-match remains the only option in that narrow window.
     private func refreshReadingProgress() async {
         do {
             readingProgress = try await loadReadingProgress()

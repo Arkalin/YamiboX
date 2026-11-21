@@ -16,8 +16,6 @@ public enum YamiboNetworkConfiguration {
         makeSession(configuration: makeImageSessionConfiguration())
     }
 
-    /// A short-lived session for requests that provide an explicit, filtered
-    /// Cookie header. It must not read from or write to shared cookie storage.
     static func makeCookieIsolatedSession() -> URLSession {
         makeSession(configuration: makeCookieIsolatedSessionConfiguration())
     }

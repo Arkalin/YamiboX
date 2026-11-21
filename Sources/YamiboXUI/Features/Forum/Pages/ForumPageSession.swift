@@ -104,8 +104,6 @@ final class ForumPageSession {
             pageGeneration = generation
             guard case let .page(result) = response else {
                 navigationResult = response
-                // Embedded composers cannot navigate; leave them a retryable
-                // failure rather than a permanently empty loading surface.
                 setError(ForumPageError.invalidForm)
                 return
             }
@@ -138,8 +136,6 @@ final class ForumPageSession {
             return
         }
         if discardingEdits, !(await discardLocalDraft()) { return }
-        // Confirmation is per request, not a permanent authorization that a
-        // refresh can reuse for destructive GET actions.
         requiresLoadConfirmation = ForumWebPagePolicy.requiresConfirmationToLoad(url)
         page = nil
         drafts = [:]
@@ -179,7 +175,6 @@ final class ForumPageSession {
         } catch { setError(error) }
     }
 
-    /// Refresh server tokens after login without replacing the user's composer draft.
     func reloadComposerPreservingEdits() async {
         if isOfflineDraft, let draft = composerDraft.current {
             await restoreDraft(draft)
@@ -234,8 +229,6 @@ final class ForumPageSession {
     }
 
     func confirmSubmission(_ submission: Submission? = nil) async {
-        // Dialog dismissal can clear presentation state before this task runs.
-        // Consume the confirmed snapshot once, independently of that state.
         guard let pending = submission ?? pendingSubmission, let page,
               !isLoading, !isSubmitting, !isUploading, !submissionSucceeded,
               !isOfflineDraft,
@@ -268,9 +261,6 @@ final class ForumPageSession {
                 return
             }
             submissionResponse = result
-            // An arbitrary nonempty page is not evidence of success. Keep the
-            // draft after permission errors, validation failures and ambiguous
-            // responses; never resend automatically after a timeout.
             let message = result.message ?? ""
             let isServerDraft = pending.form.kind == .thread && pending.form.buttons.first(where: { $0.id == pending.buttonID })?.values.contains(where: { $0.name == "save" && $0.value == "1" }) == true
             submissionSucceeded = result.submissionAccepted && !isServerDraft

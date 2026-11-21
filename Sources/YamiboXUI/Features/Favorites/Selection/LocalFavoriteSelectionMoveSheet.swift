@@ -1,11 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Category → collection tree with tri-state boxes for the selected items'
-/// locations, mirroring the Android collection picker. Items can live in
-/// multiple locations; toggling a partially-selected location includes it
-/// everywhere, toggling a full one removes it (keeping each item's last
-/// location intact).
 struct LocalFavoriteSelectionMoveSheet: View {
     let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession

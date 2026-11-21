@@ -141,8 +141,6 @@ private struct SystemSettingsBoardReaderRow: Identifiable {
         forumID
     }
 
-    /// The stored name snapshot; the placeholder is presentation-only and
-    /// never written back to storage.
     var displayName: String {
         entry.boardName ?? L10n.string("settings.board_reader.board_placeholder", forumID)
     }

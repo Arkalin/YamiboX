@@ -1,22 +1,8 @@
 import Foundation
 
-/// State machine for favorite update detection: walks tracked threads,
-/// compares fingerprints against the stored baseline, and records update
-/// events plus per-forum and per-category filters.
-///
-/// This is the check-run engine proper — network fetching, fingerprint
-/// comparison, circuit breaking, offline handling, run persistence, and
-/// notification delivery. The UI layer's `FavoriteUpdateMonitor` is only a
-/// thin `ObservableObject` republishing this engine's state; every field
-/// change is surfaced synchronously through `onStateChange` so the published
-/// snapshot timing is identical to when the monitor owned this logic.
 @MainActor
 public final class FavoriteUpdateCheckEngine {
 
-    /// Which piece of engine state just changed. Delivered synchronously,
-    /// once per assignment, in assignment order — the UI mirror relies on
-    /// this to reproduce the exact `@Published` update cadence the monitor
-    /// had when it owned the state directly.
     public enum StateChange: Sendable {
         case snapshot
         case events
@@ -26,7 +12,6 @@ public final class FavoriteUpdateCheckEngine {
         case errorMessage
     }
 
-    /// Synchronous per-field change hook for the UI snapshot publisher.
     public var onStateChange: ((StateChange) -> Void)?
 
     public private(set) var snapshot: FavoriteUpdateRunSnapshot? {
@@ -46,11 +31,6 @@ public final class FavoriteUpdateCheckEngine {
     public private(set) var categoryFilters: [FavoriteUpdateCategoryFilter] = [] {
         didSet { onStateChange?(.categoryFilters) }
     }
-    /// The authoritative per-target category scope, keyed by
-    /// `FavoriteUpdateTargetKey`. UI category-filter matching for a
-    /// `.mangaDirectory` event must read this rather than guessing from
-    /// `FavoriteItem.target.id` equality (that lookup is `.favorite`-only by
-    /// construction — a directory event's target id never matches one).
     public private(set) var trackedTargets: [FavoriteUpdateTrackedTarget] = [] {
         didSet { onStateChange?(.trackedTargets) }
     }
@@ -65,28 +45,18 @@ public final class FavoriteUpdateCheckEngine {
         errorMessage = error.localizedDescription
     }
 
-    // Lane extensions (+SmartManga, +Notifications) share these members.
     let updateStore: any FavoriteUpdateStatePersisting
     private let libraryStore: any FavoriteUpdateLibraryAccessing
     private let makeForumThreadReaderRepository: @Sendable () async -> any ForumThreadPageFetching
     let settingsStore: SettingsStore?
     let notifier: (any FavoriteUpdateNotifying)?
-    /// Batched tid -> directory resolution for the smart-manga check lane.
-    /// `nil` makes that lane a no-op. The reader must explicitly implement
-    /// batched lookup; checking needs no directory mutation or observation.
     let mangaDirectoryStore: (any MangaDirectoryBatchReading)?
-    /// Builds a fresh `MangaDirectoryWorkflow` scoped to one directory
-    /// group's board (`searchForumID`), mirroring `makeForumThreadReaderRepository`'s
-    /// "construct fresh per call so session state stays current" shape. `nil`
-    /// makes the smart-manga check lane a no-op even if `mangaDirectoryStore`
-    /// is set (seeding still runs — only network refresh needs a workflow).
     let makeMangaDirectoryWorkflow: (@Sendable (_ searchForumID: String) async -> MangaDirectoryWorkflow)?
     private let runRegistry: FavoriteUpdateActiveRunRegistry
 
     private var ownedRun: FavoriteUpdateActiveRunRegistry.Run?
     private var observedRun: FavoriteUpdateActiveRunRegistry.Run?
     private let observerID = UUID()
-    // The badge fast path requires a gap-free delivery sequence within a run.
     var notificationBadgeSequence: UInt64 = 0
     private var storeUpdatesTask: Task<Void, Never>?
     private var finishingRunIDs: Set<String> = []
@@ -95,8 +65,6 @@ public final class FavoriteUpdateCheckEngine {
         runRegistry.isActive(runID)
     }
 
-    /// Runs are shared by store.changeID, including their preparation and completion.
-    /// A separate injected registry can isolate an independent composition.
     public init(
         updateStore: any FavoriteUpdateStatePersisting,
         libraryStore: any FavoriteUpdateLibraryAccessing,
@@ -120,25 +88,15 @@ public final class FavoriteUpdateCheckEngine {
             snapshot = incoming
         } onFinished: { [weak self] incoming in
             guard let self, ownedRun?.snapshot.runID != incoming.runID else { return }
-            // Results can commit after interrupt published its early terminal
-            // snapshot. Reload once when the shared driver actually finishes.
             Task { [weak self] in await self?.reloadEventState() }
         }
         storeUpdatesTask = Task { @MainActor [weak self, store = updateStore] in
             for await changeID in store.changes() {
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
-                // The per-instance stream already only carries this store's
-                // changeID; the guard stays as the explicit statement of the
-                // "changes from the exact instance driving this engine" rule.
                 guard changeID == store.changeID else {
                     continue
                 }
-                // Shared progress comes directly from the registry. Avoid
-                // hydrating the full event state in every observing engine
-                // for each progress write; the driver's finish callback
-                // refreshes observers once after results have committed.
-                // Outside a run, store changes still refresh the full state.
                 guard self.runRegistry.run(storeID: store.changeID) == nil else { continue }
                 await self.reloadFromExternalChange()
             }
@@ -150,8 +108,6 @@ public final class FavoriteUpdateCheckEngine {
         runRegistry.removeObserver(storeID: updateStore.changeID, observerID: observerID)
     }
 
-    /// Reloads the persisted run, events, and filters. A run still marked
-    /// running whose task no longer exists is downgraded to interrupted.
     public func load() async {
         do {
             let previous = snapshot
@@ -168,15 +124,6 @@ public final class FavoriteUpdateCheckEngine {
         await reloadEventState()
     }
 
-    /// Applies a store change observed via `changes()`. The stream
-    /// consumer can fall arbitrarily far behind under scheduler contention
-    /// (including this instance's own writes from the run that just finished).
-    /// `load()` re-validates immediately before publishing that no new run has
-    /// started on this instance while the store read was in flight —
-    /// applying a stale read at that point would regress the visible
-    /// snapshot back to the old run's runID and silently break the new
-    /// run's own updateSnapshot(runID:) calls, which compare against
-    /// self.snapshot.runID and no-op on a mismatch.
     private func reloadFromExternalChange() async {
         await load()
     }
@@ -195,14 +142,10 @@ public final class FavoriteUpdateCheckEngine {
         return latest
     }
 
-    /// Refreshes events and filters from the store. Kept separate from the
-    /// snapshot so a run can publish fresh event state before its terminal
-    /// status becomes observable.
     public func reloadEventState() async {
         do {
             applyEventState(try await updateStore.loadState())
         } catch {
-            // Retain the last good snapshot; a failed read is not an empty library.
             reportError(error)
         }
     }
@@ -225,14 +168,6 @@ public final class FavoriteUpdateCheckEngine {
         trackedTargets = state.trackedTargets
     }
 
-    /// - Parameter nonTagMangaDirectoryCheckCap: Ceiling on how many
-    ///   NON-tag-strategy smart-manga directory groups (the ones whose
-    ///   refresh always risks the forum's search flood-control) this run
-    ///   will attempt a network refresh for; tag-strategy groups are
-    ///   unbounded (cheap, no search cooldown in the common case). Callers
-    ///   should pass a small number for background-triggered runs and a
-    ///   larger one for foreground/manual runs — this type has no opinion on
-    ///   which, it only enforces whatever cap it's given.
     @discardableResult
     public func startCheck(nonTagMangaDirectoryCheckCap: Int = 1) async -> String? {
         guard !Task.isCancelled else { return nil }
@@ -248,8 +183,6 @@ public final class FavoriteUpdateCheckEngine {
         observedRun = run
         snapshot = startedSnapshot
         notificationBadgeSequence = 0
-        // Install both tasks before the first await. A joining caller can wait
-        // even while the initial durable running row is still being written.
         let preparation = Task { @MainActor [self] in
             await prepareRun(run)
         }
@@ -284,9 +217,6 @@ public final class FavoriteUpdateCheckEngine {
         } catch {
             YamiboLog.persistence.error("Failed to prepare favorite update run \(run.snapshot.runID): \(error.localizedDescription)")
             guard ownedRun === run else { return false }
-            // This store preserves GRDB's CancellationError under its
-            // persistence wrapper. Classify that source locally; a cancelled
-            // caller alone must never hide a genuine SQL/encoding failure.
             let preparationError = (error as? YamiboPersistenceError)?.underlying ?? error
             let wasCancelled = LoadDiagnosticError.isCancellation(preparationError)
             var failed = run.snapshot
@@ -296,8 +226,6 @@ public final class FavoriteUpdateCheckEngine {
             failed.errorMessage = wasCancelled ? preparationError.localizedDescription : error.localizedDescription
             snapshot = failed
             reportError(error)
-            // A cancelled preparation may already have persisted .running.
-            // Stamp its terminal result without inheriting that cancellation.
             if wasCancelled {
                 let interrupted = failed
                 await Task { @MainActor [self] in
@@ -319,8 +247,6 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    /// Manual interruption can control the shared run shown by this monitor.
-    /// Background expiration only has authority over a run this engine started.
     public func interrupt(ifOwned: Bool = false) async {
         guard let run = runRegistry.run(storeID: updateStore.changeID) ?? observedRun else { return }
         if ifOwned, ownedRun !== run { return }
@@ -332,8 +258,6 @@ public final class FavoriteUpdateCheckEngine {
               !finishingRunIDs.contains(run.snapshot.runID) else { return }
         run.preparation?.cancel()
         run.driver?.cancel()
-        // During preparation its cancellation stamps the terminal state after
-        // the initial write joins. Do not race another write against that row.
         guard await run.preparation?.value == true else { return }
         await updateSnapshot(runID: run.snapshot.runID) { snapshot in
             snapshot.status = .interrupted
@@ -343,8 +267,6 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    /// Joins the admitted run, including preparation and terminal persistence.
-    /// The receipt remains valid if another engine has already begun a new run.
     @discardableResult
     public func waitForCompletion() async -> FavoriteUpdateRunSnapshot? {
         guard let run = observedRun ?? runRegistry.run(storeID: updateStore.changeID) else { return nil }
@@ -353,7 +275,6 @@ public final class FavoriteUpdateCheckEngine {
         return run.snapshot
     }
 
-    /// Configured automatic check interval, or nil without a settings store.
     public func configuredInterval() async -> FavoriteUpdateCheckInterval? {
         guard let settingsStore else { return nil }
         return await settingsStore.load().favorites.updateCheckInterval
@@ -368,9 +289,6 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    /// Configured smart-manga chapter check interval, or nil without a
-    /// settings store — the UI-facing counterpart of `smartMangaInterval()`
-    /// (which the check run itself reads).
     public func configuredMangaInterval() async -> SmartMangaUpdateCheckInterval? {
         guard let settingsStore else { return nil }
         return await settingsStore.load().favorites.smartMangaUpdateCheckInterval
@@ -385,36 +303,16 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    /// Whether recent events keep arriving; drives the smart interval.
     public var hasRecentEvents: Bool {
         events.contains { $0.detectedAt > Date.now.addingTimeInterval(-7 * 24 * 3600) }
     }
 
-    /// Smart-manga-only counterpart of `hasRecentEvents`, driving
-    /// `SmartMangaUpdateCheckInterval.smart`'s adaptive cadence
-    /// independently of thread-check activity.
     public var hasRecentMangaDirectoryEvents: Bool {
         events.contains {
             $0.mode == .mangaDirectory && $0.detectedAt > Date.now.addingTimeInterval(-7 * 24 * 3600)
         }
     }
 
-    /// Starts a check when the configured interval has elapsed since the last
-    /// completed run — the foreground catch-up half of automatic checking
-    /// (BGAppRefreshTask timing is only best-effort).
-    /// Gating stays keyed on the thread-check interval only (unchanged from
-    /// before smart-manga checking existed): a whole run always attempts
-    /// both lanes, but whether a run happens automatically at all is still
-    /// decided by `favorites.updateCheckInterval`. `smartMangaUpdateCheckInterval`
-    /// only decides which *individual directory groups* are due once a run
-    /// is already underway (see `checkMangaDirectoryGroups`) — it does not
-    /// independently trigger runs. This is a deliberate scope boundary, not
-    /// an oversight: unifying the two into an OR-gate here would make
-    /// `smartMangaUpdateCheckInterval`'s non-off default silently start
-    /// automatic background activity for every user, including those who
-    /// have never touched smart manga and still have the thread-check
-    /// interval at its `.off` default. Flagged for product-decision
-    /// confirmation before the next phase wires a background trigger.
     @discardableResult
     public func startCheckIfDue(nonTagMangaDirectoryCheckCap: Int = 1) async -> Bool {
         guard let interval = await configuredInterval(),
@@ -425,18 +323,12 @@ public final class FavoriteUpdateCheckEngine {
             return await join(run) != nil
         }
         guard snapshot?.status != .running else { return false }
-        // Throttle on elapsed time regardless of how the last run ended: a
-        // failed or interrupted run (e.g. the background task's execution
-        // budget expired mid-check) must not bypass the interval and trigger
-        // a brand-new full check on every single foreground catch-up.
         if let last = snapshot, let finishedAt = last.finishedAt,
            Date.now.timeIntervalSince(finishedAt) < delay {
             return false
         }
         return await startCheck(nonTagMangaDirectoryCheckCap: nonTagMangaDirectoryCheckCap) != nil
     }
-
-    // MARK: - Events and filters
 
     public func markEventRead(_ eventID: String) async {
         await markEventsRead([eventID])
@@ -499,12 +391,7 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    // MARK: - Check run
-
     private func runCheck(runID: String, nonTagMangaDirectoryCheckCap: Int) async {
-        // Accumulated in memory across the whole loop and committed to
-        // `updateStore` at most once (`commitCheckResults`, on every exit
-        // path below) instead of per favorite — see that method's doc.
         var trackedTargets: [String: FavoriteUpdateTrackedTarget] = [:]
         var events = FavoriteUpdateRunEventAccumulator()
         do {
@@ -554,13 +441,6 @@ public final class FavoriteUpdateCheckEngine {
                         snapshot.warningMessage = [snapshot.warningMessage, message].compactMap { $0 }.joined(separator: "\n")
                     }
                 case .offline:
-                    // The network is down, not this one target — every
-                    // remaining candidate would fail the exact same way, so
-                    // stop the run here instead of grinding through the rest.
-                    // Nothing about this counts toward any target's
-                    // `consecutiveFailures` circuit breaker; the next due
-                    // check (foreground catch-up or background refresh)
-                    // retries the whole scope from scratch.
                     await finishRun(
                         runID: runID,
                         trackedTargets: trackedTargets,
@@ -585,13 +465,6 @@ public final class FavoriteUpdateCheckEngine {
             await finishRun(runID: runID, trackedTargets: trackedTargets, events: events, status: .completed)
         } catch {
             if error.isTaskCancellation {
-                // interrupt() may have already written the terminal state for
-                // this exact run — its cancellation races with a network fetch
-                // that doesn't observe Task cancellation and runs to
-                // completion regardless; finishRun's only-if-still-running
-                // guard keeps it from re-terminating (which would duplicate
-                // the warning/log entry and push finishedAt later than when
-                // the user actually interrupted).
                 await finishRun(
                     runID: runID,
                     trackedTargets: trackedTargets,
@@ -613,9 +486,6 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    /// One terminal-state write shared by every exit path of `runCheck`:
-    /// commit the run's accumulated results, refresh the published event
-    /// state, and stamp the snapshot's terminal status/phase.
     private func finishRun(
         runID: String,
         trackedTargets: [String: FavoriteUpdateTrackedTarget],
@@ -626,11 +496,6 @@ public final class FavoriteUpdateCheckEngine {
     ) async {
         guard finishingRunIDs.insert(runID).inserted else { return }
         defer { finishingRunIDs.remove(runID) }
-        // Terminal persistence must finish even when the network driver was
-        // cancelled, or is cancelled while this write is suspended. This
-        // unstructured task has a fresh cancellation state; the driver still
-        // joins it before the registry releases this run or changes accounts.
-        // Only the bounded commit/cleanup runs here, never more network work.
         await Task { @MainActor [self] in
             await persistFinishedRun(
                 runID: runID, trackedTargets: trackedTargets, events: events,
@@ -658,13 +523,9 @@ public final class FavoriteUpdateCheckEngine {
             reportError(error)
         }
         await reloadEventState()
-        // Reading during a run can update the badge before its newly detected
-        // events are committed. Reconcile once those events are durable.
         await cleanUpNotifications(forTargetIDs: [])
         await updateStore.endNotificationBadgeRun(runID: runID)
         guard var terminal = snapshot, terminal.runID == runID else { return }
-        // An interrupted run may still fail to persist its results. Surface that
-        // failure, but don't otherwise restamp an already-terminated run.
         let preserveEarlyTerminal = onlyIfStillRunning && terminal.status != .running && terminalStatus != .failed
         if !preserveEarlyTerminal {
             let phase: FavoriteUpdateRunPhase = switch terminalStatus {
@@ -680,13 +541,9 @@ public final class FavoriteUpdateCheckEngine {
             terminal.progress = nil
             if let terminalErrorMessage { terminal.errorMessage = terminalErrorMessage }
         }
-        // Preserve interrupt's original timestamp, but ensure its early
-        // terminal row is durable even if that caller's write was cancelled.
         do {
             try await updateStore.saveRun(terminal)
         } catch {
-            // Never publish completion until both results and terminal status
-            // are durable. A failed write must also leave manual retry available.
             terminal.status = LoadDiagnosticError.isCancellation(error) ? .interrupted : .failed
             terminal.phase = terminal.status == .interrupted ? .interrupted : .failed
             terminal.errorMessage = terminalErrorMessage ?? error.localizedDescription
@@ -696,13 +553,6 @@ public final class FavoriteUpdateCheckEngine {
         snapshot = terminal
     }
 
-    /// Applies this run's accumulated tracked-target/event changes to the
-    /// store in one write — a merge on the store side, so read/dismiss marks
-    /// the user applied while this run was in flight survive the commit
-    /// instead of being rolled back by the run's stale start-of-run snapshot.
-    /// A no-op before `trackedTargets` is ever seeded (an early throw from
-    /// `libraryStore.load()`/`refreshFilters`/`replaceTrackedTargetsIfNeeded`)
-    /// so it never writes an empty first-run result over existing state.
     private func commitCheckResults(
         trackedTargets: [String: FavoriteUpdateTrackedTarget],
         events: FavoriteUpdateRunEventAccumulator
@@ -727,8 +577,6 @@ public final class FavoriteUpdateCheckEngine {
             reportError(error)
         }
     }
-
-    // MARK: - Candidates
 
     private static func candidates(in document: FavoriteLibraryDocument) -> [FavoriteItem] {
         document.items.filter { item in
@@ -772,10 +620,6 @@ public final class FavoriteUpdateCheckEngine {
         let enabledCategories = Set(state.categoryFilters.filter(\.enabled).map(\.categoryID))
         let disabledCategoriesExist = state.categoryFilters.contains { !$0.enabled }
         return candidates.filter { item in
-            // The fid filter only ever gets a row for items whose forum
-            // actually resolved (see refreshFilters); an item stuck at
-            // .unknown has no filter row it could be re-enabled through, so
-            // disabling some OTHER forum must not silently exclude it too.
             let fidMatches: Bool
             if disabledFidsExist, case let .forumBoard(id, _) = item.sourceGroup {
                 fidMatches = enabledFids.contains(id)
@@ -789,10 +633,6 @@ public final class FavoriteUpdateCheckEngine {
 
     private func replaceTrackedTargetsIfNeeded(_ candidates: [FavoriteItem]) async throws {
         let state = try await updateStore.loadState()
-        // `.mangaDirectory` tracked targets aren't keyed by any
-        // `FavoriteItemTarget` in `candidates` (they're per-directory, not
-        // per-favorite) — carry them through untouched instead of letting
-        // this thread-lane-only replace wipe them out.
         let mangaDirectoryTargets = state.trackedTargets.filter {
             if case .mangaDirectory = $0.target { true } else { false }
         }
@@ -815,8 +655,6 @@ public final class FavoriteUpdateCheckEngine {
         try await updateStore.replaceTrackedTargets(targets + mangaDirectoryTargets)
     }
 
-    // MARK: - Single item check
-
     private enum CheckResult {
         case checked(detected: Int)
         case skipped
@@ -824,10 +662,6 @@ public final class FavoriteUpdateCheckEngine {
         case failed(String)
     }
 
-    /// After this many consecutive failed check attempts, a target backs off
-    /// to being retried at most once per `circuitBreakerCooldown` instead of
-    /// on every single run — otherwise a permanently broken target (deleted
-    /// thread, moved board) gets re-fetched forever with no end in sight.
     static let circuitBreakerThreshold = 5
     static let circuitBreakerCooldown: TimeInterval = 24 * 3600
     private static let currentNovelBaselineVersion = 1
@@ -856,11 +690,6 @@ public final class FavoriteUpdateCheckEngine {
                 try await libraryStore.recordContentUpdate(for: item.target, contentUpdatedAt: date)
             }
         } catch {
-            // The network being unreachable is not this target's fault, and
-            // every other candidate would fail identically — don't burn a
-            // circuit-breaker strike or touch its stored baseline on it, and
-            // let the caller decide to abort the whole run instead of
-            // grinding through every remaining candidate the same way.
             if YamiboNetworkErrorPolicy.isOffline(error) {
                 return .offline
             }
@@ -878,9 +707,6 @@ public final class FavoriteUpdateCheckEngine {
         let fingerprint = FavoriteUpdateFingerprint(page: page, contentUpdatedAt: content.contentUpdatedAt)
         if item.target.kind == .novelThread,
            target.novelBaselineVersion != Self.currentNovelBaselineVersion {
-            // The old fingerprint included reader replies. Rebuild it only
-            // after a successful author-scoped fetch, without reporting the
-            // scope change itself as new content or retaining unscoped fields.
             target.knownLatestPostID = nil
             target.knownReplyCount = nil
             target.knownPageCount = nil
@@ -890,12 +716,6 @@ public final class FavoriteUpdateCheckEngine {
         }
         let previous = FavoriteUpdateFingerprint(target: target)
 
-        // Only advance fields this fetch actually produced a value for — a
-        // transient parse miss on one field must not erase a previously
-        // known-good baseline, which would otherwise silently and
-        // permanently break future comparisons for that field (the next
-        // good fetch would compare against nil instead of the real prior
-        // value, masking whatever changed in between).
         target.knownLatestPostID = fingerprint.latestPostID ?? target.knownLatestPostID
         target.knownReplyCount = fingerprint.replyCount ?? target.knownReplyCount
         target.knownPageCount = fingerprint.pageCount ?? target.knownPageCount
@@ -938,10 +758,6 @@ public final class FavoriteUpdateCheckEngine {
         return .checked(detected: 1)
     }
 
-    /// Accumulates a newly detected delta onto an existing undismissed event
-    /// for the same target instead of replacing it outright, so a user who
-    /// misses several check cycles in a row sees the true accumulated total
-    /// rather than only the most recent cycle's delta.
     static func mergedSummary(existing: FavoriteUpdateSummary?, new: FavoriteUpdateSummary) -> FavoriteUpdateSummary {
         guard let existing else { return new }
         switch (existing, new) {
@@ -956,10 +772,6 @@ public final class FavoriteUpdateCheckEngine {
         }
     }
 
-    /// Writes a resolved forum id/name back onto the favorite's own source
-    /// group once a check successfully fetches its thread — items that never
-    /// resolved a forum at add-time would otherwise stay `.unknown` forever,
-    /// since nothing else in the app re-probes an already-favorited item.
     private func healUnknownSourceGroupIfNeeded(item: FavoriteItem, page: ForumThreadPage) async {
         guard item.sourceGroup == .unknown, let forumID = page.forumID ?? page.thread.fid else { return }
         do {
@@ -987,7 +799,6 @@ public final class FavoriteUpdateCheckEngine {
 
 }
 
-/// Compact comparison key for detecting thread updates between check runs.
 private struct FavoriteUpdateFingerprint: Sendable {
     var latestPostID: String?
     var replyCount: Int?

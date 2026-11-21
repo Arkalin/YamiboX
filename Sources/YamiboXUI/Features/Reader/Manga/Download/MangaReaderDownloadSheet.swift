@@ -217,10 +217,6 @@ private struct MangaReaderDownloadQueueBadgeFlight: Identifiable, Equatable {
     let count: Int
 }
 
-/// The nav-bar queue button's own frame, for the badge-flight destination —
-/// the flight's source (the bottom bar's "download" action) is tracked by the
-/// shared `SelectionBottomToolbarActionAnchorKey` instead, since that button
-/// now lives inside the shared `SelectionBottomToolbar`.
 private struct MangaReaderDownloadQueueButtonAnchorKey: PreferenceKey {
     static let defaultValue: Anchor<CGRect>? = nil
 

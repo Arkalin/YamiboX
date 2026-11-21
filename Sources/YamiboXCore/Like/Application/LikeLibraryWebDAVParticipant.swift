@@ -1,15 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// WebDAV sync participant for the Like Library. Like Items are effectively
-/// immutable once created (only "exists" -> "deleted" transitions happen), so
-/// this uses newest-record-wins-by-id merge semantics, same as
-/// `ReadingProgressWebDAVParticipant`, plus a tombstone set so a stale remote
-/// snapshot can't resurrect a locally deleted item. Image bytes never travel
-/// in this payload (ADR-0049): only `LikeItem` metadata, which already has no
-/// local-file field to strip (`LikeImageStore` resolves bytes purely by
-/// `LikeItem.id`, so other devices re-fetch via `sourceImageURL` through the
-/// existing `LikeWorkItemsView` fallback, no new code needed here).
 struct LikeLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
     var mangaIdentityStrategy: MangaIdentityPayloadStrategy? {
         MangaIdentityPayloadStrategy(normalizePayload: LikeLibraryWebDAVPayload.normalizingMangaIdentities)
@@ -55,8 +46,6 @@ struct LikeLibraryWebDAVParticipant: MangaIdentitySyncParticipant {
         }
     }
 
-    /// Restores style and notes only for equal versions, preserving genuine edits.
-    /// Chapter titles are metadata: a missing snapshot can be filled at any version.
     static func restoringDroppedFields(_ remoteItem: LikeItem, from localByID: [String: LikeItem]) -> LikeItem {
         guard let local = localByID[remoteItem.id] else {
             return remoteItem
@@ -85,13 +74,8 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
 
     var version: Int
     var updatedAt: Date
-    /// Monotonic per-dataset sync revision, stamped into the envelope by the
-    /// sync service after export; nil for payloads written before revisions
-    /// existed (decode falls back to `updatedAt` comparisons then).
     var syncRevision: UInt64?
     var items: [LikeItem]
-    /// itemID -> deletedAt. Bare by design: deleted content has nothing left
-    /// worth syncing, only the fact and time of deletion.
     var tombstones: [String: Date]
 
     init(version: Int = Self.currentVersion, updatedAt: Date, syncRevision: UInt64? = nil, items: [LikeItem], tombstones: [String: Date]) {
@@ -102,9 +86,6 @@ struct LikeLibraryWebDAVPayload: Codable, Equatable, Sendable {
         self.tombstones = tombstones
     }
 
-    /// Builds the export payload from the full local snapshot (including
-    /// soft-deleted rows): live items are exported with their data;
-    /// soft-deleted rows are reduced to a bare tombstone.
     init(updatedAt: Date, localSnapshot: [LikeItem]) {
         self.version = Self.currentVersion
         self.updatedAt = updatedAt
@@ -143,17 +124,6 @@ struct LikeLibraryWebDAVMerger: Sendable {
     func merge(localSnapshot: [LikeItem], remote: LikeLibraryWebDAVPayload?, updatedAt: Date, localTombstones: [String: Date] = [:]) -> MergeOutcome {
         var byID = Dictionary(localSnapshot.map { ($0.id, $0) }, uniquingKeysWith: { $0.updatedAt >= $1.updatedAt ? $0 : $1 })
         for remoteItem in remote?.items ?? [] {
-            // `>=`, not `>`, is what protects fields a client too old to know
-            // about them would flatten (style, note): re-exporting an item does
-            // not touch its `updatedAt`, so a payload rewritten by an old client
-            // comes back with equal timestamps and loses to the local row.
-            //
-            // This guard covers the merge path only. The download path
-            // (`applyRemote`) needs its own protection and has it — see
-            // `restoringDroppedFields`. A device with no local copy at all (a
-            // fresh install pulling an already-flattened remote) still cannot
-            // recover them, which is the accepted cost of keeping the payload at
-            // v1 so old clients keep syncing.
             if let existing = byID[remoteItem.id], existing.updatedAt >= remoteItem.updatedAt {
                 byID[remoteItem.id] = existing.fillingChapterTitle(from: remoteItem)
                 continue
@@ -164,7 +134,6 @@ struct LikeLibraryWebDAVMerger: Sendable {
         let rowTombstones = SyncSoftDeletionRules.tombstones(in: localSnapshot, id: \.id, deletedAt: \.deletedAt)
         let mergedTombstones = SyncDeletionState.mergingTombstones(SyncDeletionState.mergingTombstones(localTombstones, rowTombstones), remote?.tombstones ?? [:])
 
-        // Bare tombstones are persisted separately from the optional content.
         let storageSnapshot = SyncSoftDeletionRules.applying(
             mergedTombstones, to: byID.values, id: \.id, updatedAt: \.updatedAt, deletedAt: \.deletedAt
         )

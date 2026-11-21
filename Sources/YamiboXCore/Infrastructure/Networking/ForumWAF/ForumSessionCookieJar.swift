@@ -1,7 +1,5 @@
 import Foundation
 
-/// The isolated login transport's cookie view. Authentication workflows consume
-/// a snapshot without knowing which provider refreshed protection state.
 struct ForumSessionCookieJar: Sendable {
     let session: URLSession
     let sessionStore: SessionStore

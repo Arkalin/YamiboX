@@ -6,8 +6,6 @@ extension EnvironmentValues {
     @Entry var favoritesUsesSidebar = false
 }
 
-/// Device identity chooses the container once; window resizing only changes
-/// the system split view's column presentation, not the existing browse stack.
 struct LocalFavoritesAdaptiveNavigation<Content: View>: View {
     let organizer: FavoriteLibraryOrganizer
     let routes: LocalFavoritesRoutes
@@ -60,8 +58,6 @@ private struct LocalFavoritesSidebar: View {
     }
 
     var body: some View {
-        // The detail stack owns navigation. Native split-view selection would
-        // reset its path when a collection is opened from a content card.
         List {
             Section(L10n.string("favorites.category.select")) {
                 ForEach(organizer.categories.manualOrderSorted) { category in

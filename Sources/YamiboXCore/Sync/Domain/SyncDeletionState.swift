@@ -1,7 +1,5 @@
 import Foundation
 
-/// Deletion history is independent of live rows, including on a device that
-/// has never seen the deleted content. It must survive every sync round.
 struct SyncDeletionState: Codable, Equatable, Sendable {
     var clearedAt: Date?
     var tombstones: [String: Date] = [:]
@@ -26,7 +24,6 @@ struct SyncDeletionState: Codable, Equatable, Sendable {
         return result
     }
 
-    /// Shared last-deletion-wins rule used by the dataset-specific mergers.
     static func mergingTombstones(_ lhs: [String: Date], _ rhs: [String: Date]) -> [String: Date] {
         var result = lhs
         for (key, value) in rhs {

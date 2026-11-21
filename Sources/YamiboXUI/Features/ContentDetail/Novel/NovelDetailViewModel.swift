@@ -60,16 +60,11 @@ final class NovelDetailViewModel {
     }
     private(set) var errorDetails: LoadFailureDetails?
 
-    /// Favorite-star state and actions (add/remove/relocate prompts, location
-    /// picker, transient feedback) — shared orchestration with the manga
-    /// detail page. Its change hook rebuilds the chapter directory, whose
-    /// sections render differently for favorited threads.
     let favoriteActions: FavoriteActionController
 
     let context: NovelDetailLaunchContext
 
     @ObservationIgnored private let dependencies: NovelDetailDependencies
-    // Detail-scoped page cache mirroring Android's pagePostsCache; reload owns invalidation.
     @ObservationIgnored private var loadedThreadPages: [Int: ForumThreadPage] = [:]
     @ObservationIgnored private var resolvedAuthorID: String?
     @ObservationIgnored private var loadingChapterPages: Set<Int> = []
@@ -198,8 +193,6 @@ final class NovelDetailViewModel {
     }
 
     func refresh() async {
-        // Protect cache replacement as well as the network request from the
-        // refresh-control task's cancellation, matching manga detail refresh.
         await Task {
             await loadDetail(preferCache: false, refreshesPersistentCache: true, preservesCurrentContentOnFailure: threadPage != nil)
         }.value
@@ -275,7 +268,6 @@ final class NovelDetailViewModel {
                 document = previousDocument
                 return
             }
-            // Retain the last known progress; a failed read is not an empty record.
             contentCover = await loadContentCover()
             if preservesCurrentContentOnFailure {
                 document = nil
@@ -629,10 +621,6 @@ final class NovelDetailViewModel {
         nil
     }
 
-    /// Finds at most one chapter to flag as the current read position, preferring a
-    /// stable per-floor identity match. The title/view fallback only applies when no
-    /// identity is available at all, and only ever returns the first matching chapter,
-    /// so floors that share an identical extracted title are never all marked at once.
     private static func currentReadChapterIndex(
         in chapters: [NovelChapterSummary],
         readingProgress: ReadingProgressRecord?,

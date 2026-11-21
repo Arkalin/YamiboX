@@ -1,6 +1,5 @@
 import Foundation
 
-/// Legacy startup-page values retained only for local and WebDAV compatibility.
 public enum AppHomePage: String, Codable, Hashable, CaseIterable, Sendable {
     case home
     case favorites
@@ -115,7 +114,6 @@ public struct ExternalDisplaySettings: Codable, Hashable, Sendable {
 
 public struct SystemSettings: Codable, Hashable, Sendable {
     public var navigation: AppNavigationSettings
-    /// Compatibility projection for settings snapshots written by older clients.
     public var homePage: AppHomePage { AppHomePage(tab: navigation.startupTab) }
     public var homeShowsOnlyFavorites: Bool
     public var bookshelfContinue: BookshelfContinueSettings
@@ -166,7 +164,6 @@ public struct SystemSettings: Codable, Hashable, Sendable {
         case externalDisplay
     }
 
-    /// Decode newer preferences optionally so existing settings retain every other value.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(

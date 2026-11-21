@@ -1,12 +1,5 @@
 import Foundation
 
-/// Facade over the thread-page parser family.
-///
-/// Each entry point guards page readability (login/flood interstitials), unwraps
-/// the Discuz AJAX CDATA envelope where applicable, delegates extraction to the
-/// part parsers (`ForumThreadPostsParser`, `ForumThreadPollParser`,
-/// `ForumThreadRatingParser`, `ForumThreadPageMetadataParser`, ...), and surfaces
-/// server-side error messages as `YamiboError`.
 enum ForumThreadPageHTMLParser {
     static func parsePage(
         from html: String,
@@ -174,12 +167,10 @@ enum ForumThreadPageHTMLParser {
         return message
     }
 
-    /// Payload of the `<root><![CDATA[...]]></root>` envelope Discuz wraps AJAX responses in.
     private static func extractCData(from html: String) -> String? {
         HTMLTextExtractor.discuzAjaxPayload(from: html)
     }
 
-    /// Human-readable status/error message embedded in a Discuz response, if any.
     private static func parseMessageText(in document: Document) -> String? {
         return document.firstText("#messagetext p")
             ?? document.firstText("#messagetext, .messagetext, .alert_info, .jump_c, .showmessage")

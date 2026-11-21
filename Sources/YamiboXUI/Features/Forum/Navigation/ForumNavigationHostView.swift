@@ -56,8 +56,6 @@ public struct ForumNavigationHostView: View {
             if let context = request.handoffThread {
                 navigator.cancelContentOpen()
                 navigator.path = [.threadReader(context)]
-                // A fresh continuation can request exactly the same launch context
-                // after this retained thread model has scrolled somewhere else.
                 handoffNavigationRevision = request.id
             } else if let destination = request.contentDestination {
                 navigator.openContent(request.url, destination: destination)
@@ -65,10 +63,6 @@ public struct ForumNavigationHostView: View {
                 navigator.route(request.url, source: request.source, title: request.title)
             }
         }
-        // `initial: true` also catches a Home Screen quick action tapped
-        // before this view ever mounted (cold launch): the scene delegate
-        // stamps the request while `RootTabView` is still bootstrapping, so
-        // there's no prior value for a plain `.onChange` to transition from.
         .onChange(of: appModel.forumSearchRequest?.id, initial: true) { _, _ in
             guard appModel.claimForumSearchRequest() != nil else { return }
             navigator.openSearch(fid: nil, fromBrowserList: true)

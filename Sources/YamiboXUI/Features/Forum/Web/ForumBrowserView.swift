@@ -14,8 +14,6 @@ public final class ForumBrowserModel: ObservableObject {
     private var suppressesNativeRouting: Bool
 
     public init(initialURL: URL, nativeFallback: Bool = false, onNativeNavigation: @escaping @MainActor (URL) -> Void = { _ in }) {
-        // Pages without a native destination use the complete desktop template
-        // immediately, rather than Discuz's mobile-template warning screen.
         if case .web = ForumRouteResolver.resolve(url: initialURL) {
             self.currentURL = ForumWebPagePolicy.desktopURL(initialURL)
         } else {
@@ -117,8 +115,6 @@ public struct ForumBrowserView: View {
                         title: model.pageTitle,
                         urlText: model.currentURL?.absoluteString
                     )
-                    // A cancelled pop can remeasure the title without a width proposal.
-                    // Reserve room for both bar buttons and the navigation bar's title margins.
                     .frame(width: max(0, min(320, geometry.size.width - 176)))
                 }
                 ToolbarItem(placement: .topBarTrailing) {

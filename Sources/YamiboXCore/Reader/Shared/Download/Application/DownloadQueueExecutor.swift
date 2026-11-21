@@ -144,9 +144,6 @@ public actor DownloadQueueExecutor {
         do {
             try await ensureExternalCommandAllowed()
         } catch {
-            // Normal invalidation joins this command and performs the final
-            // pause. If the transition failed before reaching invalidation,
-            // retain the previous rollback rather than publishing a phantom run.
             if !isInvalidated { try await store.setDownloadQueueRunState(.paused) }
             throw error
         }
@@ -154,16 +151,12 @@ public actor DownloadQueueExecutor {
         if let runTask, !runTask.isCancelled {
             try await refreshRunProgress(generation: runGeneration)
             if isFinishingRun || self.runTask == nil {
-                // A new enqueue/Continue may overlap the last worker's pause
-                // write. Join that write before publishing another running state.
                 await runTask.value
                 try await continueQueueAfterAdmission(submitsUserInitiatedRun: submitsUserInitiatedRun)
             }
             return
         }
 
-        // Publish worker ownership before the first suspension involved in
-        // background submission. Concurrent Continue commands reuse this worker.
         let startsSystemTask = runID == nil && submitsUserInitiatedRun
         if runID == nil {
             runID = DownloadRunID()
@@ -192,9 +185,6 @@ public actor DownloadQueueExecutor {
         try await pauseQueueForTeardown()
     }
 
-    // Account invalidation sets isInvalidated before it pauses and joins this
-    // executor. Keep that teardown path private so retired executors cannot
-    // accept ordinary UI mutations while cleanup can still pause the queue.
     private func pauseQueueForTeardown() async throws {
         resumeAfterIdentityChange = false
         cancelActiveRun()
@@ -226,8 +216,6 @@ public actor DownloadQueueExecutor {
         }
     }
 
-    /// Cancel and join the worker before any identity references are moved.
-    /// Merely clearing runTask would leave a suspended writer alive.
     func suspendForIdentityChange() async throws {
         identityChangeDepth += 1
         guard identityChangeDepth == 1 else { return }
@@ -262,15 +250,12 @@ public actor DownloadQueueExecutor {
     func invalidateForAccountChange() async throws {
         isInvalidated = true
         cancelActiveRun()
-        // Join admitted UI commands too: a store write already in flight may
-        // finish after invalidation, but must finish before the final pause.
         if externalCommandCount > 0 {
             await withCheckedContinuation { externalCommandWaiters.append($0) }
         }
         try await pauseQueueForTeardown()
     }
 
-    /// A factory result rejected before publication has no work to tear down.
     func rejectBeforeUse() {
         isInvalidated = true
     }
@@ -300,8 +285,6 @@ public actor DownloadQueueExecutor {
         try await cancelSelection {
             var removedIDs: Set<DownloadWorkID> = []
             for id in ids where removedIDs.insert(id).inserted {
-                // Account invalidation may arrive while an earlier deletion is
-                // suspended. Never start another write for that retired session.
                 try await self.ensureExternalCommandAllowed()
                 try await self.store.cancelDownloadWork(id: id)
             }
@@ -328,16 +311,12 @@ public actor DownloadQueueExecutor {
             try await ensureExternalCommandAllowed()
             shouldRestoreRun = false
             if wasRunning {
-                // Removing an item keeps the logical run and its completed
-                // count, but never manufactures another user-initiated request.
                 try await continueQueueAfterAdmission(submitsUserInitiatedRun: false)
             } else {
                 await endSession(success: false)
             }
         } catch {
             if shouldRestoreRun {
-                // Earlier deletions may already have committed. Resume the
-                // remaining work once, while reporting the original error.
                 do {
                     try await continueQueueAfterAdmission(submitsUserInitiatedRun: false)
                 } catch {
@@ -497,7 +476,6 @@ public actor DownloadQueueExecutor {
             try await beginExternalCommand()
             defer { finishExternalCommand() }
             guard runID == id, !isInvalidated else { return }
-            // No session lookup/await between identity validation and cancellation.
             try await pauseQueueForTeardown()
         }
         catch { YamiboLog.download.error("Could not persist expired download pause: \(error)") }
@@ -529,8 +507,6 @@ public actor DownloadQueueExecutor {
     }
 
     private func process(_ work: DownloadProcessingWork, generation: Int) async throws {
-        // A single ordered consumer avoids spawning an unbounded number of
-        // actor tasks for URLSession's synchronous byte callbacks.
         let (updates, continuation) = AsyncStream<DownloadWorkProgress>.makeStream(bufferingPolicy: .bufferingNewest(1))
         let consumer = Task {
             for await progress in updates {

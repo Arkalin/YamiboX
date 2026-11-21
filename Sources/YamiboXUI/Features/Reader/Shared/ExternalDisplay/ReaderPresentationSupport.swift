@@ -29,7 +29,6 @@ private struct ReaderDeviceSheet<Item: Identifiable, Panel: View>: ViewModifier 
     }
 }
 
-/// Evaluate the panel in its own view body so live model reads are observed on the device.
 private struct ReaderDevicePanel<Panel: View>: View {
     @ViewBuilder let panel: () -> Panel
 

@@ -23,8 +23,6 @@ struct NovelReaderBottomChrome: View {
     let onShowSearch: () -> Void
     let onToggleBookmark: () -> Void
     let onShowAnnotations: () -> Void
-    /// Whether the position the bookmark button would mark right now is
-    /// already bookmarked, i.e. whether tapping removes rather than adds.
     let isBookmarked: Bool
     let annotationCapsule: ReaderAnnotationCapsulePresentation
     let onJumpChapter: (Int) -> Void
@@ -216,9 +214,6 @@ struct NovelReaderBottomChrome: View {
     @ViewBuilder
     private func summaryContent(_ summary: ReaderChromeProgressSummary, pageNumber: Int) -> some View {
 
-        // Two information-text lines with this spacing is load-bearing:
-        // `NovelReaderVerticalBandsPresentation.pagedProgressSummaryHeight`
-        // mirrors exactly that to reserve the paged text band above us.
         let content = VStack(spacing: chromeLayout.progressSummaryLineSpacing) {
             Text(information.pageNumberStyle == .compact ? String(pageNumber) : summary.pageProgressLine)
             if !summary.webProgressLine.isEmpty {
@@ -234,8 +229,6 @@ struct NovelReaderBottomChrome: View {
         .lineLimit(1)
         .minimumScaleFactor(0.75)
         .multilineTextAlignment(.center)
-        // Page counters roll digit-by-digit as pages turn instead of
-        // hard-swapping the whole line.
         .contentTransition(.numericText())
         .animation(.snappy(duration: 0.18), value: summary.pageProgressLine)
 

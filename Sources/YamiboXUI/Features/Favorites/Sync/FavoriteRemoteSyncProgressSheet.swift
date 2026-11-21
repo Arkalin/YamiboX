@@ -1,17 +1,11 @@
 import SwiftUI
 import YamiboXCore
 
-/// Detailed progress sheet for a remote favorite sync run. Also used from
-/// system settings, which is why the actions are optional closures.
 struct FavoriteRemoteSyncProgressSheet: View {
     let snapshot: FavoriteRemoteSyncSnapshot?
     var onResume: (() async -> String?)? = nil
     var onInterrupt: (() async -> Void)? = nil
     var onHide: (() async -> Void)? = nil
-    /// False when pushed onto an existing stack (the favorites page), which
-    /// already gets a back button from `NavigationStack` for free — showing
-    /// this too would duplicate it. True for the system-settings sheet,
-    /// which is the root of its own stack and has no other way to dismiss.
     var showsCloseButton: Bool = true
 
     @Environment(\.dismiss) private var dismiss
@@ -128,8 +122,6 @@ private struct FavoriteRemoteSyncSummary: View {
         .padding(.vertical, 4)
     }
 
-    /// Progress of the currently running phase; nil when the phase has no
-    /// meaningful denominator yet.
     private var phaseProgress: (completed: Double, total: Double)? {
         switch snapshot.phase {
         case .fetching:
@@ -174,17 +166,11 @@ private struct FavoriteRemoteSyncMetricRow: View {
     }
 }
 
-/// Log/warning/error block rendered as one scrollable text area (Android
-/// SyncMessageBlock parity), not a list of rows.
 private struct FavoriteRemoteSyncMessageSection: View {
     let title: String
     let messages: [String]
     let fallback: String
 
-    /// Matches Android SyncMessageBlock's default `maxHeight` (180dp): the
-    /// block scrolls within this bounded area as lines accumulate instead of
-    /// growing the whole sheet. `heightIn(max:)`-style behavior — short
-    /// content still shrinks to its natural height.
     private let maxBlockHeight: CGFloat = 180
 
     var body: some View {

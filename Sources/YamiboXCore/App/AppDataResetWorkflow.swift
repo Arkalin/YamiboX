@@ -1,7 +1,5 @@
 import Foundation
 
-/// Registered in execution order. A failure stops the sequence and retains the
-/// original error; reset never bypasses a store's own persistence operation.
 struct AppDataResetStep: Sendable {
     let id: String
     let perform: @Sendable () async throws -> Void

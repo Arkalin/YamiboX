@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// One collection row in the list layouts, mixed into the same section as
-/// the favorite item rows.
 struct LocalFavoriteCollectionRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let collection: LocalFavoriteCollection
@@ -51,8 +49,6 @@ struct LocalFavoriteCollectionRow: View {
     private var rowContent: some View {
         HStack(spacing: 12) {
             if showsCover {
-                // Matches the item row's cover box so collection and
-                // favorite rows come out the same height.
                 LocalFavoriteCollectionCoverPreview(
                     color: collection.color.swiftUIColor,
                     tiles: previewTiles
@@ -72,17 +68,12 @@ struct LocalFavoriteCollectionRow: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.tertiary)
         }
-        // Matches `LocalFavoriteGridCard`'s own padding so the selection
-        // border below clears the text by the same margin in every layout.
         .padding(10)
         .contentShape(Rectangle())
         .favoriteSelectionEmphasis(isSelectionMode: isSelectionMode, isSelected: isSelected, cornerRadius: 10)
     }
 }
 
-/// One collection cell in the grid layouts: mixed into the same grid as item
-/// cards (collections first), with the width-filling 2x2 mosaic on top and
-/// the collection color as border tint (Android CollectionCardUi parity).
 struct LocalFavoriteCollectionGridCard: View {
     let collection: LocalFavoriteCollection
     let itemCount: Int
@@ -148,7 +139,6 @@ struct LocalFavoriteCollectionGridCard: View {
     }
 }
 
-/// Shared context-menu content for collection rows and cards.
 struct LocalFavoriteCollectionContextMenu: View {
     let collection: LocalFavoriteCollection
     let categories: [FavoriteCategory]

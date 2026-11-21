@@ -16,8 +16,6 @@ enum ForumTagHTMLParser {
         }
         if target == .index { return ForumTagPage(tags: tags) }
 
-        // Missing names/IDs render a real taglist empty page. Closed tags render a
-        // message page and fail the structural guard above instead of appearing empty.
         let tag = document.selectAll("#pt a[href]").compactMap(tagSummary).last
         guard let tag else { return ForumTagPage() }
         var seenThreads = Set<String>()
@@ -41,8 +39,6 @@ enum ForumTagHTMLParser {
                 lastActivityText: row.selectAll("td.by").last?.firstText("em")
             )
         }
-        // Desktop's last-page links may only point backwards. Shared userSpace
-        // pagination combines explicit totals/link targets and keeps current page.
         let navigation = ForumPageNavigationParser.parse(in: document, template: .userSpace)
             ?? (requestedPage <= 1 ? ForumPageNavigation(currentPage: 1, totalPages: 1) : nil)
         return ForumTagPage(tag: tag, threads: threads, pageNavigation: navigation)

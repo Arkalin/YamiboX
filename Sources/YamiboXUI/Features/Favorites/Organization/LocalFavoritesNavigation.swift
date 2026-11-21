@@ -15,8 +15,6 @@ enum LocalFavoritesSidebarDestination: Hashable {
     case collection(String)
 }
 
-/// Projects the existing browse/presentation state and forum routes into one
-/// stack. Popping a detail must not discard the collection beneath it.
 @MainActor
 struct LocalFavoritesNavigation {
     let organizer: FavoriteLibraryOrganizer

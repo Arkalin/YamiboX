@@ -1,8 +1,6 @@
 #if os(iOS)
 import UIKit
 
-/// Executes geometry and visuals only. Navigation owns the transaction and
-/// decides whether a reported landing can activate or publish a page.
 @MainActor
 final class MangaPagedTransitionDriver {
     enum Effect {
@@ -57,7 +55,6 @@ final class MangaPagedTransitionDriver {
             }
         }
 
-        // A second turn during a fade cuts underneath the existing snapshot.
         var newSnapshot: UIView?
         if effect == .quickFade, fadeSnapshot == nil, let container = collection.superview,
            let snapshot = collection.snapshotView(afterScreenUpdates: false) {

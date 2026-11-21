@@ -22,8 +22,6 @@ enum MessageUnreadHTMLParser {
             let badges = link.selectAll("strong")
             let value: Int
             if badges.isEmpty {
-                // A recognized tab without a badge means zero. A changed
-                // badge container with digits must not silently clear it.
                 guard !link.normalizedText().contains(where: { $0.isNumber }) else { throw parsingError }
                 value = 0
             } else {

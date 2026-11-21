@@ -23,8 +23,6 @@ struct ForumThreadReaderBodyView: View {
     var errorDetails: LoadFailureDetails? = nil
     let isFavorited: Bool
     let isFavoriteWorking: Bool
-    /// 倒序浏览: page 1 opens on the newest replies, so no post on it carries
-    /// the thread's title and counters.
     let isReverseOrder: Bool
     let refresh: () async -> Void
     let retry: () -> Void

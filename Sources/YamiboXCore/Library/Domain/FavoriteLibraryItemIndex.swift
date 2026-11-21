@@ -1,8 +1,5 @@
 import Foundation
 
-/// Positions belong to one working document or one fresh store transaction.
-/// Mapping/location edits keep positions stable; rebuild after import/retarget
-/// or document replacement. Duplicate keys preserve the document's first item.
 struct FavoriteLibraryItemIndex: Sendable {
     let firstPositionByThreadID: [String: Int]
     let firstPositionByTargetID: [String: Int]

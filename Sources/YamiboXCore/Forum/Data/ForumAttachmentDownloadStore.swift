@@ -26,7 +26,6 @@ extension DownloadStore: ForumAttachmentDownloadStoring {
                 try db.execute(sql: "DELETE FROM download_attachment_entries WHERE entry_key = ?", arguments: [entryKey])
             }
             if try Self.rawWork(readerKind: .attachment, ownerKey: ownerKey, entryKey: entryKey, in: db) != nil {
-                // Refresh display/request metadata without replacing the queued work.
                 try db.execute(sql: "UPDATE download_attachment_requests SET request_json = ? WHERE owner_name = ? AND tid = ?",
                                arguments: [data, ownerKey, entryKey])
                 return .alreadyQueued

@@ -1,7 +1,5 @@
 import Foundation
 
-/// Recognizes the observed JS challenge; WebKit, not Core, executes its script.
-/// Tracking/session identifiers never count as challenge clearance.
 enum AliyunWAFProtocol {
     private static let clearanceName = "acw_sc__v2"
 
@@ -22,8 +20,6 @@ enum AliyunWAFProtocol {
         guard mayContainChallenge(response) else { return false }
         let html = String(decoding: prefix.prefix(ForumWAFResponseClassifier.maximumBodyBytes), as: UTF8.self)
         guard html.contains(clearanceName), let document = try? KannaSoup.parse(html) else { return false }
-        // Require executable inline-script evidence, not text in a quoted post,
-        // JSON payload, template, or a page merely mentioning the cookie name.
         return document.select("script").contains { script in
             guard !script.hasAttribute("src"),
                   ["", "text/javascript", "application/javascript"].contains(script.attr("type").lowercased()),

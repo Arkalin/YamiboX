@@ -1,8 +1,6 @@
 import Foundation
 
 enum YamiboHTMLPageInspector {
-    /// Shared pre-flight for every Yamibo page parser: throws when the page is a
-    /// login prompt (`notAuthenticated`) or a flood-control/error page (`floodControl`).
     static func ensureReadable(_ html: String) throws {
         if isNotAuthenticated(html) {
             throw YamiboError.notAuthenticated
@@ -20,9 +18,6 @@ enum YamiboHTMLPageInspector {
             "需要登录后才能",
             "登录后才能继续",
             "登录后才能查看",
-            // A not-logged-in action often REDIRECTS to the login page instead
-            // of printing any of the phrases above — recognize that page by
-            // structure (touch template `member/login.htm`).
             "pg_logging",
             "id=\"loginform\"",
             "请输入用户名/Email/UID"
@@ -49,8 +44,6 @@ enum YamiboHTMLPageInspector {
         return rawPageTitle(from: html)
     }
 
-    /// Reads a title from an already parsed document and retains the raw HTML
-    /// fallback used when Kanna does not expose a non-blank `<title>`.
     static func pageTitle(in document: Document, rawHTML html: String) -> String? {
         let title = document.title().trimmingCharacters(in: .whitespacesAndNewlines)
         if !title.isEmpty {

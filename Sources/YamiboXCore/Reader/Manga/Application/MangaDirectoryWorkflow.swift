@@ -3,14 +3,6 @@ import Foundation
 public struct MangaDirectoryWorkflowConfiguration: Sendable {
     public var searchCooldownDuration: TimeInterval
     public var forcedSearchShortcutDuration: TimeInterval
-    /// Board (fid) scoping directory search and tag-list row filtering:
-    /// the launching thread's own board, stamped per launch from
-    /// `MangaLaunchContext.forumID` (pluggable-reader-config decision #6).
-    /// The "30" default exists for test/default construction convenience;
-    /// production reader launches always overwrite it when
-    /// `MangaReaderViewModel` builds its configuration, substituting "30"
-    /// there for launches with no board context (likes, pre-forumID
-    /// persisted routes) — the single UI-side R4 fallback point.
     public var searchForumID: String
     public var now: @Sendable () -> Date
 
@@ -41,11 +33,6 @@ public actor MangaDirectorySearchCooldownState {
         return deadline
     }
 
-    /// Atomically checks-and-arms within a single actor call: two concurrent
-    /// callers (e.g. foreground + background monitor instances sharing this
-    /// state) can never both observe "no active cooldown" and both proceed
-    /// to fire a live search — the second one always sees the first's
-    /// reservation, even before that first request has completed.
     public func reserveCooldown(now: Date, duration: TimeInterval) -> Date? {
         if let deadline, deadline > now {
             return deadline
@@ -178,8 +165,6 @@ public struct MangaDirectoryWorkflow: Sendable {
         guard chapters.contains(where: { $0.tid == projection.tid }) else { return nil }
         let title = try await store.identityName(id: directoryID)
             ?? context.directoryName ?? context.displayTitle
-        // This is a reading-only reconstruction, not a replacement for a
-        // manually curated or synchronized directory.
         return MangaDirectory(
             id: directoryID, cleanBookName: title, strategy: .pendingSearch,
             sourceKey: title, chapters: MangaDirectoryMerge.mergeAndSort([], chapters)
@@ -198,9 +183,6 @@ public struct MangaDirectoryWorkflow: Sendable {
             ?? MangaDirectoryRefreshSnapshot(directory: currentDirectory, contentIdentityIDs: [])
         let latest = refreshSnapshot.directory
         let keyword = searchKeyword(for: latest, currentTID: currentTID)
-        // No fallback here: `searchForumID` is non-optional and already
-        // resolved upstream (MangaReaderViewModel stamps it per launch,
-        // substituting "30" only there — the single UI-side R4 point).
         let forumID = configuration.searchForumID
 
         var chapters: [MangaChapter]
@@ -254,14 +236,6 @@ public struct MangaDirectoryWorkflow: Sendable {
         )
     }
 
-    /// Discards the locally cached directory — including manual corrections
-    /// such as a renamed/reordered/deleted chapter list — and rebuilds it
-    /// from the network exactly like a cold start: re-seeds from
-    /// `seedTID`'s thread page, saves that minimal seed, then immediately
-    /// runs a full `updateDirectory` pass so tag/search-derived chapters are
-    /// fetched too (respecting the same cooldown gate any other update
-    /// would). The persisted ID and corrected display name survive the reset,
-    /// even when the source page now derives a different name.
     public func resetDirectory(
         _ currentDirectory: MangaDirectory,
         seedTID: String
@@ -382,11 +356,6 @@ public struct MangaDirectoryWorkflow: Sendable {
         return MangaTitleCleaner.searchKeyword(seedTitle)
     }
 
-    /// Reserves the cooldown window before the network call, not after: this
-    /// arms the gate even if the ensuing `searchDirectory` throws (including
-    /// forum flood control), so a failed request still blocks the next
-    /// attempt instead of leaving the gate open for it to repeat the same
-    /// live request against a forum that just rate-limited us.
     private func nextSearchCooldownDeadline(now: Date) async throws -> Date {
         if let deadline = await searchCooldownState.reserveCooldown(now: now, duration: configuration.searchCooldownDuration) {
             let seconds = max(1, Int(ceil(deadline.timeIntervalSince(now))))

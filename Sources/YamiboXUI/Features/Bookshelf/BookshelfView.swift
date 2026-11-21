@@ -45,7 +45,6 @@ struct BookshelfView: View {
     }
 
     var body: some View {
-        // History shares the shelf's stack rather than replacing the tab root.
         ForumDestinationStackView(navigator: navigator, appModel: appModel, ownsNavigation: !isPresentedFromMine) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -93,8 +92,6 @@ struct BookshelfView: View {
             }
             .navigationTitle(isStandalonePadBookshelf ? "" : AppTab.bookshelf.title)
             .navigationBarTitleDisplayMode(.inline)
-            // iPad shares the navigation bar's safe area with its top tab bar.
-            // Keep that area reserved on return, without duplicating our header.
             .toolbar(isPresentedFromMine || isStandalonePadBookshelf ? .visible : .hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showsHistory) {
                 BrowsingHistoryView(
@@ -169,8 +166,6 @@ struct BookshelfView: View {
         UIDevice.current.userInterfaceIdiom == .pad && !isPresentedFromMine
     }
 
-    // Readers save frequently; refresh once on return rather than rebuilding
-    // a hidden shelf for every page turn.
     private var isBookshelfVisible: Bool {
         appModel.selectedTab == (isPresentedFromMine ? .mine : .bookshelf) && !appModel.isReaderCoverVisible && !appModel.hasActiveReaderPresentation
             && navigator.path.isEmpty && !showsHistory && !showsLogin
@@ -185,8 +180,6 @@ struct BookshelfView: View {
     }
 
     private func openBook(_ book: BookshelfBook, transition: BookOpeningTransition) {
-        // Preserve an explicit position while the full-screen reader hides
-        // the shelf; a user-driven ScrollPosition alone has no stored offset.
         scrollPosition.scrollTo(y: scrollOffset)
         Task {
             await model.open(book.entry) { target in
@@ -214,7 +207,6 @@ private struct BookshelfBackgroundLayer: View {
                let data = background.imageData,
                CustomBackgroundImageDecodeCache.shared.image(for: data) != nil {
                 CustomBackgroundLayer(settings: background.settings, imageData: data)
-                // Match the existing background treatment to keep shelf labels legible.
                 colorScheme == .dark ? Color.black.opacity(0.32) : Color.white.opacity(0.28)
             }
         }
@@ -274,8 +266,6 @@ private struct BookshelfHeader: View {
             .allowsHitTesting(motion.avatarOpacity > 0.5)
             .accessibilityHidden(motion.avatarOpacity <= 0.5)
         }
-        // Keep the chrome in place while the shelf passes beneath it. The
-        // transition follows scroll distance, so reversing never queues an animation.
         .offset(y: scrollOffset)
     }
 }
@@ -464,8 +454,6 @@ private struct BookshelfBookButton: View {
     }
 }
 
-/// The narrow highlight and dark crease form the spine, independently of
-/// the cast shadow. Keeping both inside the cover also works for text art.
 private struct BookshelfCover: View {
     let source: YamiboImageSource?
     let title: String

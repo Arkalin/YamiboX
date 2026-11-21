@@ -34,7 +34,6 @@ package struct NovelTextViewportDocument: Hashable, Sendable {
         orderedRanges = textRangesBySegment.values.sorted { $0.startOffset < $1.startOffset }
     }
 
-    // Derived buffers/indexes do not change semantic document identity.
     package static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.text == rhs.text && lhs.textRangesBySegment == rhs.textRangesBySegment &&
             lhs.insertedSeparatorRanges == rhs.insertedSeparatorRanges &&
@@ -101,7 +100,6 @@ package extension NovelTextViewportDocument {
         return offset >= range.startOffset && offset <= range.endOffset ? range : nil
     }
 
-    /// Compatibility boundary: Like capture and persisted resume points use Character ordinals.
     func semanticTextPosition(
         containingDocumentOffset documentOffset: NovelDocumentUTF16Offset,
         in projection: NovelReaderProjection

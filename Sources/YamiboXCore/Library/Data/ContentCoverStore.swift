@@ -2,14 +2,7 @@ import Foundation
 @preconcurrency import GRDB
 
 public enum ContentCoverTargetType: String, Codable, Hashable, Sendable, CaseIterable {
-    /// Forum thread content, keyed by tid. Whether the thread reads as a novel
-    /// or a normal thread is presentation, not content identity, so both share
-    /// this type.
     case thread = "Thread"
-    /// Manga directory content, keyed by the directory's `cleanBookName`.
-    /// Renamed from `.mangaTitle`/`"MangaTitle"` (smart-comic-mode design
-    /// decision #9) — pure rename, no behavior change, no data migration (no
-    /// shipped user data exists yet, see [[yamiboreader-no-data-compat]]).
     case smartManga = "SmartManga"
 }
 
@@ -32,9 +25,6 @@ public struct ContentCoverKey: Codable, Hashable, Sendable {
         ContentCoverKey(targetType: .smartManga, targetID: directoryID.rawValue)
     }
 
-    /// Canonical cover key for a reading-progress target. Normal and novel
-    /// threads share the `.thread` key: how a thread reads is presentation,
-    /// not content identity.
     public init?(target: FavoriteContentTarget) {
         switch target.kind {
         case .normalThread, .novelThread, .mangaThread:
@@ -46,14 +36,6 @@ public struct ContentCoverKey: Codable, Hashable, Sendable {
         }
     }
 
-    /// Canonical cover key for a favorite target. Every `FavoriteItemTarget`
-    /// case is thread-based (there is no merged-directory identity on this
-    /// type at all), so a favorite's own cover key is always `.thread(tid:)`
-    /// — including for `.mangaThread` favorites. Card-level cover reads and
-    /// writes must NOT call this directly: a resolved-directory smart card's
-    /// cover lives under the shared `.smartManga` key instead, and
-    /// `FavoriteCardProjection.contentCoverKey` is the one place that picks
-    /// between the two (smart-comic-mode decision #13/#16).
     public init?(target: FavoriteItemTarget) {
         guard let threadID = target.threadID else { return nil }
         self = .thread(tid: threadID)
@@ -67,11 +49,6 @@ public struct ContentCover: Codable, Hashable, Sendable {
     public var automaticRefererPageURL: URL?
     public var manualRefererPageURL: URL?
     public var dynamicEnabled: Bool
-    /// User override that suppresses both cover URLs in favor of the text
-    /// placeholder, independent of `dynamicEnabled`/which URL would
-    /// otherwise resolve. Cleared whenever an explicit image-cover action
-    /// (manual set or restore-to-automatic) runs, since those represent the
-    /// user asking for an image again.
     public var textCoverForced: Bool
     public var updatedAt: Date
 
@@ -112,8 +89,6 @@ public struct ContentCover: Codable, Hashable, Sendable {
             threadID: key.targetType == .thread ? key.targetID : nil)
     }
 
-    /// Old peers omit these optional fields. Never transfer provenance across
-    /// different artwork, or between the manual and automatic choices.
     func retainingKnownSources(from other: Self) -> Self {
         var result = self
         if automaticCoverURL == other.automaticCoverURL, result.automaticRefererPageURL == nil {
@@ -138,14 +113,10 @@ public actor ContentCoverStore {
     public nonisolated func setImageDataRetainer(_ action: @escaping @Sendable (YamiboImageSource) async throws -> Void) {
         imageInvalidator.setRetainer(action)
     }
-    /// A coalescing stream is only a wakeup; this journal retains key changes
-    /// across skipped signals. Bulk writes and identity remapping invalidate all.
     public nonisolated func changedCoverKeys(since revision: UInt64, among keys: Set<ContentCoverKey>) -> (revision: UInt64, keys: Set<ContentCoverKey>) {
         keyChanges.changed(since: revision, among: keys)
     }
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
@@ -154,26 +125,18 @@ public actor ContentCoverStore {
     private var isClearingImages = false
 
     public init(databasePool: DatabasePool? = nil) {
-        // `.standard` is the resolver's "shared production pool" signal, so
-        // the nil-pool fallback and the convenience below stay one code path.
         self.database = databasePool
             ?? YamiboDatabasePoolResolver.resolvePool(defaults: .standard, key: "yamibox.contentCovers")
         self.images = ContentCoverImageStore(directory: URL(fileURLWithPath: self.database.path)
             .deletingLastPathComponent().appendingPathComponent("content-covers", isDirectory: true))
     }
 
-    /// Isolated-storage convenience mirroring `FavoriteLibraryStore`: standard
-    /// defaults use the shared database, any other suite gets its own pool in
-    /// a temporary directory (tests and previews).
     public init(defaults: UserDefaults, key: String = "yamibox.contentCovers") {
         self.database = YamiboDatabasePoolResolver.resolvePool(defaults: defaults, key: key)
         self.images = ContentCoverImageStore(directory: URL(fileURLWithPath: self.database.path)
             .deletingLastPathComponent().appendingPathComponent("content-covers", isDirectory: true))
     }
 
-    /// A clear invalidates even a load whose URL is selected again afterwards.
-    /// These synchronous actor operations do not suspend between checking the
-    /// current references/generation and performing file IO.
     func imageData(for url: URL) throws -> (generation: UUID, data: Data?) {
         try checkImageMutationAllowed()
         let referenced = try isImageReferenced(url)
@@ -183,14 +146,10 @@ public actor ContentCoverStore {
     func retainImageData(_ data: Data, for url: URL, generation: UUID) throws {
         try checkImageMutationAllowed()
         guard generation == imageGeneration else { throw CancellationError() }
-        // A transient detail-page candidate is displayable but has no owner
-        // yet. It must not leave orphan artwork behind.
         guard try isImageReferenced(url) else { return }
         if try !images.containsImage(for: url) { try images.save(data, for: url) }
     }
 
-    /// One-time startup migration. Later reader copies belong exclusively to
-    /// the ordinary cache; its clearing and eviction never invoke this path.
     func migrateLegacyImageData(
         reading: @Sendable (URL) -> Data?,
         removing: @Sendable (URL) -> Void
@@ -203,8 +162,6 @@ public actor ContentCoverStore {
             do {
                 if try !images.containsImage(for: url) { try images.save(data, for: url) }
             } catch YamiboError.invalidImageData {
-                // Discard only the invalid cache response, not the index.
-                // A future on-demand load can fetch the real image.
                 removing(url)
                 continue
             }
@@ -247,14 +204,10 @@ public actor ContentCoverStore {
         }
     }
 
-    /// Business operations must distinguish a failed lookup from a missing cover.
     func storedCover(for key: ContentCoverKey) async throws -> ContentCover? {
         try await database.read { db in try Self.fetchCover(for: key, in: db) }
     }
 
-    /// Batch lookup for list surfaces (the browsing-history page): one read
-    /// transaction instead of one actor round-trip per row. Keys without a
-    /// stored cover are simply absent from the result.
     public func covers(for keys: [ContentCoverKey]) async -> [ContentCoverKey: ContentCover] {
         let validKeys = Array(Set(keys.filter { !$0.targetID.isEmpty }))
         guard !validKeys.isEmpty else { return [:] }
@@ -266,8 +219,6 @@ public actor ContentCoverStore {
         }
     }
 
-    /// Lists that previously read each key independently retain successful
-    /// lookups if a batch fails. Normal reads still use one transaction.
     public func bestEffortCovers(for keys: [ContentCoverKey]) async -> [ContentCoverKey: ContentCover] {
         let validKeys = Array(Set(keys.filter { !$0.targetID.isEmpty }))
         guard !validKeys.isEmpty, !Task.isCancelled else { return [:] }
@@ -287,8 +238,6 @@ public actor ContentCoverStore {
 
     private static func fetchCovers(for validKeys: [ContentCoverKey], in db: Database) throws -> [ContentCoverKey: ContentCover] {
         var covers: [ContentCoverKey: ContentCover] = [:]
-        // 200 keys * 2 bind parameters stays well under SQLite's
-        // 999-parameter limit.
         for chunk in stride(from: 0, to: validKeys.count, by: 200).map({ Array(validKeys[$0..<min($0 + 200, validKeys.count)]) }) {
             let condition = Array(repeating: "(target_type = ? AND target_id = ?)", count: chunk.count)
                 .joined(separator: " OR ")
@@ -326,10 +275,6 @@ public actor ContentCoverStore {
         return covers
     }
 
-    /// Full-table snapshot in a stable (target_type, target_id) order, for the
-    /// WebDAV participant's export/fingerprint paths. Throws rather than
-    /// degrading to `[]` like the read paths above: a sync round that mistook
-    /// a read failure for "no local covers" would upload an empty dataset.
     public func allCovers() async throws -> [ContentCover] {
         try await database.read { db in try Self.allCovers(in: db) }
     }
@@ -360,9 +305,6 @@ public actor ContentCoverStore {
             }
     }
 
-    /// Replaces the whole table with `covers` in one transaction, for the
-    /// WebDAV participant's merge/apply paths. Rows whose key trims to empty
-    /// are dropped, matching the guard every single-row write above applies.
     public func replaceAll(_ covers: [ContentCover]) async throws {
         try checkImageMutationAllowed()
         let affectedURLs = try await database.write { db in
@@ -446,8 +388,6 @@ public actor ContentCoverStore {
         return true
     }
 
-    /// Reverts the target to automatic covers: drops the manual URL and turns
-    /// dynamic mode back on.
     @discardableResult
     public func clearManualCover(for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
         try checkImageMutationAllowed()
@@ -485,10 +425,6 @@ public actor ContentCoverStore {
         postChangeNotification(key: key)
     }
 
-    /// Toggles the text-placeholder override on or off. Unlike
-    /// `setManualCover`/`clearManualCover`, this never touches the stored
-    /// automatic/manual URLs, so un-forcing resolves back to whatever those
-    /// would already have produced.
     @discardableResult
     public func setTextCoverForced(_ forced: Bool, for key: ContentCoverKey, date: Date = .now) async throws -> Bool {
         try checkImageMutationAllowed()
@@ -548,9 +484,6 @@ public actor ContentCoverStore {
     ) async throws -> T {
         try checkImageMutationAllowed()
         let result = try await database.write { db in
-            // A directory merge can commit after the WebDAV wrapper normalizes
-            // the payload. Resolve both sides again while holding the write
-            // transaction, before comparing records or deletion timestamps.
             let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
             var snapshot = try Self.canonicalSnapshot(
                 SyncRecordSnapshot(records: try Self.allCovers(in: db),
@@ -593,8 +526,6 @@ public actor ContentCoverStore {
             }
             return cover
         }
-        // Use the shared tombstone normalizer so unresolved legacy deletion
-        // markers retain their import-filtering semantics as well.
         let deletions = MangaIdentityDeletionRemapping.normalize(
             snapshot.deletions, identities: identities
         )
@@ -716,7 +647,6 @@ public actor ContentCoverStore {
     }
 }
 
-/// Installed once by the composition root, with a weak pipeline capture.
 private final class ContentCoverImageInvalidator: @unchecked Sendable {
     private let lock = NSLock()
     private var action: (@Sendable (Set<URL>?) async -> Void)?
@@ -750,7 +680,6 @@ private final class ContentCoverKeyChanges: @unchecked Sendable {
     func record(_ key: ContentCoverKey?) {
         lock.withLock {
             revision &+= 1
-            // Smart-manga keys may canonicalize inside the write transaction.
             guard let key, key.targetType == .thread, revisions.count < 1024 else {
                 allKeysRevision = revision
                 revisions.removeAll(keepingCapacity: true)

@@ -73,8 +73,6 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         let context = sessionStore.forumRequestContext(snapshot: snapshot)
         return try await requestExecutor.execute(context: context,
             policy: ForumRequestDefinition.resource.policy(for: URLRequest(url: source.url), lease: .init(duration: .seconds(40)))) { [self] attempt in
-            // Background URLSession follows redirects without a per-hop veto.
-            // Forum requests therefore use the controlled, cancellable adapter.
             guard attempt.lease.isValid else { throw ForumWAFFailure.runtimeUnavailable }
             if !ForumTransportCapabilities.backgroundDownload.admits(url: source.url, context: attempt.context, lease: attempt.lease) {
                 var request = URLRequest(url: source.url)
@@ -106,8 +104,6 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
                 var urlRequest = URLRequest(url: source.url)
-                // Only public external resources use this adapter. No account,
-                // WAF, Referer or shared jar can follow its invisible redirects.
                 urlRequest.httpShouldHandleCookies = false
                 urlRequest.setValue(attempt.context.key.userAgent, forHTTPHeaderField: "User-Agent")
                 let task = session.downloadTask(with: urlRequest)
@@ -143,7 +139,6 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         tasks.forEach { $0.cancel() }
     }
 
-    /// Used only by startup reset, before any new downloads can be submitted.
     func invalidateRestoredDownloads() async {
         await withCheckedContinuation { continuation in
             lock.withLock { invalidationContinuation = continuation }
@@ -213,8 +208,6 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         } catch {
             lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.result = .failure(error) }
         }
-        // Foundation owns and removes `location` after this callback. Retain
-        // only the bounded classification prefix and a normal resource result.
         finishIfReady(taskIdentifier: downloadTask.taskIdentifier)
     }
 
@@ -252,9 +245,6 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             networkLogs[task.taskIdentifier]?.duration = metrics.taskInterval.duration
             pendingDownloads[task.taskIdentifier]?.metricsReceived = true
         }
-        // Background sessions follow redirects without calling the redirect
-        // delegate. Their transaction metrics are the source of actual hops;
-        // foreground sessions already recorded those callbacks above.
         let attempt = lock.withLock { pendingDownloads[task.taskIdentifier]?.attempt }
         var evidence = attempt.flatMap { attempt in
             task.originalRequest?.url.map { ForumRedirectEvidence(origin: attempt.context.key.origin, originalURL: $0) }
@@ -285,8 +275,6 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             }
             let session = sessionFactory(self)
             sessionStorage = session
-            // No trusted pending/lease survives relaunch. Persisted queue work
-            // remains available for an explicit new run, not an invented replay.
             session.getAllTasks { [weak self] tasks in
                 for task in tasks where task.state != .completed {
                     guard let self else { task.cancel(); continue }
@@ -334,8 +322,6 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     private func finishIfReady(taskIdentifier: Int) {
         let result: Result<Data, any Error>? = lock.withLock {
             guard let pending = pendingDownloads[taskIdentifier], pending.completionReceived else { return nil }
-            // Cancellation and ordinary failures do not wait for metrics that
-            // Foundation may omit. Successful files require all three signals.
             if let failure = pending.validationFailure { return .failure(failure) }
             if let error = pending.completionError { return .failure(error) }
             guard pending.metricsReceived, let result = pending.result else { return nil }
@@ -409,9 +395,6 @@ private final class URLSessionTaskBox: @unchecked Sendable {
     private var task: URLSessionTask?
     private var isCancelled = false
 
-    /// Atomically admits the task and its registration/start sequence. A
-    /// cancellation that wins before admission cannot leave a task waiting
-    /// behind credentials and then start a transfer after the caller paused.
     func admit(_ task: URLSessionTask, start: () -> Bool) -> Bool {
         lock.withLock {
             guard !isCancelled else {
@@ -437,12 +420,6 @@ private final class URLSessionTaskBox: @unchecked Sendable {
     }
 }
 
-/// Kept instead of Foundation's `NSLocking.withLock` because that overload
-/// constrains the result to `Sendable`, which some lock-protected values here
-/// don't satisfy (e.g. the plain `() -> Void` background-event completion
-/// handlers). One internal copy serves every downloads call site;
-/// call sites with a Sendable result may still resolve to either overload —
-/// the two behave identically.
 extension NSLock {
     func withLock<Value>(_ operation: () -> Value) -> Value {
         lock()

@@ -1,14 +1,7 @@
 @preconcurrency import Foundation
 @preconcurrency import GRDB
 
-/// Composition root. Owns the infrastructure singletons, assembles each
-/// feature's dependency package, and is referenced only by the app-entry
-/// layer (`YamiboXApp`, `YamiboAppModel`, `RootTabView`,
-/// `AppContinuityWorkflow`). Feature views and view models receive their
-/// `*Dependencies` package instead of this context.
 public final class YamiboAppContext: Sendable {
-    /// The app opens storage before constructing stores so migration failures can be
-    /// shown and retried without exposing a partially upgraded runtime.
     public static func prepareDownloadStorage() throws -> DatabasePool {
         try YamiboDatabase.openPool()
     }
@@ -16,22 +9,18 @@ public final class YamiboAppContext: Sendable {
     let sessionStore: SessionStore
     let profileStore: YamiboProfileStore
     let checkInStore: YamiboCheckInStore
-    /// Public for change-ID observation in the app-entry layer.
     public let settingsStore: SettingsStore
     let webDAVSyncSettingsStore: WebDAVSyncSettingsStore
     let readerResumeRouteStore: ReaderResumeRouteStore
-    /// Public for change-ID observation in the app-entry layer.
     public let localFavoriteLibraryStore: FavoriteLibraryStore
     let favoriteUpdateStore: FavoriteUpdateStore
     let favoriteSyncRunStore: FavoriteSyncRunStore
-    /// Public for change-ID observation in the app-entry layer.
     public let readingProgressStore: ReadingProgressStore
     let browsingHistoryStore: BrowsingHistoryStore
     let composerDraftStore: ForumComposerDraftStore
     public let browsingHistoryWorkflow: BrowsingHistoryWorkflow
     public let messageUnreadWorkflow: MessageUnreadWorkflow
     public let blacklistWorkflow: ForumBlacklistWorkflow
-    /// Public for change-ID observation in the app-entry layer.
     public let contentCoverStore: ContentCoverStore
     let novelReaderCacheStore: NovelReaderProjectionStore
     let favoriteBackgroundImageStore: FavoriteBackgroundImageStore
@@ -53,7 +42,6 @@ public final class YamiboAppContext: Sendable {
     let httpCache: URLCache
     public let downloadBackgroundDownloadTransport: DownloadBackgroundTransport
     private let downloadRunObserver: (any DownloadQueueRunObserving)?
-    /// The single pool for `yamibox.sqlite`; every GRDB-backed store receives this instance.
     let databasePool: DatabasePool
     let session: URLSession
     private let downloadQueueExecutorBox: DownloadQueueExecutorBox
@@ -103,7 +91,6 @@ public final class YamiboAppContext: Sendable {
         requestExecutor: ForumRequestExecutor = .unavailable,
         httpCache: URLCache = .shared
     ) {
-        // Recover the diagnostic ring and retire old share snapshots off the UI thread.
         Task { _ = try? await NetworkLogStore.shared.usageBytes() }
         let queueExecutors = DownloadQueueExecutorBox()
         self.downloadQueueExecutorBox = queueExecutors
@@ -213,8 +200,6 @@ public final class YamiboAppContext: Sendable {
                 let requestedTIDs = Set(tids)
                 var firstForumIDs: [String: String] = [:]
                 firstForumIDs.reserveCapacity(requestedTIDs.count)
-                // Preserve the first non-nil source across reader kinds for
-                // each requested thread, without rescanning the library.
                 for item in items {
                     guard let tid = item.target.threadID,
                           requestedTIDs.contains(tid),
@@ -312,7 +297,6 @@ public final class YamiboAppContext: Sendable {
         )
     }
 
-    // MARK: - Feature dependency packages
 
     public var novelDetailDependencies: NovelDetailDependencies {
         NovelDetailDependencies(
@@ -509,8 +493,6 @@ public final class YamiboAppContext: Sendable {
         )
     }
 
-    /// Shared by Mine's My Likes feature and both readers' capture services,
-    /// so there's a single package shape instead of one per consumer.
     public var likeLibraryDependencies: LikeDependencies {
         LikeDependencies(
             likeStore: likeStore,
@@ -521,7 +503,6 @@ public final class YamiboAppContext: Sendable {
         )
     }
 
-    // MARK: - Factories
 
     private func makeClient() async -> YamiboClient {
         let snapshot = (try? await sessionStore.snapshot()) ?? AccountSessionSnapshot(session: SessionState(), generation: UUID())
@@ -654,7 +635,6 @@ public final class YamiboAppContext: Sendable {
         )
     }
 
-    /// A dataset cannot join synchronization without registering its local change source.
     var webDAVDatasets: [AppWebDAVDataset] {
         [
             .init(
@@ -729,8 +709,6 @@ public final class YamiboAppContext: Sendable {
         do {
             try await imagePipeline.migrateLegacyCoverImages()
         } catch {
-            // Retry unfinished legacy migration on the next launch. Ordinary
-            // cache clearing and eviction remain independent of cover storage.
             YamiboLog.persistence.error("Failed to retain existing cover artwork: \(error)")
         }
         await onProgress(.loadingSession)
@@ -739,9 +717,6 @@ public final class YamiboAppContext: Sendable {
         let profile = await profileStore.load()
         await onProgress(.loadingSettings)
         let settings = await settingsStore.load()
-        // The app shell does not consume this snapshot. Keep the complete
-        // bootstrap contract for other callers without putting it on the
-        // shell's critical path; library screens read the store themselves.
         let localFavoriteLibrary: FavoriteLibraryDocument
         if includingFavoriteLibrary {
             await onProgress(.loadingFavorites)
@@ -777,13 +752,6 @@ public final class YamiboAppContext: Sendable {
         rootDirectory.appendingPathComponent("like-images", isDirectory: true)
     }
 
-    /// Offline chapters are user-requested downloads: they must stay out of
-    /// iCloud/iTunes backups yet — unlike `Library/Caches` content — must never
-    /// be purged by the system, hence Application Support + the backup
-    /// exclusion marker. The marker stays scoped to this directory; the rest of
-    /// the root (yamibox.sqlite, favorite-background, like-images) is user data
-    /// that participates in backups. Idempotent; failures are logged because
-    /// the store lazily recreates the directory on first write anyway.
     private static func prepareDownloadDirectory(
         rootDirectory: URL,
         fileManager: FileManager = .default
@@ -834,8 +802,6 @@ private actor DownloadQueueExecutorBox {
         defer { isInvalidating = false }
         let executors = values
         var failure: (any Error)?
-        // Keep retiring executors visible until their writers have joined, so
-        // a concurrent identity migration cannot overlook an old account run.
         for (generation, executor) in executors {
             do { try await executor.invalidateForAccountChange() }
             catch { if failure == nil { failure = error } }

@@ -36,7 +36,6 @@ final class SettingsPresentationState {
     var canNavigate: Bool { !viewModel.isBusy && !isSigningOut }
 
     func loadIfIdle() async {
-        // Reappearing after a tab switch must not replace another page's action.
         guard canNavigate, !Task.isCancelled else { return }
         await viewModel.load()
     }

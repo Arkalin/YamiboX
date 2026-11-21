@@ -1,8 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// An in-memory request identity. Credentials never enter the persistent
-/// failure cache; its identity excludes runtime generations and WAF churn.
 public struct YamiboImageLoadContext: Hashable, Sendable {
     public let requestID: String
     public var imageRevision: UUID { imageEpoch ?? epoch }
@@ -26,18 +24,13 @@ struct YamiboCoverImageCoolingDown: Error, Sendable {
     let retryAfter: Date
 }
 
-/// A complete revision snapshot, so coalesced notifications cannot lose a
-/// recovery for a second URL. Unrelated visible images retain their identity.
 public struct YamiboImageLoadRevision: Sendable {
     public let epoch: UUID
     public let images: [String: UUID]
     public let recoveredCovers: [String: UUID]
-    /// Retry hints for failed consumers only, not cache/request invalidations.
     public let verifiedImages: [String: UUID]
 }
 
-/// Owns network single-flight and cover-only negative caching. Keeping both
-/// together counts a shared load (including a verified replay) only once.
 actor YamiboImageLoadCoordinator {
     nonisolated let initialEpoch: UUID
     private struct Failure: Codable {
@@ -139,9 +132,8 @@ actor YamiboImageLoadCoordinator {
         authenticationID = next
         accountGeneration = snapshot.generation
         guard changed else {
-            // WAF-only updates must not clear caches or restart successful loads.
             recoverVerificationFailures(using: snapshot.session.credentials)
-            return // A cold launch must retain its cover cooldown.
+            return
         }
         loadFailuresIfNeeded()
         failures = failures.filter { $0.value.authenticationID != next }
@@ -189,8 +181,6 @@ actor YamiboImageLoadCoordinator {
                     if source.purpose == .cover { flights[context.requestID]?.includesCover = true }
                     return
                 }
-                // An active attempt handles its own verification/replay. It must
-                // not also be restarted by an older failure's notification.
                 let id = UUID()
                 let task = Task { [weak self] in
                     let result: Result<Data, any Error>
@@ -206,8 +196,6 @@ actor YamiboImageLoadCoordinator {
         }
     }
 
-    /// Only attempts that could not complete verification wait for another
-    /// consumer to verify. A replay that is still blocked is deliberately final.
     func recordVerificationFailure(for source: YamiboImageSource, context: YamiboImageLoadContext, ticket: RecoveryTicket) async {
         guard await isCurrent(context, source: source),
               ticket.lease.isValid, ticket.operation.attemptCount == 1,
@@ -215,7 +203,6 @@ actor YamiboImageLoadCoordinator {
         verificationFailures[context.failureKey] = VerificationFailure(ticket: ticket, imageID: source.cacheKey,
             notificationKey: source.recoveryKey)
         YamiboLog.networking.info("Forum operation=\(ticket.operation.id, privacy: .public) image-ticket=registered")
-        // A WebKit update can win the race with this failure being recorded.
         await sessionDidChange()
     }
 
@@ -226,7 +213,6 @@ actor YamiboImageLoadCoordinator {
         }
         guard let failure = verificationFailures[context.failureKey], failure.notified,
               verifiedImages[failure.notificationKey] == revision else { throw ForumWAFFailure.replayExhausted }
-        // A delayed UI callback must fail closed, not mint a new operation.
         guard failure.ticket.lease.isValid else { throw ForumWAFFailure.runtimeUnavailable }
         guard failure.ticket.operation.attemptCount == 1 else { throw ForumWAFFailure.replayExhausted }
         guard failure.ticket.requestContext.key.generation == context.accountGeneration,
@@ -267,7 +253,6 @@ actor YamiboImageLoadCoordinator {
     private func complete(requestID: String, id: UUID, result: Result<Data, any Error>) async {
         guard let current = flights[requestID], current.id == id else { return }
         let valid = await isCurrent(current.context, source: current.source)
-        // Account/cover changes may have removed the flight during the await.
         guard let flight = flights[requestID], flight.id == id else { return }
         flights.removeValue(forKey: requestID)
         guard valid, matches(flight.context, source: flight.source) else {
@@ -298,8 +283,6 @@ actor YamiboImageLoadCoordinator {
         }
     }
 
-    /// Decoding, not just a 200 response, establishes a usable image. A reader
-    /// or a different thumbnail variant can recover every failed cover of it.
     func didDecode(_ source: YamiboImageSource, context: YamiboImageLoadContext) async {
         guard await isCurrent(context, source: source) else { return }
         verificationFailures = verificationFailures.filter { $0.value.imageID != source.cacheKey }
@@ -311,8 +294,6 @@ actor YamiboImageLoadCoordinator {
         failures = failures.filter {
             $0.value.authenticationID != context.authenticationID || $0.value.imageID != imageID
         }
-        // A successful reader must not cancel other reader consumers. Mark
-        // older in-flight 403 results stale independently of request validity.
         let hasOlderCoverFlight = flights.values.contains {
             $0.includesCover && $0.source.cacheKey == source.cacheKey
         }
@@ -338,8 +319,6 @@ actor YamiboImageLoadCoordinator {
         publishRevision()
     }
 
-    /// Clearing temporary bytes must not reset a cover's authentication-aware
-    /// retry policy or remove retained artwork.
     func invalidateTransientLoads() {
         invalidateFlights(for: nil)
         publishRevision()
@@ -433,8 +412,6 @@ actor YamiboImageLoadCoordinator {
     }
 
     private static func digest(_ parts: [String]) -> String {
-        // Length-prefixing avoids ambiguous component boundaries without
-        // normalizing away meaningful URL query parameters.
         let data = Data(parts.map { "\($0.utf8.count):\($0)" }.joined().utf8)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }

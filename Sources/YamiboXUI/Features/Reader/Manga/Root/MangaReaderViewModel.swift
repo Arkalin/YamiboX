@@ -14,11 +14,6 @@ struct MangaReaderViewModelDependencies {
     var makeContentCoverStore: @Sendable () -> ContentCoverStore?
     var makeBrowsingHistoryWorkflow: @Sendable () -> BrowsingHistoryWorkflow
     var makeLikeDependencies: @Sendable () -> LikeDependencies?
-    /// Smart Comic Mode off (design decision #16): drives the reader's
-    /// auto-resolved `.thread(tid:)` cover for the chapter being read, via
-    /// `ThreadCoverResolver`. `nil` by default so callers that don't care
-    /// (tests, previews) don't need to supply one — the auto-resolution is
-    /// simply skipped when unavailable.
     var makeThreadCoverPageRepository: @Sendable () async -> (any ThreadCoverPageResolving)?
     var directoryWorkflowConfiguration: MangaDirectoryWorkflowConfiguration
     var progressSync: ProgressSyncModule
@@ -90,9 +85,6 @@ public final class MangaReaderViewModel {
         guard case let .loaded(loaded) = presentation.state else { return nil }
         return loaded.directoryID
     }
-    // The properties below were `@Published` before the `@Observable`
-    // migration; they stay tracked so the views keep re-rendering on the
-    // exact same writes as before.
     public private(set) var presentation: MangaReaderPresentation
     public private(set) var applePencilPageTurnSettings = ApplePencilPageTurnSettings()
     public private(set) var chapterCommentsState: ReaderChapterCommentsState = .idle
@@ -117,21 +109,10 @@ public final class MangaReaderViewModel {
     }
     var pageBoundary: ReaderPageBoundary?
     public private(set) var likedPageIDs: Set<String> = []
-    /// Drives the 书签与喜欢 capsule (visibility + combined count).
     public private(set) var annotationCapsule = ReaderAnnotationCapsulePresentation(bookmarkCount: 0, likeCount: 0)
-    /// Whether the page on screen already carries a bookmark. Unlike the novel
-    /// reader's equivalent this is exact rather than cosmetic — manga pages are
-    /// discrete, so "the same place" is exact page equality.
     public private(set) var isCurrentPageBookmarked = false
 
     public let context: MangaLaunchContext
-    // Every `var` below was a plain (non-`@Published`) stored property
-    // under `ObservableObject`, so writes to it never invalidated views;
-    // `@ObservationIgnored` keeps that notification surface strictly
-    // identical after the `@Observable` migration. The two task handles are
-    // additionally *required* to be ignored: the nonisolated `deinit`
-    // cancels them, and the macro would otherwise turn them into
-    // main-actor-isolated computed properties unreachable from `deinit`.
     @ObservationIgnored private(set) var imageLoader: MangaReaderPageImageLoader?
 
     let dependencies: MangaReaderViewModelDependencies
@@ -153,9 +134,6 @@ public final class MangaReaderViewModel {
         coverModule.cancelAutoThreadCoverResolution()
         chapterCommentsModule.cancelLoading()
     }
-    // The lazy module/coordinator references are ignored for the same
-    // reason (never published) — and `lazy` storage cannot be rewritten
-    // into the macro's tracked accessors anyway.
     @ObservationIgnored private lazy var chapterCommentsModule = ReaderChapterCommentsModule(
         adapter: ReaderChapterCommentsModule.Adapter(
             loadInitial: { [weak self] target in
@@ -179,18 +157,12 @@ public final class MangaReaderViewModel {
             }
         ),
         onChange: { [weak self] snapshot in
-            // The module is driven exclusively from this main-actor view model,
-            // so its caller-isolated onChange provably fires on the main actor.
             MainActor.assumeIsolated {
                 self?.syncChapterComments(snapshot)
             }
         }
     )
 
-    /// Wayfinding coordinator: sequences back/forward restores and records
-    /// nonlinear jumps into its observable history. The restore itself stays
-    /// here (`performNavigationRestoreAttempt`) because it republishes
-    /// reader content.
     @ObservationIgnored private lazy var navigation = MangaReaderNavigationCoordinator(
         reading: MangaReaderNavigationCoordinator.Reading(
             stableReadingPosition: { [weak self] in self?.currentStableReadingPosition },
@@ -203,8 +175,6 @@ public final class MangaReaderViewModel {
         )
     )
 
-    /// Like module: owns like/unlike capture and the LikeStore change
-    /// observation; `likedPageIDs` above is its published output.
     @ObservationIgnored private lazy var likeModule = MangaReaderLikeModule(
         reading: MangaReaderLikeModule.Reading(
             isSmartModeEnabled: context.isSmartModeEnabled,
@@ -218,9 +188,6 @@ public final class MangaReaderViewModel {
             setLikedPageIDs: { [weak self] likedPageIDs in
                 guard let self, lifecycle.acceptsResults else { return }
                 self.likedPageIDs = likedPageIDs
-                // The 书签与喜欢 capsule's count and visibility include likes,
-                // and every like-mutating path (capture, delete, the store's
-                // change stream) already funnels through this write-back.
                 lifecycle.start(.annotationRefresh) { [weak self] _ in
                     await self?.refreshAnnotationState()
                 }
@@ -229,8 +196,6 @@ public final class MangaReaderViewModel {
         )
     )
 
-    /// Cover module: manual set/restore plus the mode-off automatic
-    /// `.thread(tid:)` cover resolution after prepare.
     @ObservationIgnored private lazy var coverModule = MangaReaderCoverModule(
         reading: MangaReaderCoverModule.Reading(
             isSmartModeEnabled: context.isSmartModeEnabled,
@@ -249,7 +214,6 @@ public final class MangaReaderViewModel {
         )
     )
 
-    /// Reports successful visits; canonical identity is owned by History.
     @ObservationIgnored private lazy var browsingHistoryRecorder = MangaReaderBrowsingHistoryRecorder(
         context: context,
         reading: MangaReaderBrowsingHistoryRecorder.Reading(
@@ -258,18 +222,11 @@ public final class MangaReaderViewModel {
         )
     )
 
-    /// Directory command lane: update/search, reset, rename, chapter
-    /// deletion, the automatic post-load update, and the panel countdowns.
-    /// internal so the command forwarders in MangaReaderDirectoryLane.swift
-    /// can reach it.
     @ObservationIgnored private(set) lazy var directoryLane = MangaReaderDirectoryLane(
         dependencies: dependencies,
         reader: MangaReaderDirectoryLane.Reader(
             workflow: { [weak self] in self?.workflow },
             presentation: { [weak self] in
-                // The placeholder is unreachable in practice: the lane only
-                // outlives the view model inside an already-guarded task,
-                // and every lane path checks `workflow()` (nil by then).
                 self?.presentation ?? MangaReaderPresentation(
                     state: .loading(MangaReaderLoadingPresentation(title: ""))
                 )
@@ -320,8 +277,6 @@ public final class MangaReaderViewModel {
         )
     }
 
-    // MARK: - Loading
-
     @ObservationIgnored private var initialProjection: MangaReaderProjection?
 
     func close() {
@@ -364,13 +319,6 @@ public final class MangaReaderViewModel {
             },
             uiImagePipeline: uiImagePipeline
         )
-        // Directory search/tag filtering is scoped to the launching thread's
-        // own board (pluggable-reader-config decision #6). The launch context
-        // carries that board's fid; a context without one (likes, pre-forumID
-        // persisted routes) falls back to "30" here — the single UI-side
-        // fallback point (R4) — so such launches search exactly as they do
-        // today. The time-related fields stay whatever the dependencies
-        // provided (tests inject manual clocks through them).
         var directoryWorkflowConfiguration = dependencies.directoryWorkflowConfiguration
         directoryWorkflowConfiguration.searchForumID = context.forumID ?? "30"
         let workflow = MangaReaderWorkflow(
@@ -429,8 +377,6 @@ public final class MangaReaderViewModel {
 
         await prepare()
     }
-
-    // MARK: - Page navigation
 
     func updateCurrentPage(visiblePage: MangaReaderPageProjection, placement: MangaNovelReaderViewportPlacement?) {
         guard case let .loaded(loaded) = presentation.state,
@@ -522,8 +468,6 @@ public final class MangaReaderViewModel {
         case chapterBoundary(MangaReadingPosition?)
     }
 
-    /// Resolve once for both availability and execution. A chapter boundary is
-    /// retained even when unavailable so execution can still show boundary feedback.
     private func relativePageTurnTarget(for delta: Int, usesTwoPageSpread: Bool) -> RelativePageTurnTarget? {
         guard delta != 0,
               presentation.settings.readingMode == .paged,
@@ -554,10 +498,6 @@ public final class MangaReaderViewModel {
         return .chapterBoundary(stableReadingPosition(from: loaded))
     }
 
-    /// Discrete adjacent-chapter jump for vertical mode, where page turning is
-    /// continuous scrolling and the paged `jumpRelativePage` boundary path is
-    /// unreachable. Shares its linear-crossing semantics: backward lands on
-    /// the previous chapter's last page, forward on the next chapter's first.
     public func jumpToAdjacentChapterFromVerticalBoundary(_ delta: Int) async {
         guard delta != 0,
               let workflow,
@@ -596,13 +536,6 @@ public final class MangaReaderViewModel {
         )
     }
 
-    /// 打开原帖 target: the thread of the chapter currently on screen, not the
-    /// launch context's `originalThreadID` — a smart manga directory spans
-    /// many threads, so the entry chapter goes stale as soon as the reader
-    /// crosses a chapter boundary. Anchors on the chapter's owner post
-    /// (mirroring `NovelReaderViewModel.currentForumTargetURL`); before
-    /// content loads there is no current page yet, so the launch thread keeps
-    /// the button working from a loading/error screen.
     public var currentForumTargetURL: URL {
         guard let target = currentChapterCommentTarget else {
             return YamiboRoute.threadByID(
@@ -628,11 +561,6 @@ public final class MangaReaderViewModel {
         return page.mangaReaderImageSource(offlineScope: scope)
     }
 
-    // MARK: - Manga cover
-
-    // Thin forwarders: MangaReaderView's long-press action dialog and the
-    // cover tests keep calling the model; MangaReaderCoverModule owns the
-    // logic and the auto-resolution task.
     var canSetMangaCover: Bool {
         coverModule.canSetMangaCover
     }
@@ -654,11 +582,6 @@ public final class MangaReaderViewModel {
         await coverModule.restoreAutomaticMangaCover()
     }
 
-    // MARK: - Like
-
-    // Thin forwarders: MangaReaderView and the likes sheet keep calling the
-    // model; MangaReaderLikeModule owns the logic and the LikeStore change
-    // observation.
     var canShowLikes: Bool {
         likeModule.canShowLikes
     }
@@ -675,11 +598,6 @@ public final class MangaReaderViewModel {
         try await likeModule.isPageLiked(page)
     }
 
-    // MARK: - Bookmarks
-
-    /// The page the chrome's bookmark button acts on. `currentPage` is nil
-    /// until `resolvedPageIndex(for:)` settles, so this falls back the same way
-    /// the view's own summary does.
     var currentPageProjection: MangaReaderPageProjection? {
         guard case let .loaded(loaded) = presentation.state else { return nil }
         if let currentPage = loaded.currentPage { return currentPage }
@@ -696,17 +614,11 @@ public final class MangaReaderViewModel {
                 pageLocalIndex: page.localIndex,
                 globalPageIndex: page.globalIndex,
                 chapterTitle: page.chapterTitle,
-                // Same reason `MangaImageLikeAnchor` carries it: opening the
-                // bookmark should follow the board's *current* 阅读方式, not
-                // the mode that happened to be on at capture time.
                 forumID: context.forumID
             )
         )
     }
 
-    /// Adds or removes a bookmark on the page currently on screen. Returns nil
-    /// when this session has no annotation identity at all (Smart Comic Mode
-    /// off), which is the same gate that hides the likes entry.
     @discardableResult
     func toggleBookmarkForCurrentPage() async -> Bool? {
         let revision = lifecycle.contentRevision
@@ -724,8 +636,6 @@ public final class MangaReaderViewModel {
         return outcome.isBookmarked
     }
 
-    /// Just the bookmark glyph's state, without the two count queries the full
-    /// refresh does — this runs on every page turn.
     func refreshCurrentPageBookmarkState() async {
         let revision = lifecycle.contentRevision
         guard lifecycle.accepts(revision) else { return }
@@ -783,11 +693,6 @@ public final class MangaReaderViewModel {
         await likeModule.unlikePage(item)
     }
 
-    // Returns false when there's no prepared workflow, so the caller can fall back to presenting a fresh reader.
-    // This is a nonlinear jump like any other (`jumpToPage`, chapter directory), so it is recorded the same way,
-    // making it eligible for the chrome's back/forward history. It stays on
-    // the view model (not the Like module) because it is a reader-content
-    // navigation that merely originates from the likes sheet.
     func jumpToLikedMangaPage(tid: String, localIndex: Int) async -> Bool {
         guard let workflow else { return false }
         let navigationGeneration = navigation.beginNavigationRequest()
@@ -807,8 +712,6 @@ public final class MangaReaderViewModel {
             return false
         }
     }
-
-    // MARK: - Chapter comments
 
     public func loadChapterComments(for target: ReaderChapterCommentTarget?) async {
         await chapterCommentsModule.loadAndContinue(target)
@@ -832,8 +735,6 @@ public final class MangaReaderViewModel {
     func clearDirectoryFailure() {
         directoryLane.refreshDirectoryPanelTiming(errorMessage: nil)
     }
-
-    // MARK: - Settings
 
     func applyViewportSettings(_ settings: MangaReaderSettings, target: ReaderSettingsTarget) {
         viewportSettingsTarget = target
@@ -869,8 +770,6 @@ public final class MangaReaderViewModel {
         }
     }
 
-    // MARK: - Chapter jump and navigation history
-
     public func jumpToChapter(_ chapter: MangaChapter) async {
         chapterJumpErrorMessage = nil
         invalidateReaderContent()
@@ -887,8 +786,6 @@ public final class MangaReaderViewModel {
         await task?.value
     }
 
-    // Thin forwarders: the chrome and the navigation tests keep calling the
-    // model; MangaReaderNavigationCoordinator owns history sequencing.
     public var canNavigateBack: Bool {
         navigation.canNavigateBack
     }
@@ -937,8 +834,6 @@ public final class MangaReaderViewModel {
     }
 
     @discardableResult
-    // MARK: - Progress
-
     public func saveProgress() async -> MangaLaunchContext {
         guard let snapshot = progressSnapshot(from: presentation) else {
             return context
@@ -972,8 +867,6 @@ public final class MangaReaderViewModel {
         guard case let .loaded(loaded) = presentation.state else { return "" }
         return "\(loaded.readingPosition?.tid ?? "")#\(loaded.viewportPlacement?.revision ?? 0)#\(presentation.settings.readingMode)"
     }
-
-    // MARK: - Adjacent prefetch
 
     private func scheduleAdjacentPrefetch(around globalIndex: Int) {
         guard workflow != nil else { return }
@@ -1036,8 +929,6 @@ public final class MangaReaderViewModel {
         }
     }
 
-    // MARK: - Reader content lifecycle and presentation publishing
-
     func invalidateReaderContent() {
         lifecycle.invalidateContent()
     }
@@ -1072,16 +963,9 @@ public final class MangaReaderViewModel {
         }
         updateDownloadOwnerName(from: nextPresentation)
         currentStableReadingPosition = stableReadingPosition(from: nextPresentation)
-        // Every page change funnels through here, and the bookmark glyph
-        // describes the CURRENT page. Without this it keeps describing whatever
-        // page was on screen at load, so the button silently does the opposite
-        // of its own label and icon.
         lifecycle.start(.bookmarkRefresh) { [weak self] _ in
             await self?.refreshCurrentPageBookmarkState()
         }
-        // Directory identity/title can change through any presentation
-        // update (automatic directory update, rename); identity-stable
-        // updates early-return on the record-key check inside.
         browsingHistoryRecorder.syncRecordIfNeeded(presentation: presentation)
         let nextProgressSnapshot = progressSnapshot(from: nextPresentation)
         guard nextProgressSnapshot != previousProgressSnapshot
@@ -1131,11 +1015,6 @@ public final class MangaReaderViewModel {
         return MangaReadingPosition(tid: currentPage.tid, localIndex: currentPage.localIndex)
     }
 
-    /// One attempt of a back/forward restore, on behalf of the navigation
-    /// coordinator: moves reader content to `targetPosition` and reports
-    /// how the attempt ended. Lives here (not on the coordinator) because a
-    /// restore republishes reader content. The lifecycle coordinator owns
-    /// prefetch cancellation and admits the result by content revision.
     private func performNavigationRestoreAttempt(
         to targetPosition: MangaReadingPosition
     ) async -> MangaReaderNavigationCoordinator.RestoreAttemptOutcome {

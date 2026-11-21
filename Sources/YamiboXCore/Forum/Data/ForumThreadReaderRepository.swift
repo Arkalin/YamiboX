@@ -22,13 +22,6 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
         }
     }
 
-    /// Loads one page of a thread. `authorID` scopes it to a single poster
-    /// (the reader's 只看楼主), `reverse` asks Discuz for newest-first order
-    /// (倒序浏览).
-    ///
-    /// Reverse-ordered pages are never cached: the thread-page cache key has
-    /// no order dimension, so storing them would hand the normal forward view
-    /// a page of newest-first posts under the same key.
     public func fetchThreadPage(
         context: ThreadNovelLaunchContext,
         page: Int = 1,
@@ -86,9 +79,6 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
         return parsed
     }
 
-    /// Cache companion of `fetchThreadPage`. Reverse-ordered reads always miss
-    /// — nothing writes that order to the cache, and the forward-ordered entry
-    /// under the same key holds different posts.
     public func cachedThreadPage(
         context: ThreadNovelLaunchContext,
         page: Int = 1,
@@ -104,9 +94,6 @@ public actor ForumThreadReaderRepository: ThreadCoverPageResolving, NovelDetailT
         return reparsedForThreadReader(cached)
     }
 
-    /// Cached pages can contain text blocks split by older parser versions.
-    /// Reparse only the in-memory copy used by the ordinary thread reader;
-    /// leave the saved page and novel/offline projections untouched.
     private func reparsedForThreadReader(_ cached: ForumThreadPage) -> ForumThreadPage {
         guard cached.contentParserVersion != ForumThreadHTMLBlockParser.cacheVersion else { return cached }
         var page = cached

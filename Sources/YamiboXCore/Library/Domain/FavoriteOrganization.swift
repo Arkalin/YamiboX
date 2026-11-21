@@ -1,8 +1,5 @@
 import Foundation
 
-// The organizational containers favorites are filed into: the location
-// coordinate plus the category and collection types it addresses. They are
-// small and only ever change together, so they share one file.
 
 public enum FavoriteLocation: Codable, Hashable, Identifiable, Sendable {
     case category(String)

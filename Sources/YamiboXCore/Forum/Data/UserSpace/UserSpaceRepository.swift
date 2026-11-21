@@ -122,9 +122,6 @@ public actor UserSpaceRepository: MessageUnreadLoading {
     }
 
     public func fetchUnreadSummary() async throws -> MessageUnreadSummary {
-        // A silent probe must never open WAF verification UI. The PM list's
-        // first page exposes both counters without reading any conversation
-        // or visiting the notice list (which marks notices as read).
         let html = try await client.fetchHTML(
             for: .userSpacePrivateMessages(page: 1),
             cachePolicy: .reloadIgnoringLocalCacheData

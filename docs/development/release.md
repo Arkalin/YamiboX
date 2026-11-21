@@ -6,7 +6,7 @@
 
 | 来源 | 负责的事实 |
 | --- | --- |
-| [Swift 工作流](../../.github/workflows/swift.yml) | 架构检查、模拟器选择与编译入口 |
+| [Swift 工作流](../../.github/workflows/swift.yml) | 架构与 Swift 注释检查、模拟器选择与编译入口 |
 | [Release 工作流](../../.github/workflows/release.yml) | tag 触发、归档、IPA、GitHub Release 与更新源注册 |
 | [发布身份校验脚本](../../scripts/validate-release-identity.sh) | 实际 Release 构建设置、tag 与 commit 一致性 |
 | [Xcode 工程](../../YamiboX.xcodeproj/project.pbxproj)、[Info.plist](../../YamiboX/Info.plist) | 版本号、构建号、Bundle ID、签名与部署目标 |
@@ -27,7 +27,7 @@
 
 `swift.yml` 在推送 `main`、面向 `main` 的 Pull Request，以及被其他工作流通过 `workflow_call` 调用时运行：
 
-1. checkout 代码，执行 `bash scripts/check-architecture.sh`。
+1. checkout 代码，执行架构检查和 [Swift 注释减量检查](comment-ratchet.md)。
 2. 输出工具链版本。
 3. 从 `simctl list devices available` 的 iOS 分组中选择最后一个可用 iPhone；没有候选或无法解析 UDID 时失败。
 4. 使用普通 `YamiboX` Scheme 执行模拟器 `xcodebuild build`，设置 `CODE_SIGNING_ALLOWED=NO`。

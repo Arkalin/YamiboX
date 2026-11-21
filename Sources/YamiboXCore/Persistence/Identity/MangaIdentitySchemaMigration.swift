@@ -1,15 +1,12 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Historical migrations have their own frozen rules and wire formats. Runtime
-/// identity changes must never alter how an existing database version upgrades.
 enum MangaIdentityMigrationV1 {
     static func register(in migrator: inout DatabaseMigrator) {
         IdentityRegistry.registerMigration(in: &migrator)
     }
 }
 
-// Keep the original identifiers, SQL, and registration order.
 extension MangaIdentityMigrationV1.IdentityRegistry {
     private typealias DirectoryID = MangaIdentityMigrationV1.DirectoryID
     private typealias ReferenceRemapping = MangaIdentityMigrationV1.ReferenceRemapping
@@ -34,8 +31,6 @@ extension MangaIdentityMigrationV1.IdentityRegistry {
                 let oldIdentity = !source.isEmpty && source != name ? "\(strategy):\(source)" : firstTID.map { "chapter:\($0)" } ?? name
                 try addAlias(oldIdentity, kind: "favorite", id: id, in: db)
             }
-            // Orphan metadata is meaningful even when its regenerable directory
-            // was cleared. Assign identities before touching any business rows.
             for table in ["reading_progress", "browsing_history"] {
                 let chapterColumn = table == "reading_progress" ? "manga_chapter_thread_id" : "chapter_thread_id"
                 for row in try Row.fetchAll(db, sql: "SELECT manga_id, clean_book_name, \(chapterColumn) AS chapter_tid FROM \(table) WHERE target_kind = 'mangaTitle'") {
@@ -69,8 +64,6 @@ extension MangaIdentityMigrationV1.IdentityRegistry {
             let snapshot = try snapshot(in: db)
             try ReferenceRemapping.normalizeReferences(snapshot: snapshot, legacy: true, in: db)
 
-            // Copy before dropping the old parent so ON DELETE CASCADE cannot
-            // erase chapters. New constraints cannot silently REPLACE directories.
             try db.execute(sql: """
                 CREATE TABLE manga_directories_v1 AS SELECT * FROM manga_directories;
                 CREATE TABLE manga_directory_chapters_v1 AS SELECT * FROM manga_directory_chapters;

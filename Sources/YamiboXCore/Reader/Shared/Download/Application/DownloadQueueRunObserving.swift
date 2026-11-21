@@ -5,7 +5,6 @@ public struct DownloadRunID: Hashable, Sendable {
     public init() { rawValue = UUID() }
 }
 
-/// Bytes belong to one network attempt, not to a persisted download entry.
 struct DownloadTransferProgress: Sendable {
     var receivedBytes: Int64
     var expectedBytes: Int64
@@ -42,8 +41,6 @@ public struct DownloadQueueRunProgress: Sendable {
     }
 }
 
-/// Cancellation is bound to the original executor and run, never resolved
-/// from the current account when a delayed system callback arrives.
 public protocol DownloadQueueRunObserving: Sendable {
     func queueRunDidStart(
         id: DownloadRunID,

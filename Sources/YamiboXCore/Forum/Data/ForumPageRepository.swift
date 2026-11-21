@@ -51,8 +51,6 @@ public actor ForumPageRepository: ForumPageLoading {
         let response: ForumPageResponse
         if form.method == "GET" {
             guard var components = URLComponents(url: form.actionURL, resolvingAgainstBaseURL: true) else { throw ForumPageError.invalidForm }
-            // A GET form replaces the action query, as a browser does. Discuz
-            // forms carry routing parameters as hidden successful controls.
             components.queryItems = fields.map { URLQueryItem(name: $0.name, value: $0.value) }
             guard let url = components.url else { throw ForumPageError.invalidForm }
             response = try await client.fetchDocument(url: ForumWebPagePolicy.secureURL(url), referer: referer)

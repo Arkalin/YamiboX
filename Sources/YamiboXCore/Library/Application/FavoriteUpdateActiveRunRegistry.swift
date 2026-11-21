@@ -1,7 +1,5 @@
 import Foundation
 
-/// Shares one driving task per store instance. The change feed identity also
-/// scopes injected stores without relying on reference casts of protocol values.
 @MainActor
 public final class FavoriteUpdateActiveRunRegistry {
     public static let shared = FavoriteUpdateActiveRunRegistry()
@@ -54,8 +52,6 @@ public final class FavoriteUpdateActiveRunRegistry {
         runs.removeValue(forKey: run.storeID)
         for observer in Array(observers[run.storeID]?.values ?? [:].values) { observer.finished(run.snapshot) }
         run.interrupt = nil
-        // Clear task captures after completion. Engines may retain the receipt
-        // to wait for this exact run after another run has already begun.
         run.preparation = nil
         run.driver = nil
     }
@@ -74,8 +70,6 @@ public final class FavoriteUpdateActiveRunRegistry {
         if observers[storeID]?.isEmpty == true { observers.removeValue(forKey: storeID) }
     }
 
-    /// Account transitions block new admission before cancelling and joining the
-    /// current driver, so no old-account request can outlive the transition.
     public func prepareForAccountChange(storeID: String) async {
         transitionDepth[storeID, default: 0] += 1
         guard let run = runs[storeID] else { return }

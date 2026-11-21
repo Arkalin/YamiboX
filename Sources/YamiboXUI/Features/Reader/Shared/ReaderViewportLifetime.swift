@@ -11,8 +11,6 @@ struct ReaderViewportGeometry: Equatable {
     var supportsSpreads: Bool { size.width >= 720 && size.width > size.height }
 }
 
-/// One presentation of a reader. Platform views detach without ending the
-/// reader, and a retiring presentation can't remove its successor's handler.
 @MainActor
 final class ReaderViewportLifetime {
     typealias DeviceMenu = @MainActor (EdgeInsets, _ isVisible: Bool) -> AnyView
@@ -111,7 +109,6 @@ final class ReaderViewportLifetime {
 
     func acceptsInput(_ id: UUID) -> Bool { !isInputPaused && accepts(id) }
 
-    /// Queued work must still belong to the same uninterrupted input interval.
     func enqueueInput(_ id: UUID, while admits: @escaping () -> Bool, _ operation: @escaping () async -> Void) {
         guard acceptsInput(id) else { return }
         let revision = inputRevision
@@ -129,8 +126,6 @@ final class ReaderViewportLifetime {
 
     func invalidateFrameReport() { hasRendered = false }
 
-    /// UIKit can enqueue geometry before SwiftUI runs the appearance callback,
-    /// but geometry from a previously detached presentation is never admitted.
     var acceptsGeometry: Bool { isCurrent && !hasDetached && !isSuspended && admitsPresentationCallbacks?() != false }
 
     func synchronizePosition() {

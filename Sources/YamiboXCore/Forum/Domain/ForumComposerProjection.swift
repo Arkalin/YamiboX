@@ -66,7 +66,6 @@ public struct ForumComposerSpan: Equatable, Sendable {
     public var isAtomic: Bool { kind == .atomic || { if case .listMarker = kind { return true }; return false }() }
 }
 
-/// A platform-independent projection supplies TextKit's text and exact source anchors.
 public struct ForumComposerProjection: Equatable, Sendable {
     private let source: String
     private let parsesBBCode: Bool
@@ -154,10 +153,6 @@ public struct ForumComposerProjection: Equatable, Sendable {
         lhs.text == rhs.text && lhs.spans == rhs.spans
     }
 
-    /// TextKit typing can reuse a projection when a delimiter-free edit kept
-    /// the same text leaf. Projections with conditional block boundaries must
-    /// rebuild even when a boundary was previously suppressed by a newline.
-    /// Text-derived links also rebuild so their semantics remain intact.
     public func updating(after transaction: ForumComposerTransaction, document: ForumComposerDocument,
                          parsesBBCode: Bool = true, parsesEmoticons: Bool = true) -> Self {
         guard self.parsesBBCode, parsesBBCode, self.parsesEmoticons == parsesEmoticons,

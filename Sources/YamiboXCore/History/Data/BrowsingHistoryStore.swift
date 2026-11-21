@@ -1,22 +1,11 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Local browsing-history timeline (`browsing_history` table).
-///
-/// The shared workflow commits canonical rows atomically. Low-level record
-/// and position helpers also support isolated store fixtures; application
-/// readers use `BrowsingHistoryWorkflow` instead.
-///
-/// Retention (decision #9): capped at `maxEntryCount` rows, trimmed by
-/// `last_visit_time` after every insert. Sync keeps stable visits separately
-/// from this device's canonical reader-mode and progress projection.
 public actor BrowsingHistoryStore {
     public static let maxEntryCount = BrowsingHistoryTimelinePolicy.maximumRecords
 
     private nonisolated let changeBroadcaster = StoreChangeBroadcaster()
     public nonisolated var changeID: String { changeBroadcaster.changeID }
-    /// Multicast change feed; each element is the `changeID` of the store
-    /// instance that made the change (see `StoreChangeBroadcaster`).
     public nonisolated func changes() -> AsyncStream<String> { changeBroadcaster.changes() }
 
     private let database: DatabasePool
@@ -35,18 +24,6 @@ public actor BrowsingHistoryStore {
         self.syncSettingsStore = syncSettingsStore
     }
 
-    /// Upserts one visit, absorbing superseded rows in the same transaction
-    /// (decision #13, generalized by the PRD's compatibility note):
-    /// - Single-thread entries absorb any same-tid row of a *different* kind
-    ///   (e.g. a board reconfigured from normal to novel between visits).
-    /// - Directory-level (`.mangaTitle`) entries absorb the single-thread
-    ///   rows of every directory member, passed in as `absorbingThreadIDs`
-    ///   by the caller (the manga reader has the member list in hand).
-    /// - `absorbingEntryIDs` removes rows superseded by an identity change
-    ///   the tid-based rules can't see — a directory-level row whose
-    ///   `favoriteIdentity` drifted when the synthetic single-chapter
-    ///   directory resolved into a real one (directory rows carry no
-    ///   thread_id, so only their exact old id can name them).
     public func record(
         _ entry: BrowsingHistoryEntry,
         absorbingThreadIDs: [String] = [],
@@ -105,9 +82,6 @@ public actor BrowsingHistoryStore {
         }
     }
 
-    /// Position refresh piggybacked on debounced reading-progress saves.
-    /// UPDATE-only on purpose: it never resurrects a row the user deleted,
-    /// and it never needs the display metadata only the open path knows.
     public func updatePosition(
         targetID: String,
         pageIndex: Int? = nil,
@@ -191,8 +165,6 @@ public actor BrowsingHistoryStore {
         }
     }
 
-    /// Compare just the affected row under the write lock. No insert is
-    /// permitted here: a concurrent delete must never be undone by progress.
     public func applyPositionEntry(_ entry: BrowsingHistoryEntry, replacing expected: BrowsingHistoryEntry, visit: BrowsingHistoryVisit) async throws -> Bool {
         guard entry.id == expected.id, try await canRecord(visit, targetID: entry.id) else { return false }
         let applied = try await database.write { db in
@@ -327,7 +299,6 @@ public actor BrowsingHistoryStore {
         }
     }
 
-    // MARK: - Row mapping
 
     public func snapshotEntries() async throws -> [BrowsingHistoryEntry] {
         try await database.read { db in
@@ -346,8 +317,6 @@ public actor BrowsingHistoryStore {
         }
     }
 
-    /// Compare-and-swap protects asynchronous normalization from concurrent
-    /// deletes or writes. Only changed rows are touched; observers see one commit.
     public func applyCanonicalEntries(
         _ entries: [BrowsingHistoryEntry], replacing expected: [BrowsingHistoryEntry],
         visit: BrowsingHistoryVisit? = nil, visitTargetID: String? = nil
@@ -424,9 +393,6 @@ public actor BrowsingHistoryStore {
         let result = try await database.write { db in
             let previous = SyncRecordSnapshot(records: try BrowsingHistorySyncRecord.load(in: db),
                 deletions: try SyncDeletionState.load(from: "browsing_history_sync_state", in: db))
-            // A directory merge can commit after WebDAV payload normalization.
-            // Resolve both sides and their tombstones under the write lock,
-            // before conflict resolution or history projection groups by ID.
             let identities = try MangaDirectoryIdentityDatabase.snapshot(in: db)
             var snapshot = try Self.canonicalSnapshot(previous, identities: identities)
             let remote = try remote.map { try Self.canonicalSnapshot($0, identities: identities) }
@@ -443,7 +409,6 @@ public actor BrowsingHistoryStore {
             }
             var byID: [String: BrowsingHistoryEntry] = [:]
             for record in snapshot.records {
-                // Keep locally derived position fields until the workflow refreshes them.
                 var entry = record.entry
                 if let local = localVisits[LocalVisitKey(id: record.id, lastVisitTime: record.lastVisitTime)] {
                     entry.target = local.target
@@ -482,7 +447,6 @@ public actor BrowsingHistoryStore {
             }
             return record
         }
-        // Preserve unresolved legacy deletion markers and their import rules.
         let deletions = MangaIdentityDeletionRemapping.normalize(
             snapshot.deletions, identities: identities
         )
@@ -570,7 +534,6 @@ public actor BrowsingHistoryStore {
         }
     }
 
-    // MARK: - Helpers
 
     private static func escapedLikePattern(_ text: String) -> String {
         text

@@ -1,6 +1,5 @@
 import Foundation
 
-/// Reader-specific identity rules; capture and persistence share one workflow.
 public enum ImageLikeCaptureAnchor: Sendable {
     case novel(NovelImageLikeAnchor)
     case manga(MangaImageLikeAnchor)
@@ -46,7 +45,6 @@ public struct ImageLikeCaptureService: Sendable {
 
         let data = try await imageData()
         let id = UUID().uuidString
-        // Once persistence starts, finish even if the presenting gesture is cancelled.
         return try await Task {
             try await imageStore.save(data, id: id, sourceURL: sourceImageURL)
             let item: LikeItem
@@ -56,14 +54,11 @@ public struct ImageLikeCaptureService: Sendable {
                     sourceImageURL: sourceImageURL, chapterTitle: chapterTitle, date: date
                 )
             } catch {
-                // The file is new and has no owning record if the database write fails.
                 do { try await imageStore.delete(id: id) }
                 catch { YamiboLog.persistence.error("Failed to clean up uncommitted like image: \(error)") }
                 throw error
             }
             guard item.id == id else {
-                // Another capture committed this anchor while the image loaded.
-                // Only discard our unreferenced file, never the winning item's bytes.
                 do { try await imageStore.delete(id: id) }
                 catch { YamiboLog.persistence.error("Failed to clean up duplicate like image: \(error)") }
                 return LikeCaptureOutcome.alreadyLiked(item)

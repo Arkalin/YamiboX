@@ -1,10 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Disk-backed projection cache shared by the novel and manga readers. Owns
-/// everything the two stores previously duplicated verbatim: shared-database
-/// fallback wiring, the 100-entry namespace trim, byte accounting, and
-/// logged-degrade reads.
 actor ReaderProjectionDiskStore<Projection: Codable & Sendable> {
     private let namespace: String
     private let cacheStore: DiskCacheStore
@@ -23,9 +19,6 @@ actor ReaderProjectionDiskStore<Projection: Codable & Sendable> {
         if let diskCacheStore {
             self.cacheStore = diskCacheStore
         } else {
-            // An injected directory hosts both the database and the cache
-            // files (tests); the no-argument fallback mirrors the app context:
-            // yamibox.sqlite in Application Support, yamibox-cache in Caches.
             let injectedRootDirectory = rootDirectory ?? baseDirectory
             let resolvedDatabase = databasePool ?? Self.openDatabase(
                 rootDirectory: injectedRootDirectory ?? YamiboDatabase.defaultRootDirectory(fileManager: fileManager),

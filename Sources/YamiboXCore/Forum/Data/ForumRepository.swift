@@ -161,8 +161,6 @@ public actor ForumRepository: ForumHomePageLoading, ForumBoardPageLoading, Forum
         let result = try LoadDiagnosticError.parsing(html: html, context: "ForumTagHTMLParser.parse") {
             try ForumTagHTMLParser.parse(html, target: target, requestedPage: page)
         }
-        // Discuz omits its pager for an empty/out-of-range page. Recover once
-        // rather than inventing a total from an arbitrary deep-link page number.
         if page > 1, result.pageNavigation == nil {
             return try await fetchTagPage(target: target, page: 1)
         }

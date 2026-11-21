@@ -3,9 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 import YamiboXCore
 
-/// Main favorites screen: navigation scaffold, toolbar, status cards, and
-/// sheet/dialog presentation. Content rendering is delegated to the list and
-/// grid content views, which read the organizer and browse session directly.
 struct LocalFavoritesOrganizationView: View {
     @Bindable var organizer: FavoriteLibraryOrganizer
     let navigator: ForumDestinationNavigator
@@ -20,14 +17,7 @@ struct LocalFavoritesOrganizationView: View {
     let isBookPresented: Bool
 
     let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
-    /// Opens a smart-manga update event by its `cleanBookName` alone — a
-    /// directory-mode event carries no pointer to one specific favorite, so
-    /// the open target must be re-derived fresh rather than looked up in
-    /// `organizer.favoriteItems` the way `onOpen` above resolves a
-    /// per-favorite event.
     let onOpenMangaDirectory: (MangaDirectoryID) async -> Void
-    /// Feeds the pushed board-favorite page, which manages remote board
-    /// favorites purely over the network (no local store involved).
     let makeFavoriteRepository: @Sendable () async -> any BoardFavoriteManaging
     let onOpenBoard: (BoardFavorite) -> Void
 
@@ -155,7 +145,6 @@ struct LocalFavoritesOrganizationView: View {
             }
             .navigationDestination(for: LocalFavoritesDestination.self, destination: destinationView)
             #if DEBUG
-            // Keep the debug selection hook independent of navigation changes.
             .onChange(of: organizer.rootDerived, initial: true) { _, derived in
                 guard ProcessInfo.processInfo.environment["START_FAVORITES_SELECTION"] == "1",
                       !selection.isSelectionMode,
@@ -230,15 +219,7 @@ struct LocalFavoritesOrganizationView: View {
         }
     }
 
-    // MARK: - Collection detail
 
-    /// Opened collections push a detail page (iOS navigation instead of the
-    /// Android in-place switch). The pushed page's content is scoped by the
-    /// `organizer.derived` explicitly passed to it, not read ambiently,
-    /// because `organizer.selectedCollectionID` only resets once the path
-    /// binding's `set` fires (i.e. once the pop fully commits) — during an
-    /// interactive edge-swipe-back gesture it stays non-nil for the whole
-    /// drag, while the root screen underneath is already visible.
     private var collectionDetail: some View {
         backgrounded {
             content(derived: organizer.derived, isCollectionDetail: true)
@@ -281,8 +262,6 @@ struct LocalFavoritesOrganizationView: View {
         }
     }
 
-    /// Collection actions in the detail page's toolbar (the in-content header
-    /// is gone: the navigation bar already shows back and title).
     @ViewBuilder
     private var collectionDetailMenu: some View {
         if let collection = organizer.selectedCollection {
@@ -326,18 +305,7 @@ struct LocalFavoritesOrganizationView: View {
         }
     }
 
-    // MARK: - Merged smart-comic group detail
 
-    /// Lists every individual favorite currently merged into the card that
-    /// was opened — per-item management (delete/move/tag/etc.) happens here
-    /// through the same single-item card UI every other favorite uses, since
-    /// `LocalFavoriteLibraryProjection.cards(in:query:...)`'s
-    /// `memberScopeGroupKey` scoping deliberately builds each member as
-    /// a genuinely standalone (non-merged) `FavoriteCardProjection`. Mirrors
-    /// `collectionDetail` body-for-body, including reusing
-    /// `isCollectionDetail: true` on `content(...)`/`emptyStateOverlay(...)`
-    /// — that flag only affects the category tab bar and empty-state
-    /// copy/icon, both of which read fine for this page too.
     private var mergedGroupDetail: some View {
         backgrounded {
             content(derived: organizer.derived, isCollectionDetail: true)
@@ -375,7 +343,6 @@ struct LocalFavoritesOrganizationView: View {
         }
     }
 
-    // MARK: - Content
 
     private var keyboardCommandsEnabled: Bool {
         !isBookPresented && routes.sheet == nil && routes.dialog == nil && routes.detail == nil
@@ -385,9 +352,6 @@ struct LocalFavoritesOrganizationView: View {
             && combinedErrorMessage == nil
     }
 
-    /// Every page of this screen — the root and both pushed detail pages —
-    /// draws the user's favorites background, so the pairing of settings and
-    /// image data lives here instead of being repeated per call site.
     private func backgrounded(@ViewBuilder _ content: () -> some View) -> some View {
         LocalFavoritesBackground(
             settings: organizer.backgroundSettings,
@@ -396,10 +360,6 @@ struct LocalFavoritesOrganizationView: View {
         )
     }
 
-    /// `derived` and `isCollectionDetail` are passed explicitly by the two
-    /// call sites (root vs. pushed collection detail) rather than read
-    /// ambiently from `organizer`, since both can be mounted at once during
-    /// an interactive edge-swipe pop. See `FavoriteLibraryOrganizer.rootDerived`.
     @ViewBuilder
     private func content(derived: LocalFavoriteDerivedState, isCollectionDetail: Bool) -> some View {
         switch organizer.display.layoutMode {
@@ -446,7 +406,6 @@ struct LocalFavoritesOrganizationView: View {
         }
     }
 
-    // MARK: - Status cards
 
     private var showsTopStatusCards: Bool {
         guard let snapshot = remoteSync.snapshot else { return false }
@@ -457,8 +416,6 @@ struct LocalFavoritesOrganizationView: View {
         scopedUpdateEvents.unreadCount
     }
 
-    /// Category changes use live favorite membership; directory events use the
-    /// tracked target's authoritative category scope. Progress reuses the result.
     private var scopedUpdateEvents: FavoriteUpdateEventScope {
         updateEventScopeCache.value(
             revision: .init(
@@ -505,7 +462,6 @@ struct LocalFavoritesOrganizationView: View {
         .background(.bar)
     }
 
-    // MARK: - Toolbar
 
     @ToolbarContentBuilder
     private var favoriteToolbarContent: some ToolbarContent {
@@ -581,10 +537,6 @@ struct LocalFavoritesOrganizationView: View {
         }
     }
 
-    /// Slim overflow menu: board favorites, organization management,
-    /// selection, and the Yamibo sync entry (a running sync opens its
-    /// progress directly). The update-check entries stay here until the
-    /// dedicated updates page (bell entry) lands.
     private var favoriteMoreMenu: some View {
         Menu {
             Section {
@@ -648,7 +600,6 @@ struct LocalFavoritesOrganizationView: View {
         .accessibilityLabel(L10n.string("common.more"))
     }
 
-    // MARK: - Dialogs
 
     private var dialogBinding: Binding<Bool> {
         .presentation(
@@ -657,8 +608,6 @@ struct LocalFavoritesOrganizationView: View {
         )
     }
 
-    /// Dismissing without picking aborts the pending delete entirely — the
-    /// prompt IS the delete's remote-decision step, not an optional add-on.
     private var dialogTitle: Text {
         switch routes.dialog {
         case .dissolveCollection, .dissolveSelectedCollections:
@@ -749,7 +698,6 @@ struct LocalFavoritesOrganizationView: View {
         return message + "\n" + L10n.string(outcomeKey)
     }
 
-    // MARK: - Errors
 
     private var combinedErrorMessage: String? {
         favoriteShare.errorMessage ?? organizer.errorMessage ?? remoteSync.errorMessage ?? updateMonitor.errorMessage ?? navigator.actionErrorMessage

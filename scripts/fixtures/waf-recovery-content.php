@@ -1,5 +1,4 @@
 <?php
-// Deploy beside Discuz class_core only in the disposable local runtime.
 if (PHP_SAPI !== 'cli' || getenv('YAMIBO_LOCAL_RUNTIME') !== '1') { exit("LOCAL_CLI_ONLY\n"); }
 $run = isset($argv[2]) ? $argv[2] : '';
 $fixtureAction = isset($argv[1]) ? $argv[1] : '';

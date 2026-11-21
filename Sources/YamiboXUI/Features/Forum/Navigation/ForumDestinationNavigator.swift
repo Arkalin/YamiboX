@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Path owner + route helpers shared by the forum tab and reader-overlay
-/// forum stacks. Receives explicit service packages and narrow navigation
-/// actions; application-backed view assembly remains in destination hosts.
 @MainActor
 @Observable
 final class ForumDestinationNavigator {
@@ -44,12 +41,6 @@ final class ForumDestinationNavigator {
     @ObservationIgnored private var browserOpenID: UUID?
     @ObservationIgnored private var pathRevision = UUID()
     @ObservationIgnored private var browserLayoutRevision = UUID()
-    /// The reader session's own thread IDs (the work plus, for smart manga,
-    /// its chapter threads). Any thread opened inside the overlay that
-    /// resolves to one of these is still the work's discussion companion, so
-    /// it must keep `isDiscussionView: true` — otherwise its plain-thread
-    /// history row would absorb the work's main-form row (browsing-history
-    /// decision #14 / review finding P1-B: rows upsert by tid across kinds).
     @ObservationIgnored let discussionWorkTIDs: Set<String>
 
     init(
@@ -70,7 +61,6 @@ final class ForumDestinationNavigator {
     func updateBrowserLayout(isRegular: Bool) {
         let split = usesSplitNavigation && isRegular
         guard split != browserUsesSplitNavigation else { return }
-        // Invalidate old bindings before SwiftUI tears down either container.
         browserLayoutRevision = UUID()
         browserUsesSplitNavigation = split
     }
@@ -80,7 +70,6 @@ final class ForumDestinationNavigator {
     }
 
     func browserPathBinding(for column: BrowserPathColumn) -> Binding<[ForumDestination]> {
-        // Observe the route while building the binding, not only inside its getter.
         let sourcePath = path
         let layoutRevision = browserLayoutRevision
         let routeRevision = pathRevision
@@ -119,8 +108,6 @@ final class ForumDestinationNavigator {
     var browserDetailPath: [ForumDestination] { Array(path.dropFirst(browserListPath.count)) }
 
     var selectedBrowserThreadID: String? {
-        // Auxiliary pages retain the latest thread's context, not the first
-        // thread opened from the sidebar.
         for destination in browserDetailPath.reversed() {
             switch destination {
             case let .threadReader(context): return context.thread.tid
@@ -342,10 +329,6 @@ final class ForumDestinationNavigator {
         return task
     }
 
-    /// The thread card long-press menu's one-off reading-mode handler, or
-    /// `nil` where the stack cannot honor the choice: a reader-overlay stack
-    /// never launches a second full reader (every thread opens as a native
-    /// thread page there), so offering the menu would promise nothing.
     func threadReaderOverrideHandler(
         containingFid: String?,
         fromBrowserList: Bool = false
@@ -356,9 +339,6 @@ final class ForumDestinationNavigator {
         }
     }
 
-    /// Same menu for a board's 置顶 rows. Announcement rows are filtered out by
-    /// the row itself (no `threadID`, so nothing to apply a reader to); this
-    /// only decides whether the stack can honor a choice at all.
     func pinnedReaderOverrideHandler(
         containingFid: String?,
         fromBrowserList: Bool = false
@@ -442,7 +422,6 @@ final class ForumDestinationNavigator {
         }
     }
 
-    /// An explicit content destination bypasses classification, not loading or permissions.
     func openContent(_ url: URL, destination: AppContentDestination) {
         guard !isOpeningContent,
               let tid = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
@@ -570,18 +549,6 @@ final class ForumDestinationNavigator {
             )
             push(.mangaDetail(context))
         case let .mangaDirect(payload):
-            // Board's Smart Comic Mode is off (decision #2/#12): open the
-            // manga reader directly for this one thread instead of pushing
-            // `MangaDetailView`, using the same full-screen presentation
-            // path as favorites/likes/the chapter picker
-            // (`appModel.presentMangaReader`) rather than a NavigationStack
-            // destination. No directory concept applies here — this thread
-            // is treated exactly like a normal thread (total principle,
-            // decision #2), just rendered with the manga reader — so the
-            // title is used as-is (no `cleanBookName` cleanup) and page 0 is
-            // the only sensible start (no resume, matching
-            // `MangaDetailViewModel.launchContext(for chapter:)`'s
-            // existing convention of never passing `initialPage`).
             let context = MangaLaunchContext(
                 originalThreadID: payload.thread.tid,
                 chapterTID: payload.thread.tid,

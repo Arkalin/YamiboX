@@ -2,10 +2,6 @@ import Foundation
 import UIKit
 import YamiboXCore
 
-/// The live TextKit 2 object graph for one committed runtime generation.
-/// Owns fragment geometry queries, viewport sampling, selection geometry, and
-/// committed drawing; Core's `NovelTextViewportRuntimeOwner` forwards to it
-/// after generation and surface-identity validation.
 final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
     private let result: NovelTextLayoutResult
     private let document: NovelReaderProjection
@@ -118,8 +114,6 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
         return min(max(offset, pageDocumentRange.lowerBound), pageDocumentRange.upperBound)
     }
 
-    /// Both viewport sampling and selection use the same coordinate conversion;
-    /// their nearest-sample fallback and page-range clipping remain independent.
     private func unclampedDocumentOffset(
         page: NovelTextViewportIndexSurface,
         referencePoint: CGPoint
@@ -395,9 +389,6 @@ final class NovelTextKitViewportGraph: NovelTextViewportRuntimeGraph {
                     lineClipRects.append(lineRect)
                 }
                 if !lineClipRects.isEmpty {
-                    // A layout fragment draws its entire paragraph. Drawing it
-                    // once per visible line repeats that work during scrolling;
-                    // clip to the same line rectangles in a single draw instead.
                     context.saveGState()
                     context.clip(to: lineClipRects)
                     fragment.draw(

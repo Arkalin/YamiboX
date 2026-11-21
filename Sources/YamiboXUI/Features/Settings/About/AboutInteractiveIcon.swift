@@ -1,7 +1,6 @@
 import SceneKit
 import SwiftUI
 
-/// An extruded icon with independently lit flower geometry and a solid back.
 struct AboutInteractiveIcon: UIViewRepresentable {
     let image: UIImage
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -44,7 +43,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
         isOpaque = false
         antialiasingMode = .multisampling4X
         preferredFramesPerSecond = 60
-        // Render on demand when idle; no perpetual decorative animation.
         rendersContinuously = false
         autoenablesDefaultLighting = false
 
@@ -52,8 +50,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
         self.scene = scene
         let camera = SCNNode()
         camera.camera = SCNCamera()
-        // Keep the original front-facing silhouette identical across elevations,
-        // and leave enough margin for tilted corners during a drag.
         camera.camera?.usesOrthographicProjection = true
         camera.camera?.orthographicScale = 1.45
         camera.position = SCNVector3(0, 0, 5.3)
@@ -104,7 +100,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
         if let artwork = AboutIconGeometry.bundled {
             addFlower(artwork)
         } else {
-            // Keep a usable icon if the generated resource is missing or invalid.
             let face = SCNPlane(width: 1.99, height: 1.99)
             face.cornerRadius = 0.44
             face.cornerSegmentCount = 24
@@ -145,7 +140,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
             context.fill(CGRect(origin: .zero, size: size))
             let colors = [UIColor(white: 0.65, alpha: 1).cgColor, UIColor(white: 0.65, alpha: 0).cgColor]
             guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 1]) else { return }
-            // Broad softboxes, not a painted highlight on the flower itself.
             for center in [CGPoint(x: 230, y: 170), CGPoint(x: 790, y: 210)] {
                 context.saveGState()
                 context.translateBy(x: center.x, y: center.y)
@@ -157,8 +151,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
     }()
 
     private func configureFinish(_ material: SCNMaterial, shininess: CGFloat, specular: CGFloat) {
-        // Bound reflection separately from diffuse lighting so a passing highlight
-        // never washes the brown plate into the cream flower.
         material.lightingModel = .blinn
         material.specular.contents = UIColor(white: specular, alpha: 1)
         material.shininess = shininess
@@ -176,12 +168,9 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
         side.diffuse.contents = UIColor(red: 214 / 255, green: 195 / 255, blue: 172 / 255, alpha: 1)
         for layer in artwork.layers {
             let shape = SCNShape(path: layer.makePath(canvasSize: artwork.canvasSize), extrusionDepth: layer.extrusionDepth)
-            // No bevel erosion: even the original subpixel holes are retained.
             shape.materials = [face, face, side]
             let node = SCNNode(geometry: shape)
             node.name = layer.name
-            // All relief starts at the base's front face, rather than floating
-            // above it. Different extrusion heights separate petals and stamens.
             node.position.z = Float(0.11 + layer.extrusionDepth / 2)
             icon.addChildNode(node)
         }
@@ -195,7 +184,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
         let start = CGPoint(x: location.x - translation.x, y: location.y - translation.y)
         guard let point = artworkPoint(at: start) else { return false }
         verticalDrag = abs(velocity.y) > abs(velocity.x)
-        // Only the top/bottom edges claim vertical gestures; the center still scrolls.
         return !verticalDrag || edge(at: point) == .top || edge(at: point) == .bottom
     }
 
@@ -250,7 +238,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
             duration: 0.75, usesShortestUnitArc: true
         )
         settle.timingFunction = { t in
-            // A small overshoot gives the icon a soft spring-like return.
             let p = t - 1
             return 1 + 2.4 * p * p * p + 1.4 * p * p
         }
@@ -274,8 +261,6 @@ final class IconSceneView: SCNView, UIGestureRecognizerDelegate {
             let direction: CGFloat = edge == .left ? -1 : 1
             let turn = SCNAction.rotateBy(x: 0, y: direction * .pi * 2, z: 0, duration: 1.05)
             turn.timingMode = .easeInEaseOut
-            // Continue just past the front before the damped return, rather than
-            // stopping dead at the end of the full revolution.
             let coast = SCNAction.rotateBy(x: 0, y: direction * 0.12, z: 0, duration: 0.12)
             coast.timingMode = .easeOut
             icon.runAction(.sequence([turn, coast, settleAction()]), forKey: Self.spinActionKey)

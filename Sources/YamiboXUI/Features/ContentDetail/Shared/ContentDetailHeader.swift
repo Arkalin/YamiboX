@@ -64,8 +64,6 @@ struct ContentDetailHeader<Metadata: View, Actions: View, Details: View>: View {
 
             actions()
         }
-        // Keep a usable directory viewport at accessibility sizes. The details
-        // sheet retains the user's uncapped text size and all metadata.
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(.horizontal, 16)
         .padding(.vertical, compact ? 8 : 12)
@@ -125,8 +123,6 @@ struct ContentDetailInformationSheet<Content: View>: View {
     }
 }
 
-/// Wrap actions using their intrinsic widths instead of compressing their
-/// labels or duplicating interactive controls in ViewThatFits alternatives.
 struct ContentDetailActionsLayout: Layout {
     var spacing: CGFloat = 8
 
@@ -185,8 +181,6 @@ struct ContentDetailPrimaryActions<Content: View>: View {
     }
 }
 
-/// The first action expands; secondary actions keep their labels intact. Measure
-/// the primary at its allocated width so long progress never dictates wrapping.
 struct ContentDetailPrimaryActionsLayout: Layout {
     var minimumReadingWidth: CGFloat = 144
     var spacing: CGFloat = 8

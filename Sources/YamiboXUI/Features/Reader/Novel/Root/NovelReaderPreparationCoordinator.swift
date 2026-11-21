@@ -13,9 +13,6 @@ enum NovelReaderInitialPresentationPhase {
     }
 }
 
-/// Owns preparation task lifetime, stale-result admission and layout revisions.
-/// The view model retains the workflow/data; only this coordinator changes the
-/// initial presentation phase. Closing invalidates both kinds of pending work.
 @MainActor
 @Observable
 final class NovelReaderPreparationCoordinator {
@@ -36,8 +33,6 @@ final class NovelReaderPreparationCoordinator {
     func setDisplayReporter(active: Bool) {
         hasDisplayReporter = active
         if !active {
-            // Detaching only removes the display wait. The session separately
-            // invalidates initial work when it switches viewport ownership.
             finishDisplayWait()
             hasDisplayedInitialSurface = false
         }
@@ -49,8 +44,6 @@ final class NovelReaderPreparationCoordinator {
         finishDisplayWait()
     }
 
-    /// Data preparation can overlap entry, but synchronous TextKit indexing
-    /// must not freeze the reader's partially transparent presentation frame.
     func waitForInitialDisplay() async throws {
         guard hasDisplayReporter, !hasDisplayedInitialSurface else { return }
         let id = UUID()
@@ -84,7 +77,6 @@ final class NovelReaderPreparationCoordinator {
         guard phase != .cancelled, phase != .failed else { return .ignore }
         if !hasStarted {
             hasStarted = true
-            // Geometry can precede the view's appearance task.
             if requestedLayout == .zero {
                 self.layout = layout
                 requestedLayout = layout
@@ -134,8 +126,6 @@ final class NovelReaderPreparationCoordinator {
 
     func isCurrent(_ token: UInt64) -> Bool { sequence == token }
 
-    /// Release admission in the operation's defer, before its async caller
-    /// resumes, so a new geometry callback can start a fresh waiting-layout run.
     func finishCurrentRun(_ token: UInt64) {
         if isCurrent(token) { task = nil }
     }
@@ -177,7 +167,6 @@ final class NovelReaderPreparationCoordinator {
         if layoutRevision == revision { requestedLayout = layout }
     }
 
-    /// Await cancellation before the caller replaces the prepared data/workflow.
     func invalidateForRefresh() async -> Bool {
         sequence &+= 1
         let token = sequence

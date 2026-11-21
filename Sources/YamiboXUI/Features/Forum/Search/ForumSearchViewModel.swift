@@ -114,8 +114,6 @@ final class ForumSearchViewModel {
         guard !Task.isCancelled, generation == requestGeneration else { return }
         let trimmedQuery = key.query
         let pageNumber = key.page
-        // Retained results belong to their committed query, not the editable
-        // input or a replacement first-page request that is still pending.
         let searchID = currentSearchQuery == trimmedQuery ? currentSearchID : nil
         isLoading = true
         errorMessage = nil
@@ -129,10 +127,6 @@ final class ForumSearchViewModel {
             let repository = await repositoryProvider()
             try Task.checkCancellation()
             let nextPage: ForumSearchPage
-            // Double-optional: outer nil means "leave currentSearchID
-            // untouched" (the searchForumPage branch); `.some(nil)` means
-            // "overwrite it with nil", matching the original unconditional
-            // assignment in the searchForum branch.
             let resolvedSearchID: String??
             if pageNumber == 1 || searchID == nil {
                 let formHash = await formHashProvider()

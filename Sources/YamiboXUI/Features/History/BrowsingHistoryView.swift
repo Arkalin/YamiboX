@@ -2,7 +2,6 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// Searchable reading timeline shared by Mine and the previous-reading shelf.
 struct BrowsingHistoryView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var model: BrowsingHistoryViewModel
@@ -251,7 +250,6 @@ struct BrowsingHistoryView: View {
         }
     }
 
-    // MARK: - Date sections
 
     private struct DaySection: Identifiable {
         let id: String
@@ -359,9 +357,6 @@ struct BrowsingHistoryCategoryLinks: View {
 private struct BrowsingHistoryRow: View {
     @Environment(\.appTheme) private var appTheme
     let entry: BrowsingHistoryEntry
-    /// Effective category (board configuration applied) — drives the
-    /// position-text format so the row reads like the reader it would
-    /// actually open with.
     let category: BrowsingHistoryCategory
     let showsNormalThreadProgress: Bool
     let coverSource: YamiboImageSource?
@@ -409,11 +404,6 @@ private struct BrowsingHistoryRow: View {
     }
 
     private var positionText: String? {
-        // The effective category can differ from the identity the row was
-        // recorded under (board configuration changed since), so each branch
-        // falls back across the recorded field shapes instead of assuming
-        // its own — e.g. a row recorded as a normal thread (page only) still
-        // shows its page under a now-小说 board rather than nothing.
         switch category {
         case .normal:
             guard showsNormalThreadProgress else { return nil }

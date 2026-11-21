@@ -10,8 +10,6 @@ struct ContentDetailAdaptiveLayout<Header: View, Directory: View>: View {
         GeometryReader { proxy in
             let layout = CompactLandscapeLayout(size: proxy.size)
             layout.stack {
-                // Keep both subtrees mounted across rotation so open metadata,
-                // expanded chapters and directory scroll state survive.
                 ScrollView {
                     header(layout.isSideBySide)
                         .fixedSize(horizontal: false, vertical: true)

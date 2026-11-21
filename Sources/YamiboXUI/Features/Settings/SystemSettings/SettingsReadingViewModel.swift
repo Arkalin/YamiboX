@@ -2,7 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// State and field-level persistence for the Reading settings page.
 @MainActor
 @Observable
 final class SettingsReadingViewModel: AppSettingsPersisting {
@@ -53,7 +52,6 @@ final class SettingsReadingViewModel: AppSettingsPersisting {
         }
     }
 
-    // MARK: - Novel download
 
     func updateNovelDownloadRetainsInlineImages(_ retainsInlineImages: Bool) {
         persistSettings(\.novelDownload.retainsInlineImages, to: retainsInlineImages) {

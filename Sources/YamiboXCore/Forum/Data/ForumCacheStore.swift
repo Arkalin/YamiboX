@@ -30,9 +30,6 @@ public actor ForumCacheStore {
         if let injectedCacheStore = diskCacheStore ?? threadPageDiskCache {
             self.cacheStore = injectedCacheStore
         } else {
-            // An injected directory hosts both the database and the cache
-            // files (tests); the no-argument fallback mirrors the app context:
-            // yamibox.sqlite in Application Support, yamibox-cache in Caches.
             let injectedRootDirectory = rootDirectory ?? baseDirectory
             let resolvedDatabase = databasePool ?? Self.openDatabase(
                 rootDirectory: injectedRootDirectory ?? YamiboDatabase.defaultRootDirectory(fileManager: fileManager),
@@ -242,8 +239,6 @@ public actor ForumCacheStore {
         now().timeIntervalSince(fetchedAt) > ttl
     }
 
-    /// Wraps `DiskCacheStore.get`, logging genuine read/decode errors (as opposed to a plain
-    /// cache miss, which `get` already represents as `nil` without throwing).
     private func loggedGet<Value: Decodable & Sendable>(
         namespace: String,
         key: String,

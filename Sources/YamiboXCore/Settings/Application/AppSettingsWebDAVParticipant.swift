@@ -1,9 +1,6 @@
 import Foundation
 import os
 
-/// WebDAV sync participant for the synchronized subset of app settings.
-/// Last-writer-wins: the payload is a snapshot, never merged, and it is only
-/// uploaded automatically after the synchronized subset actually changed.
 struct AppSettingsWebDAVParticipant: WebDAVSyncParticipant {
     let datasetID = "appSettings"
     let remoteFileName = "yamibox-app-settings-v1.json"
@@ -55,7 +52,6 @@ struct AppSettingsWebDAVParticipant: WebDAVSyncParticipant {
     }
 }
 
-/// The subset of `AppSettings` that participates in WebDAV synchronization.
 struct WebDAVSyncedAppSettings: Codable, Equatable, Sendable {
     var homePage: AppHomePage
     var navigation: AppNavigationSettings?
@@ -97,10 +93,6 @@ struct AppSettingsWebDAVPayload: Codable, Equatable, Sendable {
     var version: Int
     var updatedAt: Date
     var accountUID: String?
-    /// Monotonic per-dataset sync revision, stamped into the envelope by the
-    /// sync service after export; nil for payloads written before revisions
-    /// existed. Optional, so the synthesized Codable decodes old payloads
-    /// (`decodeIfPresent`) and omits the key when nil.
     var syncRevision: UInt64?
     var appSettings: WebDAVSyncedAppSettings
 

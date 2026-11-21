@@ -2,29 +2,15 @@ import SwiftUI
 import UIKit
 import YamiboXCore
 
-/// Fixed-grid and staggered layouts for the favorites screen. Collections
-/// and favorite items share one grid, merged into the sort order the user
-/// picked (collections stay a pinned leading block only in manual sort
-/// order — see `LocalFavoriteLibraryProjection.mixedEntries`). Column counts
-/// adapt to the available width with two columns on iPhone. On iPad both
-/// layouts multiply their base card width by the persisted
-/// `display.gridCardScale`, adjustable live with a two-finger pinch here or
-/// from the slider in Settings → Favorites → Appearance.
 struct LocalFavoriteGridContent: View {
     let organizer: FavoriteLibraryOrganizer
     @ObservedObject var selection: LocalFavoriteBrowseSession
     let routes: LocalFavoritesRoutes
     let isStaggered: Bool
-    /// Explicit source of truth for this instance's scope (root overview vs.
-    /// the opened collection) — never read `organizer.derived` ambiently
-    /// here, since root and collection-detail content can be mounted
-    /// simultaneously during an interactive pop. See
-    /// `FavoriteLibraryOrganizer.rootDerived`.
     let derived: LocalFavoriteDerivedState
     let isCollectionDetail: Bool
     let onOpen: (FavoriteItem, FavoriteLaunchMode, FavoriteMangaReadingScope, BookOpeningTransition?) async -> Void
 
-    /// Base card widths at scale 1.0 — the historical fixed constants.
     private static let fixedGridBaseMinimumCardWidth: Double = 130
     private static let staggeredBaseCardWidth: Double = 170
 
@@ -110,10 +96,7 @@ struct LocalFavoriteGridContent: View {
         .sensoryFeedback(.selection, trigger: selection.selectedCollectionIDs)
     }
 
-    // MARK: - Card scale
 
-    /// Card sizing is adjustable on iPad only; iPhone always renders the
-    /// layouts at their base widths (see `FavoriteLibrarySettings.gridCardScale`).
     private var isCardScaleAdjustable: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
     }
@@ -144,8 +127,6 @@ struct LocalFavoriteGridContent: View {
         derived.mixedEntries
     }
 
-    /// Two waterfall columns on iPhone widths, more as the width grows.
-    /// The scaled target card width widens or narrows the columns on iPad.
     private func staggeredColumnCount(for width: CGFloat) -> Int {
         max(2, Int((width - 32 + 12) / (Self.staggeredBaseCardWidth * effectiveCardScale + 12)))
     }
@@ -155,7 +136,6 @@ struct LocalFavoriteGridContent: View {
     }
 }
 
-/// Renders one mixed-grid entry as either a collection cell or an item card.
 struct LocalFavoriteGridEntryCell: View {
     let entry: FavoriteMixedEntry
     let organizer: FavoriteLibraryOrganizer
@@ -198,7 +178,6 @@ struct LocalFavoriteGridEntryCell: View {
     }
 }
 
-/// Waterfall arrangement distributing mixed entries round-robin per column.
 struct LocalFavoriteStaggeredCards: View {
     let entries: [FavoriteMixedEntry]
     let columnCount: Int

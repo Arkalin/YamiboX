@@ -2,8 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// State and commands for the Favorites settings page: library display
-/// options, the custom background, and the sync behavior switches.
 @MainActor
 @Observable
 final class SettingsFavoritesViewModel: AppSettingsPersisting {
@@ -14,10 +12,6 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     var favoriteSortDescending = false
     var favoriteShowsCategoryCounts = true
     var favoriteItemTapAction: FavoriteItemTapAction = .detail
-    /// Android-style favorite sync behavior switches: each action has an
-    /// "ask every time" toggle and, when asking is off, a silent default.
-    /// The quick-action prompts' "remember" variants write the same fields,
-    /// so this page is where a remembered choice can be revisited.
     var favoriteAddSyncPromptEnabled = true
     var favoriteAddSyncDefault = true
     var favoriteRemoveRemotePromptEnabled = true
@@ -56,18 +50,12 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         favoriteSmartMangaBadgeEnabled = settings.favorites.smartMangaBadgeEnabled
     }
 
-    /// Application reset restores the background and tap preference here: the other display and
-    /// sync-behavior fields are wiped in the *store* by `resetApplicationData`
-    /// too, but the pre-split view model never mirrored them back to defaults
-    /// in memory, and this refactor keeps that behavior unchanged.
     func restoreDefaultsAfterApplicationReset() {
         favoriteBackground = FavoriteBackgroundSettings()
         favoriteItemTapAction = .detail
     }
 
-    // MARK: - Background image
 
-    // MARK: - Library display
 
     func updateFavoriteItemTapAction(_ value: FavoriteItemTapAction) {
         persistSettings(\.favoriteItemTapAction, to: value, updateSettings: updateSettings) {
@@ -99,17 +87,10 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         }
     }
 
-    /// Live slider tracking for the iPad grid card size: updates only the
-    /// in-memory value so a drag does not enqueue one save per tick.
-    /// `commitFavoriteGridCardScale()` persists once when the drag ends.
     func previewFavoriteGridCardScale(_ value: Double) {
         favoriteGridCardScale = FavoriteLibrarySettings.clampGridCardScale(value)
     }
 
-    /// Persists the slider value on drag end. The optimistic value and the
-    /// committed value coincide here (the drag already previewed it), so a
-    /// failed save keeps showing the dragged value alongside the error
-    /// message rather than yanking the knob back mid-look.
     func commitFavoriteGridCardScale() {
         let value = favoriteGridCardScale
         persistSettings(\.favoriteGridCardScale, to: value, updateSettings: updateSettings) {
@@ -117,7 +98,6 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
         }
     }
 
-    // MARK: - Sync behavior
 
     func updateFavoriteAddSyncPromptEnabled(_ value: Bool) {
         persistSettings(\.favoriteAddSyncPromptEnabled, to: value, updateSettings: updateSettings) {

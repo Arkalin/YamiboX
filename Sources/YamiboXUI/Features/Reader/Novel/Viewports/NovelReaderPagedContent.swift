@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// A separate observation boundary for paging layout and viewport selection.
 struct NovelReaderPagedContent: View {
     @Environment(\.readerToolbarStyle) private var toolbarStyle
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

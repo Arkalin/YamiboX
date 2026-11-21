@@ -97,8 +97,6 @@ private struct MangaReaderLoadedContent: View {
     @Environment(\.mangaViewportHandoff) private var handoff
     @State private var pagedCache = MangaPagedContentCache()
 
-    /// Reduce Motion downgrades the 3D page-curl transition to the already
-    /// available quick-fade style; direct-manipulation slide stays as is.
     private var effectiveSettings: MangaReaderSettings {
         guard reduceMotion, settings.pagedTurnStyle == .pageCurl else { return settings }
         var adjusted = settings
@@ -202,7 +200,6 @@ private struct MangaReaderLoadedContent: View {
         let (plan, didRebuild) = pagedCache.plan(loaded: loaded, direction: settings.pageTurnDirection,
                                                 usesTwoPageSpread: usesTwoPageSpread)
         if let handoff {
-            // Capture the mounted viewport before SwiftUI replaces or reloads it.
             if didRebuild, handoff.pendingFocus == nil {
                 handoff.layoutFocus = controlPageTurnBridge.capturePosition?()?.focus
             }
@@ -228,8 +225,6 @@ private struct MangaReaderLoadedContent: View {
     }
 }
 
-/// View-lifetime memoization, not observable state: selection and chrome reads
-/// reuse immutable window data without scheduling a second layout pass.
 @MainActor
 private final class MangaPagedContentCache {
     private var basePlan: MangaPagedReadingPlan?

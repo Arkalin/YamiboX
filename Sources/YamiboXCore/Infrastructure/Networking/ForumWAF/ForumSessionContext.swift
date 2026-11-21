@@ -1,8 +1,6 @@
 import Foundation
 
 public extension SessionStoring {
-    /// A private browser/login jar supplies its own storage ID. Native requests
-    /// without a jar share the owning store's scoped Cookie identity.
     func forumRequestContext(
         snapshot: AccountSessionSnapshot,
         credentials: YamiboRequestCredentials? = nil,

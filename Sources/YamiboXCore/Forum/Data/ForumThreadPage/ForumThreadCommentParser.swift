@@ -1,6 +1,5 @@
 import Foundation
 
-/// Parses the inline comment ("点评") list attached to a post.
 enum ForumThreadCommentParser {
     static func comments(in container: Element, postID: String) throws -> [ForumThreadPostComment] {
         let roots = (

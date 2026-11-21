@@ -59,14 +59,6 @@ extension DownloadStore {
         return await offlineImageData(imageURLString: imageURLString, fileName: fileName)
     }
 
-    /// Existence-only variant of `offlineImageData(for:)`: a point lookup on
-    /// the `image_url` primary key plus a file-existence probe, mirroring
-    /// `isMembershipComplete`. It never reads file contents, so completeness
-    /// reconciliation over a chapter's worth of images stays O(images) cheap
-    /// metadata checks instead of loading every downloaded image into memory.
-    /// Deliberately read-only: unlike `offlineImageData(for:)` it does not
-    /// delete the DB row when the file has gone missing, the same trade-off
-    /// `isMembershipComplete` already makes for its downloaded/notDownloaded decisions.
     func hasOfflineImage(for imageURL: URL) async -> Bool {
         await ensureQueueRecoveredBestEffort()
         let imageURLString = imageURL.absoluteString
@@ -178,9 +170,6 @@ extension DownloadStore {
                     arguments: [imageURLString, fileName, data.count]
                 )
 
-                // Narrowed via the image_url index instead of scanning every downloaded chapter:
-                // only chapters that actually reference this image can possibly have just
-                // become complete.
                 let candidateOwnerTIDs = try Row.fetchAll(
                     db,
                     sql: """
@@ -217,9 +206,6 @@ extension DownloadStore {
         }
     }
 
-    /// A known absent asset proves this chapter cannot be complete. Keep one
-    /// bounded hint, rather than hydrating all chapter URLs after every image.
-    /// The final check still validates the source page and every asset file.
     private static func hasMissingMangaImage(
         ownerName: String,
         tid: String,
@@ -248,8 +234,6 @@ extension DownloadStore {
             ORDER BY images.manual_order DESC
             LIMIT 1
             """, arguments: [ownerName, tid])
-        // Full membership reads parse and normalize URL strings. Preserve
-        // that fallback for legacy rows not written as URL.absoluteString.
         guard let missing else { return false }
         let missingURL: String = missing["image_url"]
         guard URL(string: missingURL)?.absoluteString == missingURL else { return false }
@@ -336,14 +320,6 @@ extension DownloadStore {
         return true
     }
 
-    /// Sums `byte_count` over a set of image URLs with one indexed
-    /// `SUM ... WHERE image_url IN (...)` query per chunk, replacing the
-    /// one-SELECT-per-URL loops that dominated management-snapshot and
-    /// disk-usage builds. Chunked (same 200 bound as `ContentCoverStore`)
-    /// because SQLite caps bound parameters per statement — historically 999 —
-    /// and callers can pass a whole library's worth of URLs. Takes a `Set` so
-    /// each URL contributes once, which matches both the replaced loops and
-    /// the table's `image_url` primary key.
     static func imageAssetByteCount(forImageURLStrings imageURLStrings: Set<String>, in db: Database) throws -> Int {
         let allURLStrings = Array(imageURLStrings)
         let chunkSize = 200
@@ -385,8 +361,6 @@ extension DownloadStore {
         return sanitized.isEmpty ? "bin" : sanitized
     }
 
-    /// Point lookups on the four `image_url` indexes: O(log n) per candidate,
-    /// instead of materializing every reference row for each GC pass.
     private static func isImageReferenced(_ imageURLString: String, in db: Database) throws -> Bool {
         try Bool.fetchOne(
             db,

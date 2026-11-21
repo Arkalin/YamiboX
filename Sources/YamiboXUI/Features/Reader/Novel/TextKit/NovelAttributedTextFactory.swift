@@ -18,15 +18,8 @@ final class NovelRubyAnnotation: NSObject {
     init(text: String) { self.text = text }
 }
 
-/// Owns the Novel Text Attributed Document semantics for TextKit measurement
-/// and drawing: chapter title styling, paragraph indentation, font family,
-/// kerning, line height, and justification.
 enum NovelAttributedTextFactory {
     static let defaultBaseFontSize: Double = 22
-    /// Leading tracks the type size (6pt of extra leading at the default
-    /// 22pt body) instead of staying a fixed 6pt: a fixed value reads loose
-    /// at small sizes and cramped at large ones. `lineHeightScale` still
-    /// multiplies on top as the user's own adjustment.
     static let lineSpacingRatio: Double = 6.0 / 22.0
     private static let bodyFontWeight: ReaderPlatformFontWeight = .light
 
@@ -388,8 +381,6 @@ extension NovelReaderAppearanceSettings {
             let name = weight == .bold ? resolvedFont.boldName : resolvedFont.bodyName
             if let font = UIFont(name: name, size: size) { return font }
         }
-        // Standalone layout callers may not have prepared the library. Never
-        // pretend a serif or rounded system design is a Chinese font family.
         if case let .curated(curated) = fontSelection {
             let fonts = UIFont.fontNames(forFamilyName: curated.familyName).compactMap { UIFont(name: $0, size: size) }
             let suffix = weight == .bold ? "-Bold" : "-Light"

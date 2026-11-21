@@ -120,7 +120,6 @@ struct NovelReaderFontLibraryView: View {
             }
         }
         .padding(.vertical, 4)
-        // Keep separators aligned to the row, not its text or selection checkmark.
         .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
         .alignmentGuide(.listRowSeparatorTrailing) { $0.width }
     }

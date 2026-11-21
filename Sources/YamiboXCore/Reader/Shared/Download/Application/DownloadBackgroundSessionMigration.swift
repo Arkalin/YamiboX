@@ -1,7 +1,5 @@
 import Foundation
 
-/// Reconnect to the legacy system session only to cancel it. Never admit new
-/// work or commit its results; the persisted queue keeps verified completed files.
 public actor DownloadBackgroundSessionMigration {
     public static let shared = DownloadBackgroundSessionMigration()
     private var retirement: Task<Void, Never>?

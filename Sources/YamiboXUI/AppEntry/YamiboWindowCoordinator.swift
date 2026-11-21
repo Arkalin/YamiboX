@@ -176,7 +176,6 @@ public final class YamiboWindowCoordinator {
         }
     }
 
-    /// Called by UIKit key-window notifications and actual events, never by view appearance.
     func focus(windowID: String) {
         guard models[windowID]?.value != nil else { return }
         if focusedWindowID != windowID {
@@ -212,8 +211,6 @@ public final class YamiboWindowCoordinator {
     }
 
     func acceptsPeripheralCapture(windowID: String) -> Bool {
-        // Rebinding in device settings is an explicit capture, not a
-        // reading action. It still belongs to the focused foreground window.
         guard phases[windowID] == .active else { return false }
         if let focusedWindowID { return focusedWindowID == windowID }
         let activeIDs = phases.filter { $0.value == .active }.map(\.key)
@@ -240,8 +237,6 @@ public final class YamiboWindowCoordinator {
     }
 
     private func refreshHandoffOwner() {
-        // A prewarmed/background-only window must not start advertising. Keep
-        // the last foreground owner's snapshot when every window backgrounds.
         let owner = focusedWindowID.flatMap { phases[$0] == .active ? $0 : nil }
             ?? handoffWindowID.flatMap { phases[$0] == .active ? $0 : nil }
             ?? phases.first(where: { $0.value == .active })?.key
@@ -303,7 +298,6 @@ public final class YamiboWindowCoordinator {
         accountEpoch = UUID()
         bootstrapTask = nil
         for model in liveModels { model.publishAccountChange() }
-        // Include disconnected scenes so reopening one cannot restore the previous account.
         for key in restorationDefaults.dictionaryRepresentation().keys where key.hasPrefix(Self.restorationPrefix) {
             restorationDefaults.removeObject(forKey: key)
         }

@@ -26,7 +26,6 @@ struct LocalFavoriteCollectionDraft: Identifiable {
     }
 }
 
-/// Name and color entry sheet for creating or editing a collection.
 struct LocalFavoriteCollectionEditorSheet: View {
     let draft: LocalFavoriteCollectionDraft
     let onCancel: () -> Void

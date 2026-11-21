@@ -1,6 +1,5 @@
 import Foundation
 
-/// Offsets use UTF-16, like TextKit. A range never includes half a surrogate pair.
 public struct ForumComposerRange: Equatable, Hashable, Codable, Sendable {
     public var location: Int
     public var length: Int
@@ -127,7 +126,6 @@ public enum ForumComposerDocumentError: Error, Equatable, Sendable {
     case invalidRange, overlappingEdits, missingNode, invalidParameter, protectedNode, invalidTable
 }
 
-/// Source is authoritative. Native previews and persistence never serialize TextKit attributes.
 public struct ForumComposerDocument: Equatable, Sendable {
     struct TextSplice: Equatable, Sendable {
         let nodeID: String
@@ -204,8 +202,6 @@ public struct ForumComposerDocument: Equatable, Sendable {
             changedUTF16 = sourceUTF16
             changedUTF16.replaceSubrange(edit.range.location..<edit.range.end, with: edit.replacement.utf16)
         } else {
-            // Edits are in original-source coordinates. Append each unchanged
-            // run once instead of shifting the growing suffix for every edit.
             changedUTF16 = []
             changedUTF16.reserveCapacity(sourceUTF16.count + edits.reduce(0) { $0 + $1.delta })
             var cursor = 0
@@ -252,9 +248,6 @@ public struct ForumComposerDocument: Equatable, Sendable {
         revision &+= 1
     }
 
-    /// Equivalent to applying the validated, nonoverlapping edits in reverse
-    /// order with downstream affinity. Earlier edits only add their deltas;
-    /// the last opening at/before an offset owns replacement and insertion ties.
     private struct SourceEditOffsetMap {
         private struct Entry {
             let start: Int
@@ -300,8 +293,6 @@ public struct ForumComposerDocument: Equatable, Sendable {
         return !(0xDC00...0xDFFF).contains(sourceUTF16[offset])
     }
 
-    /// Check before combining history edits so a structural edit keeps its
-    /// original sequence of reparses and node identity retention.
     func canSpliceSingle(_ edit: ForumComposerSourceEdit, nodeID: String) -> Bool {
         guard edit.range.location >= 0, edit.range.end <= sourceUTF16.count,
               validBoundary(edit.range.location), validBoundary(edit.range.end) else { return false }
@@ -313,7 +304,6 @@ public struct ForumComposerDocument: Equatable, Sendable {
         guard edit.replacement.rangeOfCharacter(from: delimiters) == nil,
               substring(edit.range).rangeOfCharacter(from: delimiters) == nil else { return nil }
         for node in nodes where node.range.contains(edit.range) {
-            // A delimiter-free leaf cannot become a tag by joining its neighbors.
             if node.kind == .text, delimiterFreeTextNodeIDs.contains(node.id) { return node.id }
             if let id = spliceLeaf(edit, in: node.children) { return id }
         }
@@ -341,8 +331,6 @@ public struct ForumComposerDocument: Equatable, Sendable {
 
     private func splice(_ node: ForumComposerNode, edit: ForumComposerSourceEdit, leafID: String) -> ForumComposerNode {
         var node = node
-        // At a leaf boundary insertion belongs to the leaf ending there, not
-        // to its following sibling. Ancestors expand with that leaf.
         func containsLeaf(_ node: ForumComposerNode) -> Bool { node.id == leafID || node.children.contains(where: containsLeaf) }
         if containsLeaf(node) {
             node.range.length += edit.delta

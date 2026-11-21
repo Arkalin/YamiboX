@@ -12,8 +12,6 @@ public actor NetworkLogStore {
 
     private struct ClearState: Codable {
         var clearedAt: Date?
-        // Batch eviction leaves spare capacity. Remember its oldest retained
-        // time so late completions cannot refill that space with older history.
         var retainedSince: Date?
     }
 
@@ -47,8 +45,6 @@ public actor NetworkLogStore {
     private var clearedAt: Date?
     private var retainedSince: Date?
     private var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
-    // Space for the bounded clear watermark and its atomic replacement. This
-    // keeps even metadata writes within the strict on-disk capacity.
     private let stateReservationBytes: Int64 = 256
 
     private var logCapacityBytes: Int64 { Self.capacityBytes - stateReservationBytes }
@@ -63,7 +59,6 @@ public actor NetworkLogStore {
             ?? fileManager.temporaryDirectory.appendingPathComponent("YamiboXNetworkLogExports", isDirectory: true)
     }
 
-    /// Newest request first, independent of the order in which requests finish.
     public func entries() throws -> [NetworkLogEntry] {
         try loadIfNeeded()
         return orderedRecords().reversed().map(\.entry)
@@ -87,7 +82,6 @@ public actor NetworkLogStore {
 
     public func clear() throws {
         let clearedAt = generation.advance()
-        // Invalidates tokens even when a write or deletion subsequently fails.
         defer { publishChange() }
         do {
             try loadIfNeeded()
@@ -102,8 +96,6 @@ public actor NetworkLogStore {
         }
     }
 
-    /// Every line carries a formatVersion; no unbounded sidecar or metadata file
-    /// participates in the retained storage budget.
     public func export() throws -> URL {
         try loadIfNeeded()
         guard !segments.isEmpty else { throw NetworkLogStoreError.empty }
@@ -121,15 +113,11 @@ public actor NetworkLogStore {
     }
 
     func append(_ entry: NetworkLogEntry, generation requestGeneration: UUID) throws {
-        // Background tasks can acquire a token only after session restoration;
-        // their later metrics still identify requests started before a clear.
         do {
             try loadIfNeeded()
             guard generation.accepts(requestGeneration, startedAt: entry.startedAt) else { return }
             try appendEntry(entry)
         } catch {
-            // Recover actual complete bytes on the next operation after partial
-            // append, rewrite, or removal rather than trusting mutated memory.
             loaded = false
             throw error
         }
@@ -148,9 +136,6 @@ public actor NetworkLogStore {
 
         let requiredBytes = logBytes + Int64(data.count) - logCapacityBytes
         if requiredBytes > 0 {
-            // Drop about one segment's worth in a batch, in startedAt order.
-            // The oldest boundary may retain fewer records than a byte-perfect
-            // FIFO; no record newer than this request is eligible for eviction.
             guard try evictOldestRecords(requiredBytes: requiredBytes, notNewerThan: entry.startedAt) else { return }
         }
 
@@ -213,8 +198,6 @@ public actor NetworkLogStore {
         for url in files {
             let data = try Data(contentsOf: url)
             var records: [Record] = []
-            // Only newline-terminated, independently decodable records survive a
-            // partial append. Other valid lines remain available after recovery.
             var start = data.startIndex
             for index in data.indices where data[index] == 10 {
                 let line = data[start...index]
@@ -251,9 +234,6 @@ public actor NetworkLogStore {
         }
     }
 
-    /// Evict oldest records once per batch and rewrite each affected segment
-    /// at most once. Equal startedAt values remain admissible, matching the
-    /// previous timestamp-only admission rule, including after restoration.
     private func evictOldestRecords(requiredBytes: Int64, notNewerThan date: Date?) throws -> Bool {
         let targetBytes = max(requiredBytes, segmentCapacityBytes)
         var retiring: [Record] = []
@@ -268,13 +248,8 @@ public actor NetworkLogStore {
         guard retiringBytes >= requiredBytes, let boundary = retiring.last?.entry.startedAt else { return false }
         let keys = Set(retiring.map(RecordKey.init))
         let earliestRemaining = ordered.first { !keys.contains(RecordKey($0)) }?.entry.startedAt
-        // Also retain the arriving request when it is older than every record
-        // left after eviction. The watermark follows the oldest retained time,
-        // not the last removed time, so removed boundary rows stay rejected.
         let oldestRetained = [date, earliestRemaining].compactMap { $0 }.min() ?? boundary
         retainedSince = max(retainedSince ?? oldestRetained, oldestRetained)
-        // Persist before deleting so an interrupted batch cannot restore older
-        // history. Metadata + its atomic replacement use reserved capacity.
         try writeState()
         for index in segments.indices.reversed() {
             let retained = segments[index].records.filter { !keys.contains(RecordKey($0)) }
@@ -304,8 +279,6 @@ public actor NetworkLogStore {
         let data = segment.records.reduce(into: Data()) { $0.append($1.data) }
         let handle = try FileHandle(forWritingTo: segment.url)
         defer { try? handle.close() }
-        // Truncating first avoids temporarily duplicating retained bytes under
-        // the strict limit. An interrupted rewrite is repaired on the next load.
         try handle.truncate(atOffset: 0)
         try handle.write(contentsOf: data)
     }

@@ -102,7 +102,6 @@ private struct ReaderLoadStateFailureContent: View {
 }
 
 #if os(iOS)
-// Collection-cell hosting configurations cannot host a SwiftUI sheet's navigation stack.
 private struct ReaderFailureDetailsButton: UIViewRepresentable {
     let details: LoadFailureDetails
     let tint: Color
@@ -271,8 +270,6 @@ final class ReaderLoadStateOverlayView: UIView {
         detailsButton.setTitle(L10n.string("load_failure.details"), for: .normal)
         detailsButton.accessibilityIdentifier = "load-failure-details"
         detailsButton.addTarget(self, action: #selector(handleDetailsButtonTap), for: .touchUpInside)
-        // Register the native buttons with the same priority and visible bounds
-        // as SwiftUI remote controls, above the reader's zoom/gesture surface.
         for (button, target) in [(retryButton, retryRemoteTarget), (detailsButton, detailsRemoteTarget)] {
             target.priority = 10
             target.frame = button.bounds

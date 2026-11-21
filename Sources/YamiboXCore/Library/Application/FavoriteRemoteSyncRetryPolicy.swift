@@ -1,7 +1,5 @@
 import Foundation
 
-/// Bounded retries for read-only sync requests; failures leave their original
-/// diagnostic wrapper intact for the engine's item/run failure decision.
 struct FavoriteRemoteSyncRetryPolicy: Sendable {
     var wait: @Sendable (_ retry: Int) async throws -> Void = { retry in
         try await Task.sleep(for: .milliseconds(250 * retry))
@@ -56,8 +54,6 @@ struct FavoriteRemoteSyncRetryPolicy: Sendable {
         case let .invalidResponse(statusCode):
             return statusCode == nil || statusCode == 408 || statusCode.map { 500...599 ~= $0 } == true
         case .parsingFailed, .emptyHTML, .unreadableBody:
-            // A transient incomplete page can fail parsing; retain the
-            // existing bounded retry rather than importing a placeholder.
             return true
         default:
             return false

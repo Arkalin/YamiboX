@@ -1,6 +1,5 @@
 import Foundation
 
-/// Observes individual URLSession attempts, below WAF recovery and business decoding.
 enum NetworkLoggedTransport {
     static func data(
         for request: URLRequest,
@@ -25,7 +24,6 @@ enum NetworkLoggedTransport {
                 try await withCheckedThrowingContinuation { continuation in
                     let task = session.dataTask(with: request)
                     task.delegate = observer
-                    // Plain task creation precedes assigning the per-task delegate.
                     observer.urlSession(session, didCreateTask: task)
                     if !receiver.start(task, continuation: continuation) {
                         task.cancel()
@@ -120,8 +118,6 @@ enum NetworkLoggedTransport {
                 if let admitted {
                     recorder.addRedirect(to: token, from: response, request: admitted)
                 } else {
-                    // A denied redirect may complete without a data-delegate
-                    // response callback. Preserve its explicit continuation URL.
                     receiver?.receive(response)
                 }
                 completionHandler(admitted)
@@ -172,7 +168,6 @@ enum NetworkLoggedTransport {
                 finalURL: task?.currentRequest?.url,
                 duration: duration
             )
-            // The task retains its task delegate; don't retain it back past completion.
             lock.withLock { self.task = nil }
         }
     }

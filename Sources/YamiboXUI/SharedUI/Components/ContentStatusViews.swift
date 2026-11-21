@@ -3,9 +3,6 @@ import YamiboXCore
 
 struct ContentLoadingView: View {
     @Environment(\.forumTheme) private var theme
-    /// How the placeholder occupies its container: embedded in scroll
-    /// content, stretched over the available space, or stretched with the
-    /// forum page background behind it.
     enum Layout {
         case inline
         case fills

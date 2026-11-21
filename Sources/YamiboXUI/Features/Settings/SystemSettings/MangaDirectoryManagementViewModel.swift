@@ -2,7 +2,6 @@ import Foundation
 import Observation
 import YamiboXCore
 
-/// State and commands for the manga directory management page.
 @MainActor
 @Observable
 final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
@@ -32,9 +31,6 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
     let dependencies: SettingsDependencies
     let activity: SystemSettingsActivity
 
-    /// Deletions here shrink the Storage page's manga-directory figure, so
-    /// this page refreshes the shared usage model rather than a private
-    /// counter.
     private let storageUsage: SettingsStorageUsage
     @ObservationIgnored private var isDeletingDirectories = false
     @ObservationIgnored private var needsDirectoryRefresh = false
@@ -74,7 +70,6 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         pendingMangaDirectoryManagementConfirmation = nil
     }
 
-    // MARK: - Loading
 
     func refreshMangaDirectoryManagement() async {
         guard !isDeletingDirectories else {
@@ -89,7 +84,6 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         await refreshMangaDirectoryManagementRows()
     }
 
-    // MARK: - Deletion requests and confirmation
 
     func requestMangaDirectoryDeletion(id: String) {
         prepareMangaDirectoryManagementConfirmation(ids: [id])
@@ -112,7 +106,6 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         await clearMangaDirectories(ids: confirmation.directoryIDs)
     }
 
-    // MARK: - Selection
 
     func setMangaDirectoryManagementSelectionMode(_ isSelecting: Bool) {
         isMangaDirectoryManagementSelectionMode = isSelecting
@@ -131,10 +124,6 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         }
     }
 
-    /// Selecting every visible row and deleting the selection is how this
-    /// screen supports "clear all" — the same select-all-then-delete flow the
-    /// download management screen already uses, rather than a second,
-    /// separate destructive action.
     func toggleAllMangaDirectoryManagementRows() {
         let visibleIDs = Set(mangaDirectoryManagementRows.map(\.id))
         guard !visibleIDs.isEmpty else { return }
@@ -146,21 +135,14 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         }
     }
 
-    // MARK: - Private
 
-    /// Refreshes rows/selection/confirmation unconditionally, even when a
-    /// directory partway through the batch fails to delete — the refresh's
-    /// own `formIntersection` against the store's real current directories
-    /// (in `refreshMangaDirectoryManagementRows`) is what reconciles
-    /// `selectedMangaDirectoryIDs` to reality, rather than assuming the whole
-    /// batch either fully succeeded or fully no-opped.
     private func clearMangaDirectories(ids: [String]) async -> Bool {
         guard !isDeletingDirectories else { return false }
         let normalizedIDs = normalizedMangaDirectoryIDs(ids)
         guard !normalizedIDs.isEmpty else { return false }
 
         isDeletingDirectories = true
-        directoryRefreshGeneration &+= 1 // Invalidate reads started before deletion.
+        directoryRefreshGeneration &+= 1
         activeAction = .clearingMangaDirectory
         defer {
             isDeletingDirectories = false
@@ -178,8 +160,6 @@ final class MangaDirectoryManagementViewModel: SystemSettingsActivityReporting {
         }
 
         pendingMangaDirectoryManagementConfirmation = nil
-        // Reconcile partial success even when the command's task was cancelled.
-        // Invalidations during the final read request a follow-up snapshot.
         await Task { @MainActor [self] in
             await storageUsage.refresh()
             repeat {

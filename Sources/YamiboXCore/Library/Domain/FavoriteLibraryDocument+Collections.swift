@@ -1,7 +1,5 @@
 import Foundation
 
-// Collection mutations of the favorites library document. Split from the
-// former monolithic FavoriteLibrary.swift; method bodies moved verbatim.
 extension FavoriteLibraryDocument {
     public mutating func createCollection(
         categoryID: String,
@@ -90,9 +88,6 @@ extension FavoriteLibraryDocument {
         }
     }
 
-    /// Preserves the order of the former per-collection operations while
-    /// visiting the item array once. Decoded documents may contain duplicate
-    /// collection IDs, so the first collection still determines its parent.
     public mutating func dissolveCollections(
         ids collectionIDs: [String],
         now: () -> Date = { .now }
@@ -132,11 +127,6 @@ extension FavoriteLibraryDocument {
             guard !matches.isEmpty else { return original }
             matches.sort { $0.order < $1.order }
 
-            // Normalization deduplicates by location.id, not enum equality.
-            // Unusual decoded IDs containing ":collection:" can make two
-            // different locations collide. Replay only this affected item so
-            // an earlier normalization cannot revive a suppressed parent or
-            // advance a later clock for a location that no longer exists.
             var firstLocationByID: [String: FavoriteLocation] = [:]
             let hasIDCollision = (original.locations + matches.map(\.parent)).contains { location in
                 if let first = firstLocationByID[location.id] { return first != location }

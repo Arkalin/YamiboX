@@ -106,7 +106,6 @@ public struct NovelReaderAppearanceSettings: Codable, Hashable, Sendable {
     public var indentsParagraphFirstLine: Bool
     public var loadsInlineImages: Bool
     public var forumFormat: NovelReaderForumFormatSettings
-    /// Retained for persisted-settings compatibility; the viewport determines spreads.
     public var showsTwoPagesInLandscapeOnPad: Bool
     public var backgroundStyle: ReaderBackgroundStyle
     public var readingMode: ReaderReadingMode

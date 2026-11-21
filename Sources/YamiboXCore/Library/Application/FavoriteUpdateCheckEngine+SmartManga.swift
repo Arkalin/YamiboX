@@ -2,11 +2,6 @@ import Foundation
 
 extension FavoriteUpdateCheckEngine {
 
-    // MARK: - Smart-manga directory check lane
-
-    /// One or more favorited `.mangaThread` chapters that resolved to the
-    /// same `MangaDirectory`, collapsed into a single check unit (design
-    /// decision #4: detection is per-directory, not per-favorite).
     struct MangaDirectoryCandidate {
         var directory: MangaDirectory
         var forumID: String
@@ -21,14 +16,6 @@ extension FavoriteUpdateCheckEngine {
         case failed(String)
     }
 
-    /// Gathers eligible `.mangaThread` favorites (mode ON for their own
-    /// board, per `BoardReaderSettings.isSmartComicModeEnabled` — the
-    /// authoritative gate, never inferred from a resolved directory or any
-    /// other proxy signal) and batch-resolves their tids to directories in
-    /// ONE query, then groups the resolved ones by `cleanBookName`. A
-    /// favorite whose board is mode-off, or whose tid has no resolved
-    /// directory yet, is silently excluded here — not tracked, not an
-    /// error; this pipeline never triggers directory resolution itself.
     func mangaDirectoryGroups(in document: FavoriteLibraryDocument) async -> [MangaDirectoryCandidate] {
         guard let mangaDirectoryStore, let settingsStore else { return [] }
         let settings = await settingsStore.load()
@@ -65,15 +52,6 @@ extension FavoriteUpdateCheckEngine {
         return groupsByID.values.sorted { $0.directory.cleanBookName < $1.directory.cleanBookName }
     }
 
-    /// Seeds, then (for already-tracked, due groups) refreshes and diffs
-    /// smart-manga directories. Ordering/capping (design point g/h): every
-    /// never-seen-before group is seeded first (zero network cost, always
-    /// allowed), then ALL due `.tag`-strategy groups run (cheap, no search
-    /// cooldown in the common case), then up to `nonTagCheckCap` due
-    /// non-`.tag`-strategy groups run oldest-`lastCheckedAt`-first. A
-    /// cooldown/flood-control hit stops further groups of either kind for
-    /// the rest of this run — the cooldown is global, so trying another
-    /// would just fail again and waste the run's remaining budget.
     func checkMangaDirectoryGroups(
         _ groups: [MangaDirectoryCandidate],
         nonTagCheckCap: Int,
@@ -156,9 +134,6 @@ extension FavoriteUpdateCheckEngine {
         return await settingsStore.load().favorites.smartMangaUpdateCheckInterval
     }
 
-    /// First sighting of a directory: baseline-only, zero network, no event
-    /// (design point 6 — otherwise every already-read chapter would report
-    /// as "new" the moment tracking starts).
     private func seedMangaDirectoryBaseline(
         _ group: MangaDirectoryCandidate,
         trackedTargets: inout [String: FavoriteUpdateTrackedTarget]
@@ -194,13 +169,6 @@ extension FavoriteUpdateCheckEngine {
         }
     }
 
-    /// Refreshes one directory's chapter list over the network and diffs the
-    /// result against the tracked tid baseline. `YamiboError.searchCooldown`
-    /// (the workflow's own client-side cooldown) and `.floodControl` (the
-    /// forum's own flood-control page, detected downstream in the parser)
-    /// are both an expected "not now" — never fed to the circuit breaker,
-    /// never advancing the baseline. Any other error DOES feed the breaker,
-    /// same as the thread-check lane.
     private func checkMangaDirectoryUpdate(
         group: MangaDirectoryCandidate,
         existing: FavoriteUpdateTrackedTarget,
@@ -217,17 +185,10 @@ extension FavoriteUpdateCheckEngine {
         }
 
         let workflow = await makeMangaDirectoryWorkflow(group.forumID)
-        // Seeds the search keyword from a real chapter title when the
-        // directory has none yet — any favorited chapter in the group works,
-        // so the most recently added one is as good a representative as any.
         let representativeTID = group.directory.chapters.last?.tid
 
         do {
             let result = try await workflow.updateDirectory(group.directory, currentTID: representativeTID)
-            // `existing` is only ever produced by `seedMangaDirectoryBaseline`
-            // or a prior pass through this same function, both of which
-            // always set `knownChapterTIDs` — the `?? []` here just satisfies
-            // the optional, it never actually triggers.
             let knownTIDs = target.knownChapterTIDs ?? []
             let refreshedTIDs = Set(result.directory.chapters.map(\.tid))
             let newTIDs = refreshedTIDs.subtracting(knownTIDs)

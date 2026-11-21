@@ -3,7 +3,6 @@ import Foundation
 public enum ForumWAFResponseClassifier {
     public static let maximumBodyBytes = 128 * 1024
 
-    /// Candidate responses need bounded body inspection, not automatic recovery.
     public static func mayContainChallenge(_ response: HTTPURLResponse) -> Bool {
         response.statusCode == 405 || AliyunWAFProtocol.mayContainChallenge(response)
     }
@@ -45,7 +44,6 @@ public enum ForumWAFResponseClassifier {
     }
 }
 
-/// One instance per attempt. Used for delegate hops and actual metrics alike.
 struct ForumRedirectEvidence: Sendable {
     let origin: ForumOrigin
     let originalURL: URL

@@ -170,7 +170,6 @@ public struct YamiboHandoffPayload: Codable, Hashable, Sendable {
 public struct ThreadExplicitReadingState: Codable, Hashable, Sendable {
     public var page: Int
     public var anchorPostID: String?
-    /// Non-nil means only the thread starter's posts are shown.
     public var authorID: String?
     public var isReverseOrder: Bool
 

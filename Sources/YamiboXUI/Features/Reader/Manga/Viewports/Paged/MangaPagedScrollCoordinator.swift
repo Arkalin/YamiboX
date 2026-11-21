@@ -131,11 +131,9 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         if let previous = lastLaidOutViewportSize, size != previous {
             switch paging.owner {
             case .transition:
-                // An explicit request remains pending; a local turn returns to its anchor.
                 paging.owner = .none
                 transitionDriver.cancel(in: collection)
             case .native:
-                // Keep the admitted drag alive across layout changes.
                 break
             default:
                 transitionDriver.cancel(in: collection)
@@ -185,8 +183,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         guard let collection = collectionView, scrollView === collection, let anchor = paging.anchor else { return }
-        // A recognizer may get to its delegate while a layout or an image callback
-        // is on the stack. Only a pan admitted by the adapter may start a turn.
         guard nativePanAdmitted, case .none = paging.owner, unappliedPlacement == nil else {
             nativePanAdmitted = false
             reconcilePaging()
@@ -236,7 +232,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     }
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-        // A UIKit offset change alone is not a navigation command.
         reconcilePaging()
     }
 
@@ -308,8 +303,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     }
 
     func updateGestureState(in collection: UICollectionView) {
-        // Changing UIKit's isEnabled during a gesture cancels it. Use the new
-        // effect only after ownership has returned from an admitted pan.
         switch paging.owner {
         case .native, .discrete: return
         default: break
@@ -378,8 +371,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             land(at: candidate, reason: .navigation, in: collection)
             if let boundary { publishBoundary(boundary) }
         case .discrete:
-            // Recognition has no authority over the outer offset until it
-            // produces a navigation target at release.
             if let x = alignedOffsetX(for: anchor, in: collection) { _ = align(to: x, in: collection) }
         case .none, .image:
             if let turn = paging.pendingTurn, startTurn(turn, in: collection) { return }
@@ -451,7 +442,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
     @discardableResult
     private func startTurn(_ turn: Turn, in collection: UICollectionView) -> Bool {
         guard let x = alignedOffsetX(for: turn.target, in: collection) else { return false }
-        // Install ownership before any synchronous UIKit offset/layout callback.
         paging.owner = .transition(turn)
         paging.pendingTurn = nil
         stopSettlementObservation()
@@ -487,8 +477,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
             }
             land(at: turn.target, reason: turn.reason, in: collection)
         case .cancelled, .finished:
-            // Still owned here means the turn did not land. Explicit placement
-            // stays outstanding; an adjacent turn returns to its prior anchor.
             paging.owner = .none
             collection.setNeedsLayout()
         }
@@ -572,8 +560,6 @@ final class MangaPagedScrollCoordinator: NSObject, UICollectionViewDataSource, U
         for surface in Array(pageSurfaceInteractions.values) + Array(spreadSurfaceInteractions.values) {
             surface.runtime.setChromeVisible(parent.isChromeVisible)
         }
-        // UIHostingConfiguration can detach a representable while replacing its
-        // content. A policy-only chrome update must not interrupt native input.
         guard needsContentUpdate else { return }
 
         for case let cell as ReaderPagedPageTurnCell in collectionView.visibleCells {

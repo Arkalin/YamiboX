@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// On-device counterpart of the novel reader's edit menu. Only the controls
-/// live here; the current external viewport still resolves and acts on text.
 struct ReaderDeviceTextMenu: View {
     let menu: NovelTextMenu
     @State private var chooseStyle: ((LikeStyle) -> Void)?

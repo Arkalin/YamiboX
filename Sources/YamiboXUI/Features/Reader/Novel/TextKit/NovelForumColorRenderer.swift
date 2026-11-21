@@ -1,7 +1,6 @@
 import UIKit
 import YamiboXCore
 
-/// Resolves authored colors against the reader's paper, rather than the forum's card.
 enum NovelForumColorRenderer {
     static func color(hex: String?) -> UIColor? {
         guard let hex else { return nil }

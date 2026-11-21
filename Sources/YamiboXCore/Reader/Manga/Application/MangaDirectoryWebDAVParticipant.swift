@@ -3,7 +3,6 @@ import Foundation
 struct MangaDirectorySyncRecord: Codable, Equatable, Sendable {
     var directory: MangaDirectory
     var modifiedAt: Date
-    /// Content lineage, independent of identity redirects imported by other datasets.
     var contentIdentityIDs: Set<String>
     var id: String { directory.id.rawValue }
 
@@ -65,7 +64,6 @@ struct MangaDirectoryWebDAVPayload: Codable, Equatable, Sendable {
         result.deletions = deletions.merging(remote?.deletions ?? .init())
         var byID: [String: MangaDirectorySyncRecord] = [:]
         for record in records + (remote?.records ?? []) {
-            // A content union must not advance a deleted snapshot past its tombstone.
             guard !result.deletions.containsDeletion(of: record.id, updatedAt: record.modifiedAt) else { continue }
             if let existing = byID[record.id] {
                 let prefersExisting: Bool
@@ -81,8 +79,6 @@ struct MangaDirectoryWebDAVPayload: Codable, Equatable, Sendable {
                     winner.contentIdentityIDs.formUnion(other.contentIdentityIDs)
                     winner.modifiedAt = max(existing.modifiedAt, record.modifiedAt).addingTimeInterval(0.001)
                 }
-                // Once the winning content includes both origins, normal LWW
-                // refreshes (including deliberate chapter removals) remain intact.
                 byID[record.id] = winner
                 continue
             }
@@ -105,7 +101,6 @@ struct MangaDirectoryWebDAVParticipant: MangaIdentitySyncParticipant {
                 )
             },
             prepareForNormalization: { data in
-                // Capture old content lineage before rewriting directory IDs.
                 try JSONEncoder().encode(MangaDirectoryWebDAVPayload.decode(data))
             },
             contentFingerprint: { try MangaDirectoryWebDAVPayload.decode($0).contentFingerprint() },

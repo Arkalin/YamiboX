@@ -19,9 +19,6 @@ struct MangaIdentityTargetReference: Sendable {
     var chapterTID: String?
 }
 
-/// Dataset-owned payload rules. The transport decorator never switches on
-/// dataset IDs or decodes a current feature payload. Every dataset supplies a
-/// typed normalizer; JSON shape compatibility is confined to legacy imports.
 struct MangaIdentityPayloadStrategy: Sendable {
     let legacyTargetField: String?
     let legacyRecordCollection: String
@@ -76,9 +73,6 @@ struct MangaIdentityPayloadStrategy: Sendable {
         return try JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     }
 
-    /// Resolve the complete batch before merging any registry entries. An
-    /// ambiguous old backup stays untouched and retryable, rather than making
-    /// an irreversible cross-directory redirect from a historical title.
     func resolveLegacyTargets(in data: Data, legacy: Bool, directoryStore: MangaDirectoryStore, datasetID: String) async throws -> [Int: MangaIdentityLegacyTarget] {
         let references: [MangaIdentityTargetReference]
         if legacy {
@@ -126,8 +120,6 @@ struct MangaIdentityPayloadStrategy: Sendable {
         func visit(_ value: Any) {
             if let values = value as? [Any] { values.forEach(visit); return }
             guard let object = value as? [String: Any] else { return }
-            // History/progress targets are resolved with their containing
-            // record's chapter evidence, never by recursively hashing a name.
             if object["kind"] as? String == "mangaTitle",
                legacyTargetField != nil { return }
             if let name = (object["cleanBookName"] ?? object["mangaCleanBookName"]) as? String, !name.isEmpty {

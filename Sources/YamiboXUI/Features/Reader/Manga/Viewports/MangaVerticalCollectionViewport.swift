@@ -66,9 +66,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private var isUpdatingLayout = false
         private var lastAppliedLikedPageIDs: Set<String> = []
         private var pendingInitialPageIndex: Int?
-        // A programmatic jump owns the reading position until the user moves.
-        // At a clamped bottom edge, another fully visible page can otherwise
-        // win the area heuristic and immediately overwrite the requested page.
         fileprivate var placementPageID: String?
         private var lastAppliedPlacementRevision: Int?
         private var controlScroll = ReaderVerticalScrollStep()
@@ -161,9 +158,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 pendingReportedGlobalIndex = nil
                 cancelPendingCurrentPagePublish()
                 controlScroll.reset()
-                // A retained placement index belongs to its original page
-                // window. Only a new request may override the current index
-                // after prefetch inserts or removes pages.
                 let requestedIndex = parent.viewportPlacement.flatMap { placement in
                     placement.revision != lastAppliedPlacementRevision ? placement.targetPageIndex : nil
                 }
@@ -198,9 +192,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
                 maximumFactor: MangaPageZoomPolicy.maximumScale
             )
             if let placementPageID, let index = contentIdentity.firstIndex(of: placementPageID) {
-                // Image dimensions and prefetched pages can change after the
-                // jump. Reflow around its target, not a neighboring page at
-                // the viewport center.
                 view.place(contentPoint: logicalLayout.frames[index].origin, at: .zero)
             } else if let anchor, let point = logicalLayout.contentPoint(for: anchor) {
                 view.place(contentPoint: point, at: anchor.viewportPoint)
@@ -219,8 +210,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
             let actual = visible.intersection(CGRect(origin: .zero, size: logicalLayout.contentSize))
             guard force || !protected.contains(actual) || current.height > desired.height * 1.5 else { return }
             isUpdatingLayout = true
-            // Rebase the virtual window atomically. Reused cells and their image
-            // bounds must not inherit the outer scroll view's zoom animation.
             UIView.performWithoutAnimation {
                 view.collectionView.frame = desired
                 view.collectionView.contentOffset = CGPoint(x: 0, y: desired.minY)
@@ -243,8 +232,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         }
 
         private func applyPendingRatios() {
-            // Double-tap zoom uses isZoomAnimating. Keep its host geometry stable
-            // until UIKit finishes animating the presentation transform.
             guard !isDismantled, !pendingRatios.isEmpty, let view = viewport,
                   !view.isZooming, !view.isZoomBouncing, !view.isZoomAnimating, !view.isDrivenTransform else { return }
             let previous = view.snapshot
@@ -332,8 +319,6 @@ struct MangaVerticalCollectionViewport: UIViewRepresentable {
         private func retainPlacementTarget(at index: Int?) {
             cancelPendingCurrentPagePublish()
             placementPageID = index.flatMap { parent.pages.indices.contains($0) ? parent.pages[$0].id : nil }
-            // The model already published this position. Align callback dedup
-            // with it so a later user scroll can report the former visible page.
             lastReportedGlobalIndex = index
         }
 
@@ -733,9 +718,6 @@ private final class MangaVerticalCollectionPageCell: UICollectionViewCell {
         contentView.addGestureRecognizer(longPressGesture)
     }
 
-    // Called when the liked-page set changes independently of page content
-    // (e.g. a like/unlike from this same reader or the Like list sheet), so
-    // already-visible cells don't need a full `configure(...)`/image reload.
     func refreshLiked(using likedPageIDs: Set<String>) {
         guard let currentPageID else { return }
         likeBadgeImageView.isHidden = !likedPageIDs.contains(currentPageID)

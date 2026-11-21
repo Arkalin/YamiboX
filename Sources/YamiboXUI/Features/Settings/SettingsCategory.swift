@@ -41,9 +41,6 @@ public enum SettingsCategory: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// One searchable settings entry. `keywords` supplements `title` with
-/// synonyms so e.g. "缓存"/"清理"/"空间" all surface the storage-clearing
-/// rows even though none of those words appear in the row's own title.
 struct SettingsSearchEntry: Identifiable {
     let id: String
     let title: String
@@ -62,15 +59,10 @@ struct SettingsSearchEntry: Identifiable {
     }
 }
 
-/// Main-actor isolated because the entry list is device-dependent (the iPad
-/// idiom check below); its only consumer is the settings home view's search.
 @MainActor
 enum SettingsSearchRegistry {
     static let entries: [SettingsSearchEntry] = {
         var entries = baseEntries
-        // The grid card size slider only exists on iPad (see
-        // `SettingsFavoritesView`); registering it on iPhone would surface a
-        // search hit that leads to a page without the row.
         if UIDevice.current.userInterfaceIdiom == .pad {
             let scaleEntry = SettingsSearchEntry(
                 id: "favorites.grid_card_scale",

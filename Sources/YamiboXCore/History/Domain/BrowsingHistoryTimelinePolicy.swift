@@ -1,5 +1,3 @@
-/// Runtime timeline ordering and retention, shared by reconciliation and storage.
-/// Historical migrations continue to use their frozen merge rules directly.
 enum BrowsingHistoryTimelinePolicy {
     static let maximumRecords = BrowsingHistorySyncMergeV1.maximumRecords
 

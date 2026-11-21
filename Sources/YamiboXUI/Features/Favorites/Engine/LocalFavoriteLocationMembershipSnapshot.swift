@@ -1,7 +1,5 @@
 import YamiboXCore
 
-/// Tri-state per-item location membership (all / some / none of the selected
-/// items carry a location).
 enum LocalFavoriteLocationTriState: Equatable, Sendable {
     case none
     case some

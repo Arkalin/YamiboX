@@ -1,13 +1,10 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Owns the shared `yamibox.sqlite` pool: path resolution, pool configuration, and
-/// aggregation of the feature schema modules that own the actual tables.
 enum YamiboDatabase {
     static let databaseFileName = "yamibox.sqlite"
     static let cacheDirectoryName = "yamibox-cache"
 
-    /// Every feature module owning tables in `yamibox.sqlite`.
     private static let schemaModules: [any DatabaseSchemaModule.Type] = [
         DiskCacheDatabaseSchema.self,
         LibraryDatabaseSchema.self,
@@ -25,10 +22,6 @@ enum YamiboDatabase {
             ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("YamiboX", isDirectory: true)
     }
 
-    /// Root for the regenerable `yamibox-cache` file cache. Lives under
-    /// `Library/Caches`, which the OS keeps out of backups and may purge under
-    /// disk pressure; anything that must survive belongs under
-    /// `defaultRootDirectory()` instead.
     static func defaultCacheRootDirectory(fileManager: FileManager = .default) -> URL {
         let cachesBase = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("Caches", isDirectory: true)
@@ -54,18 +47,11 @@ enum YamiboDatabase {
             try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         }
         var configuration = Configuration()
-        // Several pools may point at the same database file (app plus tests);
-        // wait for concurrent writers instead of failing with SQLITE_BUSY.
         configuration.busyMode = .timeout(5)
         let databaseURL = databaseURL(rootDirectory: root, fileManager: fileManager)
         do {
             return try openAndMigratePool(at: databaseURL, configuration: configuration)
         } catch let error as DatabaseError where corruptionResultCodes.contains(error.resultCode) {
-            // Every store treats "cannot open the database" as fatal, so a
-            // corrupt file would otherwise crash-loop the app on each launch
-            // with no self-serve way out. Losing local cache/bookkeeping
-            // beats being unable to launch: quarantine the corpse for
-            // diagnosis and start over with an empty database.
             YamiboLog.persistence.error("yamibox.sqlite is corrupt; quarantining it and recreating: \(error)")
             try quarantineCorruptDatabase(at: databaseURL, fileManager: fileManager)
             return try openAndMigratePool(at: databaseURL, configuration: configuration)
@@ -80,9 +66,6 @@ enum YamiboDatabase {
         return pool
     }
 
-    /// Moves the database file (and its WAL/SHM sidecars) aside under a
-    /// timestamped `.corrupt-*` name instead of deleting it, so the corpse
-    /// stays available for diagnosis.
     private static func quarantineCorruptDatabase(at databaseURL: URL, fileManager: FileManager) throws {
         let suffix = ".corrupt-\(Int(Date.now.timeIntervalSince1970))"
         for sidecar in ["", "-wal", "-shm"] {

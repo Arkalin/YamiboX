@@ -10,12 +10,7 @@ struct ImageBrowserItem: Identifiable {
     let id: String
     let source: YamiboImageSource
     let title: String
-    /// Optional user-authored context shown with the browser chrome.
     let caption: String?
-    /// Optional local-bytes-first loader (e.g. Like Library's user-retained
-    /// image store). The page view tries this before falling back to the
-    /// network image pipeline. Existing call sites omit it and behave
-    /// exactly as before.
     let localDataProvider: (@Sendable () async -> Data?)?
 
     init(
@@ -164,11 +159,6 @@ struct ImageBrowserView: View {
         items.first { $0.id == selectedItemID } ?? items.first
     }
 
-    /// Image actions presented from a long-press context menu on the image
-    /// itself (replacing the old toolbar ellipsis menu). Long-press needs a
-    /// stationary hold, so it never competes with the pager's swipe, the
-    /// zoom pan/pinch, the dismiss drag, or the tap gestures. Re-entrancy
-    /// while an action runs is guarded inside `performImageAction`.
     @ViewBuilder
     private var imageActionsMenu: some View {
         if currentItem != nil {
@@ -241,8 +231,6 @@ struct ImageBrowserView: View {
         return false
     }
 
-    /// Keeps a faint dim until the swipe commits so the underlying screen
-    /// shows through progressively during the drag, Photos-style.
     private var backgroundOpacity: Double {
         guard !isSwipeDismissCommitted else { return 0 }
         return 1 - Double(min(max(swipeDismissProgress, 0), 1)) * 0.9
@@ -349,8 +337,6 @@ struct ImageBrowserView: View {
 
     private func beginSwipeDownDismissCommit() {
         guard !isSwipeDismissCommitted else { return }
-        // Ease *out*: the dim releases immediately on commit instead of
-        // hesitating the way an ease-in curve does.
         withAnimation(.easeOut(duration: 0.18)) {
             isSwipeDismissCommitted = true
             swipeDismissProgress = 1
@@ -375,8 +361,6 @@ private struct ImageBrowserContentView: View {
 
     var body: some View {
         if mode == .multiple, items.count > 1 {
-            // Page position lives in the toolbar ("N / M"): with dozens of
-            // forum images the page-dot indicator would overflow the screen.
             let selectedIndex = items.firstIndex { $0.id == selectedItemID } ?? 0
             TabView(selection: $selectedItemID) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
@@ -408,8 +392,6 @@ private struct ImageBrowserContentView: View {
 private struct ImageBrowserPageView: View {
     @Environment(\.yamiboImagePipeline) private var imagePipeline
     let item: ImageBrowserItem
-    /// Pages away from the current selection (0 = the visible page); drives
-    /// windowed loading, since `.page` `TabView` builds every page up front.
     let pageDistance: Int
     let dismissesViaSystemZoomTransition: Bool
     let onSingleTap: () -> Void
@@ -428,12 +410,6 @@ private struct ImageBrowserPageView: View {
     @Environment(\.accessibilityPlayAnimatedImages) private var playsAnimatedImages
 
     var body: some View {
-        // The page keeps one constant subtree — the zoomable page is always
-        // mounted (with a nil image while loading) and the loading/failure
-        // states are opacity-toggled overlays. Structural edits here would
-        // land exactly when the pager settles (windowed loads and evictions
-        // fire on selection changes) and `TabView(.page)` freezes its page
-        // animation mid-flight when a page's subtree changes shape.
         ImageBrowserZoomableImagePage(
             image: image,
             animationFrame: animationFrame,
@@ -472,19 +448,10 @@ private struct ImageBrowserPageView: View {
         }
     }
 
-    /// Only pages near the selection load — without the window, a dozens-of-
-    /// images forum gallery would download and decode everything the moment
-    /// the browser opens.
     private var isWithinLoadWindow: Bool { pageDistance <= 2 }
 
-    /// Loaded pages slightly beyond the load window keep their image so quick
-    /// back-and-forth flips don't thrash; farther ones release it and reload
-    /// from the pipeline cache on revisit.
     private var isWithinKeepWindow: Bool { pageDistance <= 4 }
 
-    /// Only the page the reader is actually looking at animates; pages held in
-    /// the keep window are off-screen, and decoding frames for them would be
-    /// invisible work.
     private var animationIdentity: String {
         "\(item.source.cacheKey)#\(animatedData?.count ?? 0)#\(pageDistance == 0)#\(isPlaybackActive)"
     }
@@ -528,8 +495,6 @@ private struct ImageBrowserPageView: View {
             image = loaded.image
             animatedData = loaded.animatedData
         } catch {
-            // Leaving the load window cancels the task mid-flight; that is
-            // routine paging, not a failure the retry UI should surface.
             guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
             YamiboLog.reader.warning("Failed to load image for browser item \(item.id): \(error)")
             failureDetails = LoadFailureDetails(error: error, requestContext: item.source.url.absoluteString)
@@ -545,9 +510,6 @@ private struct ImageBrowserPageView: View {
     }
 }
 
-/// Loading/failure chrome for one page, mounted permanently and toggled via
-/// opacity so state flips never change the page's view-tree shape (see the
-/// structural-stability note in `ImageBrowserPageView.body`).
 private struct ImageBrowserPageStatusOverlay: View {
     let isLoading: Bool
     let didFail: Bool
@@ -566,17 +528,12 @@ private struct ImageBrowserPageStatusOverlay: View {
                 .opacity(didFail ? 1 : 0)
                 .accessibilityHidden(!didFail)
         }
-        // Invisible states must not steal the page's taps (chrome toggle) or
-        // drags; only the failure state exposes a tappable retry button.
         .allowsHitTesting(didFail)
     }
 }
 
-/// The zoom container pans enlarged images; the directional dismiss pan
-/// only begins at minimum zoom and leaves horizontal drags to the pager.
 private struct ImageBrowserZoomableImagePage: View {
     let image: UIImage?
-    /// The animated payload's current frame, or `nil` for a still image.
     let animationFrame: UIImage?
     let title: String
     let isCurrentPage: Bool
@@ -597,7 +554,6 @@ private struct ImageBrowserZoomableImagePage: View {
 
     var body: some View {
         GeometryReader { geometry in
-            // Keep gesture coordinates fixed while the image follows the drag.
             ZStack {
                 ImageBrowserZoomableScrollView(
                     image: image,
@@ -611,10 +567,6 @@ private struct ImageBrowserZoomableImagePage: View {
                 .opacity(imageOpacity)
             }
             .gesture(ImageBrowserDismissPanGesture(
-                // The system zoom transition owns its entire interactive
-                // dismissal, not just the animation after finger release.
-                // Moving/fading the image ourselves gives it an already
-                // displaced page to shrink back into the thumbnail.
                 isEnabled: !dismissesViaSystemZoomTransition && !isSwipeDismissCommitted,
                 zoomFactor: zoomFactor,
                 onChanged: { dragTranslation = $0 },
@@ -629,8 +581,6 @@ private struct ImageBrowserZoomableImagePage: View {
         }
         .onChange(of: isCurrentPage) { _, isCurrentPage in
             guard !isCurrentPage else { return }
-            // Reset pages when paging away, not when dismissal starts:
-            // the outgoing page must keep its geometry during the transition.
             zoomProxy.resetZoom(animated: false)
             dragTranslation = .zero
         }
@@ -682,7 +632,6 @@ private struct ImageBrowserZoomableImagePage: View {
         committedTranslation = CGSize(width: translation.x, height: max(translation.y, 0))
         onSwipeDownCommit()
 
-        // Reduce Motion: no fly-away travel, dismiss as a plain cross-fade.
         guard !reduceMotion else {
             withAnimation(.easeInOut(duration: 0.2), completionCriteria: .logicallyComplete) {
                 imageOpacity = 0
@@ -692,8 +641,6 @@ private struct ImageBrowserZoomableImagePage: View {
             return
         }
 
-        // A still-loading page has no image to measure; the container-height
-        // floor below already gives the fly-away a sensible travel distance.
         let imageHeight = image.map {
             ImageContentGeometry.aspectFitFrame(imageSize: $0.size, containerSize: containerSize).height
         } ?? 0
@@ -701,9 +648,6 @@ private struct ImageBrowserZoomableImagePage: View {
             containerSize.height - committedTranslation.height + imageHeight * 0.35,
             containerSize.height * 0.45
         )
-        // Continue the exit at the finger's release speed instead of
-        // restarting from zero on a fixed curve — the seam between drag and
-        // animation disappears.
         let initialVelocity = GesturePhysics.relativeVelocity(velocity.y, from: 0, to: exitDistance)
         withAnimation(.easeOut(duration: 0.25)) {
             imageOpacity = 0
@@ -925,10 +869,6 @@ private struct ImageBrowserFeedback: Identifiable {
     }
 }
 
-/// Lazily materializes the shared image when the user commits to sharing:
-/// ShareLink drives the export, so no temp file or spinner state is needed
-/// up front. The exported file lands in the system temporary directory and
-/// is reclaimed by the OS.
 private struct ImageBrowserShareableImage: Transferable {
     let source: YamiboImageSource
     let fileExtension: String

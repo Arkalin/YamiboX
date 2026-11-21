@@ -1,7 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Shared by startup and the settings preview, including actual text-area sampling.
 struct AppLaunchBrandView: View {
     let settings: CustomBackgroundSettings
     let imageData: Data?

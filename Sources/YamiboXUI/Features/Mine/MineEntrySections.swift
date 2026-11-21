@@ -24,8 +24,6 @@ struct MineCheckInSection: View {
 
     var body: some View {
         Section {
-            // In-place action row: no disclosure chevron — that affordance is
-            // reserved for rows that push a detail screen.
             MineEntryButtonRow(
                 title: title,
                 systemImage: "checkmark.seal.fill",

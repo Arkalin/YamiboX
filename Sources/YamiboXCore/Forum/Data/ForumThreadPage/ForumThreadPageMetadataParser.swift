@@ -1,8 +1,5 @@
 import Foundation
 
-/// Parses page-level metadata of a thread page: pagination, view/reply counters,
-/// and the owning forum (breadcrumb). The Discuz form hash needed for POST
-/// actions comes from the shared `DiscuzFormHashParser`.
 enum ForumThreadPageMetadataParser {
     static func pageNavigation(in document: Document) -> ForumPageNavigation? {
         ForumPageNavigationParser.parse(in: document)

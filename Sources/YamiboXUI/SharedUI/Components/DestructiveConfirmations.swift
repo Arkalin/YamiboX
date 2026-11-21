@@ -16,7 +16,6 @@ extension View {
                                                    message: message, confirm: onConfirm))
     }
 
-    /// Confirmation alert for a destructive action guarded by a plain flag.
     func destructiveConfirmationAlert(
         _ title: String,
         isPresented: Binding<Bool>,
@@ -28,8 +27,6 @@ extension View {
             item: isPresented, usesAlert: true, confirm: onConfirm))
     }
 
-    /// Confirmation dialog (action sheet) for a destructive action. The
-    /// system supplies the cancel button.
     func destructiveConfirmationDialog(
         _ title: String,
         isPresented: Binding<Bool>,

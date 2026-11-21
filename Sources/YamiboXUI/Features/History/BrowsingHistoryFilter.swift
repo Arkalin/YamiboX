@@ -1,6 +1,5 @@
 import YamiboXCore
 
-/// A nonoptional navigation selection keeps All highlighted in the sidebar.
 enum BrowsingHistoryFilter: String, CaseIterable, Hashable {
     case all
     case normal

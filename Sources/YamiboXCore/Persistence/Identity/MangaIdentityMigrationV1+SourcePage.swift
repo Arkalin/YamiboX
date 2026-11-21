@@ -1,7 +1,5 @@
 import Foundation
 
-// Frozen schema-1 decoder used only to rank offline cache conflicts. Optional
-// fields mirror the defaults in the original decoder; no live page models.
 extension MangaIdentityMigrationV1 {
     struct CachedSourcePage: Decodable {
         var thread: SourceThreadIdentity

@@ -1,6 +1,5 @@
 import Foundation
 
-/// The build selects the environment; test builds require a URL on every launch.
 public enum YamiboForumEnvironment: Sendable, Equatable {
     case production
     case localSimulator(baseURL: URL)
@@ -14,7 +13,6 @@ public enum YamiboForumEnvironment: Sendable, Equatable {
         return .success(.production)
     }()
 
-    /// Only access after the composition root has accepted launchConfiguration.
     public static var current: Self {
         switch launchConfiguration {
         case let .success(environment): return environment
@@ -121,7 +119,6 @@ public enum YamiboForumEnvironment: Sendable, Equatable {
         if requiresTestSitePreparation, let adapted = YamiboLocalForumAdapter.resourceURL(url, baseURL: baseURL, purpose: purpose) {
             return adapted
         }
-        // Preserve the existing profile-image cache-query normalization.
         if purpose == .profileImage, let query = url.absoluteString.firstIndex(of: "?") {
             return URL(string: String(url.absoluteString[..<query])) ?? url
         }

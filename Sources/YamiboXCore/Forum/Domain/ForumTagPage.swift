@@ -1,6 +1,5 @@
 import Foundation
 
-/// Public Discuz tag browsing, separate from local favorite tags and tag administration.
 public enum ForumTagTarget: Hashable, Sendable {
     case index
     case id(String)

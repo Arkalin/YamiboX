@@ -1,8 +1,5 @@
 import Foundation
 
-/// A run-local index of the same three-way merge used for the eventual commit.
-/// The store transfers this reference exclusively into one database read closure;
-/// no task mutates it while it is retained on the actor or used by another read.
 final class FavoriteUpdateNotificationBadge: @unchecked Sendable {
     let runID: String
     let revision: String
@@ -27,8 +24,6 @@ final class FavoriteUpdateNotificationBadge: @unchecked Sendable {
         self.revision = revision
         for event in storedEvents { storedByID[event.id] = event }
         for event in runEvents {
-            // Ordinary engine detections have unique UUIDs. Preserve the full
-            // merge fallback for custom callers with duplicate run IDs.
             guard rawRunByID[event.id] == nil else { return nil }
             rawRunByID[event.id] = event
             canonicalRunByID[event.id] = try canonicalize(event)
@@ -46,9 +41,6 @@ final class FavoriteUpdateNotificationBadge: @unchecked Sendable {
         unreadCount = newestByTarget.values.filter(Self.isUnread).count
     }
 
-    /// The engine removes undismissed events for the raw target before it
-    /// appends a new detection. Keep that raw identity separate from the
-    /// canonical identity used for store/run conflict resolution.
     func replaceUndismissed(
         with event: FavoriteUpdateEvent, runEventCount: Int, sequence: UInt64,
         canonicalize: (FavoriteUpdateEvent) throws -> FavoriteUpdateEvent
@@ -74,8 +66,6 @@ final class FavoriteUpdateNotificationBadge: @unchecked Sendable {
         for id in removed {
             rawRunByID[id] = nil
             canonicalRunByID[id] = nil
-            // Removing a run copy may reveal a concurrently stored copy of
-            // that same ID; the authoritative merge does not discard it.
             updateCandidate(id)
         }
         undismissedIDsByRawTarget[event.target] = nil
@@ -101,8 +91,6 @@ final class FavoriteUpdateNotificationBadge: @unchecked Sendable {
             } else if let added, previous == nil || !Self.isNewer(previous!, than: added) {
                 next = added
             } else {
-                // Clock reversal or removal of the newest detection can expose
-                // older same-target history. Scan only that target's bucket.
                 next = candidateIDsByTarget[target]?.compactMap { candidatesByID[$0] }
                     .max { Self.isNewer($1, than: $0) }
             }

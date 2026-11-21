@@ -1,11 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Shared scaffold for the name-entry editor sheets (category, collection,
-/// tag): a form whose first row is the name field, with cancel/done in the
-/// toolbar and done disabled while the trimmed name is empty. Extra fields
-/// (color pickers etc.) keep their state in the caller and are injected
-/// below the name row.
 struct FavoriteNameEditorSheet<ExtraFields: View>: View {
     let title: String
     let fieldLabel: String

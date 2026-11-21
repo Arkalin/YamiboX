@@ -46,7 +46,6 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
         return Self.isAlreadyCheckedIn(in: html)
     }
 
-    /// The route definition owns this visit's authentication and retry policy.
     func startPromotionVisit() {
         guard let uid = Self.normalizedNumericUID(accountUID) else { return }
         Task {
@@ -69,9 +68,6 @@ struct YamiboCheckInRemoteRepository: YamiboCheckInRemoteOperating {
     }
 
     private static func isAlreadyCheckedIn(in html: String) -> Bool {
-        // Structural checks first (sign-plugin calendar marks today `.on`, the
-        // sign button loses its `sign=` href); the literal marker is a fallback
-        // in case the plugin's markup drifts.
         if let document = try? KannaSoup.parse(html) {
             if let today = document.selectFirst("#tablebody .day.today"), today.hasClass("on") {
                 return true

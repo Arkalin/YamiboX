@@ -34,8 +34,6 @@ struct ForumWebSessionSyncState {
 
             lastCookieHeader = sessionState.cookie
             lastAuthenticationCookieValue = authenticationValue
-            // Clearance churn updates subresources in place. It is never a
-            // reason to reload a successfully displayed page.
             return onlyWAFChanged ? .injectWAFCookies : .injectCookies(reload: authenticationChanged)
         }
 

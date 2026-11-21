@@ -1,8 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// A display-cycle acknowledgement, rather than an arbitrary navigation delay.
-/// The second tick admits work only after the overlay's first committed frame.
 struct NovelReaderNavigationOverlayDisplayProbe: UIViewRepresentable {
     let revision: UInt64
     var waitsForPresentation = false
@@ -63,8 +61,6 @@ struct NovelReaderNavigationOverlayDisplayProbe: UIViewRepresentable {
         }
 
         private var hasFinishedPresentation: Bool {
-            // UIKit owns cover/zoom entry; SwiftUI's mode cross-fade can also
-            // animate an ancestor layer without a controller transition.
             var responder: UIResponder? = self
             while let current = responder {
                 if let controller = current as? UIViewController,

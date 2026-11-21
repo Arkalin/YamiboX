@@ -1,7 +1,5 @@
 import Foundation
 
-/// Everything the account surface ("Mine" tab) needs from the composition
-/// root: session/profile/check-in plus the download queue it manages.
 public struct AccountDependencies: Sendable {
     public var downloadQueue: DownloadQueueDependencies {
         DownloadQueueDependencies(

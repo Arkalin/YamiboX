@@ -1,8 +1,5 @@
 import Foundation
 
-/// A persistable representation of a forum cookie. Keeping the cookie shape
-/// intact prevents short-lived WAF credentials from being revived as session
-/// cookies after their original expiry has passed.
 public struct YamiboCookie: Codable, Hashable, Sendable {
     public let name: String
     public let value: String
@@ -40,8 +37,6 @@ public struct YamiboCookie: Codable, Hashable, Sendable {
         "\(domain.lowercased())|\(path)|\(name)"
     }
 
-    /// Keeps the newest captured cookie for each identity, with later cookies
-    /// winning ties, and returns the result in stable identity order.
     internal static func canonicalCookies(_ cookies: [YamiboCookie]) -> [YamiboCookie] {
         var byIdentity: [String: YamiboCookie] = [:]
         for cookie in cookies {
@@ -88,8 +83,6 @@ public struct YamiboCookie: Codable, Hashable, Sendable {
         ForumProtectionState.ownsCookie(name)
     }
 
-    /// Edge session identifiers are needed by subsequent requests, but do not
-    /// prove that a JavaScript challenge has been completed.
     public static func isWAFSessionCookie(_ name: String) -> Bool {
         AliyunWAFProtocol.ownsSessionCookie(name)
     }
@@ -121,7 +114,6 @@ public extension YamiboCookie {
             .name: name,
             .value: value
         ]
-        // Foundation treats the presence of this property as Secure, even for "FALSE".
         if isSecure { properties[.secure] = "TRUE" }
         if let expiresAt { properties[.expires] = expiresAt }
         if let sameSitePolicy { properties[.sameSitePolicy] = sameSitePolicy }

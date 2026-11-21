@@ -8,21 +8,11 @@ public struct FavoriteItem: Codable, Hashable, Identifiable, Sendable {
     public var forumID: String?
     public var forumName: String?
     public var contentUpdatedAt: Date?
-    // Version 0 mixed refresh clocks and arbitrary-page dates with content
-    // dates. Discard only that derived metadata on decode, including WebDAV
-    // imports, so a future refresh can repair it even to an earlier date.
     private var contentDateVersion = 1
     public var remoteMapping: FavoriteRemoteMapping?
     public var locations: [FavoriteLocation]
     public var tagIDs: [String]
     public var createdAt: Date
-    /// Last time *any* field changed — used for same-side duplicate
-    /// degradation (`FavoriteLibraryWebDAVMerger.newerItem`,
-    /// `FavoriteLibraryDocument.normalizedItems`) and general "last edited"
-    /// display, not for cross-device conflict resolution: `locations`,
-    /// `tagIDs`, `displayName`, and `remoteMapping` each merge independently
-    /// by their own dedicated clock below, so two concurrent edits to
-    /// different fields on different devices don't clobber each other.
     public var updatedAt: Date
     public var locationsUpdatedAt: Date
     public var tagIDsUpdatedAt: Date
@@ -79,15 +69,6 @@ public struct FavoriteItem: Codable, Hashable, Identifiable, Sendable {
         case locationsUpdatedAt, tagIDsUpdatedAt, displayNameUpdatedAt, remoteMappingUpdatedAt
     }
 
-    /// Hand-written rather than synthesized so items persisted before these
-    /// four per-field clocks existed keep decoding: each falls back to the
-    /// item's own `updatedAt`, i.e. "assume every field was last touched
-    /// whenever anything last was" — the same tolerant-decode precedent as
-    /// `FavoriteLibraryDocument`'s deletion tombstones. Deliberately doesn't
-    /// re-run the throwing initializer's non-empty-locations validation,
-    /// matching every other type in this domain: Codable decoding bypasses
-    /// normalization/validation, which only runs at deliberate
-    /// (re)construction points.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         target = try container.decode(FavoriteItemTarget.self, forKey: .target)
@@ -113,12 +94,6 @@ public struct FavoriteItem: Codable, Hashable, Identifiable, Sendable {
         displayName?.nilIfBlank ?? title
     }
 
-    /// Whether this item plausibly has a Yamibo-website counterpart worth a
-    /// remote delete attempt: a usable mapped favorite id, or a mapping whose
-    /// id never resolved but whose thread id still allows a favorites-list
-    /// lookup. The single source of truth shared by the remote deleter and
-    /// the delete flow's "also remove from Yamibo?" decision gate — keep the
-    /// two from ever diverging again.
     public var hasYamiboRemoteCandidate: Bool {
         if let remoteFavoriteID = remoteMapping?.yamiboFavoriteID?.trimmingCharacters(in: .whitespacesAndNewlines),
            !remoteFavoriteID.isEmpty {

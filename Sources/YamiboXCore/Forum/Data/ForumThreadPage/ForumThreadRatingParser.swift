@@ -1,7 +1,5 @@
 import Foundation
 
-/// Parses rating ("评分") data: the per-post rating log, the full rating-results
-/// popout rows, and the rate-options form.
 enum ForumThreadRatingParser {
     static func ratingBlock(in container: Element, postID: String) -> ForumThreadRatingBlock? {
         let candidates = (
@@ -67,7 +65,6 @@ enum ForumThreadRatingParser {
         return results.map { ForumThreadRating(user: $0.user, scoreText: $0.scoreText, reason: $0.reason) }
     }
 
-    /// Total of a viewratings float: the `.o.pns` header total when present.
     static func resultsTotalScore(in document: Document, ratings: [ForumThreadRating]) -> Int {
         if let headerText = document.firstText(".o.pns, .o"),
            let value = HTMLTextExtractor.firstMatch(pattern: #"([+-]?\d+)"#, in: headerText)?
@@ -78,7 +75,6 @@ enum ForumThreadRatingParser {
         return totalScore(pageText: document.text(), ratings: ratings)
     }
 
-    /// Signed score inside a float cell ("积分 + 2 点" → "+2").
     private static func floatScoreText(inCell text: String) -> String? {
         guard let match = HTMLTextExtractor.firstMatch(pattern: #"([+-])\s*(\d+)"#, in: text)?.dropFirst(),
               match.count >= 2 else {
@@ -87,13 +83,10 @@ enum ForumThreadRatingParser {
         return match.joined()
     }
 
-    /// Total score of a rating-results page: the explicitly printed total when present,
-    /// otherwise the sum of the individual scores.
     static func totalScore(pageText: String, ratings: [ForumThreadRating]) -> Int {
         explicitTotalScore(in: pageText) ?? ratings.compactMap(scoreValue).reduce(0, +)
     }
 
-    /// Scores and default reasons offered by the rate-options form.
     static func rateOptionsPage(in document: Document) -> ForumThreadRateOptionsPage {
         let scores = document.selectAll("select#rate1 option")
             .compactMap { option in

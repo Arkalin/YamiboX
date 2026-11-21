@@ -6,9 +6,6 @@ extension DownloadStore {
     reader_kind, work_id, owner_name, owner_title, tid, chapter_title, retains_inline_images, state, failure_message, current_bytes_per_second, insertion_index, created_at, updated_at
     """
 
-    /// Queue position order. Every reader of `download_works` must agree
-    /// on this ordering or "the next work" and the rendered queue would drift
-    /// apart.
     private static let workOrderClause = "ORDER BY insertion_index ASC, reader_kind ASC, owner_name ASC, tid ASC"
 
     func downloadQueueSummary(readerKind: DownloadReaderKind?) async throws -> DownloadQueueSummary {
@@ -73,8 +70,6 @@ extension DownloadStore {
         try await ensureQueueRecovered()
         do {
             return try await database.read { db in
-                // Match allRawWorks' compactMap: unknown future reader kinds
-                // are excluded, without hydrating any image lists.
                 let kinds = DownloadReaderKind.allCases.map(\.rawValue)
                 let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
                 return try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM download_works WHERE reader_kind IN (\(placeholders))",
@@ -99,8 +94,6 @@ extension DownloadStore {
         guard let workID = id.rawValue.nilIfBlank, targetIndex >= 0 else { return false }
         do {
             let recorded = try await database.write { db in
-                // Resolve the current owner through work_id in this transaction.
-                // A deleted/replaced work or a changed target never gets revived.
                 guard let row = try Row.fetchOne(db, sql: """
                     SELECT w.owner_name, w.tid FROM download_works w
                     JOIN download_work_images i
@@ -302,7 +295,6 @@ extension DownloadStore {
         }
     }
 
-    /// Lookup and deletion stay in one transaction, including identity canonicalization.
     private func cancelDownloadWork(
         matching findWork: @escaping @Sendable (Database) throws -> DownloadRawWork?
     ) async throws {
@@ -359,8 +351,6 @@ extension DownloadStore {
         }
     }
 
-    /// Called after reader-specific checks, inside the caller's write transaction.
-    /// The caller publishes invalidation only after that transaction commits.
     static func enqueueNewWork(
         readerKind: DownloadReaderKind,
         ownerKey: String,
@@ -394,11 +384,6 @@ extension DownloadStore {
         return try queueWorkProjection(from: work, in: db)
     }
 
-    /// Upserts the work row and its two image lists. Pass `previous` (the row the
-    /// caller just fetched) so unchanged lists are skipped and appended completions
-    /// insert only their new rows — progress ticks fire many times per work, and a
-    /// plain INSERT OR REPLACE would additionally cascade-delete both image lists
-    /// on every tick (REPLACE deletes the conflicting parent row first).
     static func save(_ work: DownloadRawWork, replacing previous: DownloadRawWork? = nil, in db: Database) throws {
         var work = work
         if work.readerKind == .manga {
@@ -447,9 +432,6 @@ extension DownloadStore {
             to: work.targetImageURLs,
             in: db
         )
-        // Completed positions follow the target list, including gaps. This
-        // makes out-of-order single-image completion an idempotent indexed
-        // insert. Legacy dense lists are normalized on prepare/full saves.
         let targetPositions = Dictionary(work.targetImageURLs.enumerated().map { ($0.element.absoluteString, $0.offset) },
             uniquingKeysWith: min)
         let completedPositions = work.completedImageURLs.enumerated().map {
@@ -462,9 +444,6 @@ extension DownloadStore {
         )
     }
 
-    /// Writes only the difference between the persisted list (`from`) and the new
-    /// list (`to`): no-op when equal, suffix-only inserts when appended, and a full
-    /// rewrite otherwise (or when the caller has no fetched previous state).
     private static func syncImageList(
         table: String,
         readerKind: String,
@@ -589,8 +568,6 @@ extension DownloadStore {
             let owner: String = row["owner_name"]
             let entryKey: String = row["tid"]
             let fallbackTitle = (row["owner_title"] as String?) ?? owner
-            // Preserve raw group identity while matching imageURLs' canonical
-            // manga-owner lookup, including historical redirect rows.
             let imageOwner = kind == .manga ? identities.canonicalID(owner) : owner
             let imageEntry = DownloadWorkImageCountKey(readerKind: kind, ownerKey: imageOwner, entryKey: entryKey)
             let ownerTitle = kind == .manga ? identities.title(for: imageOwner) ?? fallbackTitle : fallbackTitle
@@ -614,10 +591,6 @@ extension DownloadStore {
         var counts: [DownloadWorkImageCountKey: Int] = [:]
         let kinds = DownloadReaderKind.allCases.map(\.rawValue)
         let placeholders = kinds.map { _ in "?" }.joined(separator: ", ")
-        // COUNT(*) alone would include corrupt strings that imageURLs drops.
-        // The scalar function keeps Foundation's exact URL acceptance rule;
-        // GROUP BY returns only counts rather than transferring every URL row
-        // or hashing its work identity once per image in Swift.
         let rows = try Row.fetchCursor(db, sql: """
             SELECT reader_kind, CAST(owner_name AS BLOB) AS raw_owner, CAST(tid AS BLOB) AS raw_entry,
                 SUM(download_valid_image_url(CAST(image_url AS TEXT))) AS image_count
@@ -628,19 +601,11 @@ extension DownloadStore {
         while let row = try rows.next() {
             guard let kind = DownloadReaderKind(rawValue: row["reader_kind"] as String) else { continue }
             let entry = DownloadWorkImageCountKey(readerKind: kind, ownerKey: row["raw_owner"] as Data, entryKey: row["raw_entry"] as Data)
-            // Count rows, not distinct URLs: duplicate positions have always
-            // contributed to queue progress.
             counts[entry] = row["image_count"]
         }
         return counts
     }
 
-    /// Head-of-queue lookup for the processing loop. `allRawWorks(in:).first`
-    /// paid `rawWork(from:in:)`'s two image-list subqueries for every queued
-    /// row just to keep one; here only the first decodable header row is
-    /// hydrated. A lazy cursor instead of `LIMIT 1` so that a row with an
-    /// unknown `reader_kind` is skipped exactly as `allRawWorks().first`
-    /// skipped it.
     static func firstRawWork(in db: Database) throws -> DownloadRawWork? {
         let rows = try Row.fetchCursor(
             db,
@@ -651,8 +616,6 @@ extension DownloadStore {
             """
         )
         while let row = try rows.next() {
-            // Cursor rows are reused buffers; copy so the header values stay
-            // stable across the nested image-list queries.
             if let work = try rawWork(from: row.copy(), in: db) {
                 return work
             }
@@ -663,8 +626,6 @@ extension DownloadStore {
     static func queueWorkProjection(from work: DownloadRawWork, in db: Database) throws -> DownloadQueueWorkProjection {
         let groupID = DownloadGroupID(readerKind: work.readerKind, ownerKey: work.ownerKey)
         let entryID = DownloadEntryID(readerKind: work.readerKind, ownerKey: work.ownerKey, entryKey: work.entryKey)
-        // Paused and failed work may never be saved again after a rename.
-        // Resolve its display name even when the rebuildable directory is gone.
         let ownerTitle = work.readerKind == .manga
             ? try mangaOwnerTitle(work.ownerKey, fallback: work.ownerTitle, in: db)
             : work.ownerTitle
@@ -763,7 +724,6 @@ extension DownloadStore {
     }
 }
 
-// Database lookup keys must not trim whitespace as the public display IDs do.
 private struct DownloadWorkImageCountKey: Hashable {
     var readerKind: DownloadReaderKind
     var ownerKey: Data

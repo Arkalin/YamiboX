@@ -89,8 +89,6 @@ struct MangaPagedImageSurfaceLayout: Equatable {
 
         let scale = switch fitMode {
         case .fitWidth:
-            // Width is an upper bound, not permission to hide the top/bottom.
-            // In particular, spread pages cannot pan independently at rest.
             min(containerSize.width / imageSize.width, containerSize.height / imageSize.height)
         case .fitHeight:
             containerSize.height / imageSize.height
@@ -241,8 +239,6 @@ struct MangaPagedSpreadSurfaceZoomLayout: Equatable {
     }
 }
 
-/// Shared edge policy in display coordinates; each layout retains its own
-/// resting alignment, zoom eligibility and conversion to user offsets.
 private enum MangaSurfaceHorizontalOverflow {
     private static let visibilityTolerance: CGFloat = 0.5
 

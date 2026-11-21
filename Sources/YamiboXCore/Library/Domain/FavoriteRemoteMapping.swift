@@ -20,9 +20,6 @@ public struct FavoriteRemoteMapping: Codable, Hashable, Sendable {
     }
 }
 
-/// The local library uses `favorite:<tid>` as a stable UI identity when a
-/// remote favorite has no server id. That identity must never cross the
-/// network as the server's `favorite[]` value.
 enum FavoriteRemoteIdentity {
     static func normalizedID(_ value: String?) -> String? {
         guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),

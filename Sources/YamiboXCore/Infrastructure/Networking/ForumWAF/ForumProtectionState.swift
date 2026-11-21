@@ -1,7 +1,5 @@
 import Foundation
 
-/// Shared credential handling for all forum transports. Provider-specific
-/// evidence stays in the provider implementations, never in a feature workflow.
 enum ForumProtectionState {
     static func ownsCookie(_ name: String) -> Bool {
         BaiduWAFProtocol.ownsCookie(name) || AliyunWAFProtocol.ownsCookie(name)
@@ -11,7 +9,6 @@ enum ForumProtectionState {
         guard let url = response.url, attempt.context.key.origin.contains(url) else { return }
         let cookies = AliyunWAFProtocol.sessionCookies(from: response)
         guard !cookies.isEmpty else { return }
-        // The caller must supply a fresh network response, not cached Set-Cookie.
         try Task.checkCancellation()
         try await attempt.context.validate()
         do {
@@ -25,8 +22,6 @@ enum ForumProtectionState {
     }
 }
 
-/// Per-attempt response evidence. Delegate callbacks only record it; the
-/// executor commits it after a successful transport and cancellation checks.
 final class ForumResponseState: @unchecked Sendable {
     private let lock = NSLock()
     private var networkResponse: HTTPURLResponse?

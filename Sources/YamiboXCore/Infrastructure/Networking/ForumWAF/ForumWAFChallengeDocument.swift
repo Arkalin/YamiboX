@@ -1,7 +1,5 @@
 import Foundation
 
-/// In-memory response bytes, never persisted or logged. Only controlled
-/// transports may construct this after successfully receiving the entire body.
 public struct ForumWAFChallengeDocument: Hashable, Sendable, CustomStringConvertible {
     public let url: URL
     public let body: Data

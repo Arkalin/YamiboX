@@ -49,9 +49,6 @@ public struct ForumForm: Identifiable, Equatable, Sendable {
         Dictionary(uniqueKeysWithValues: fields.map { ($0.id, $0.initialValues) })
     }
 
-    /// HTML successful-controls semantics: unchecked controls and unselected
-    /// options are absent, repeated field names remain repeated, and only the
-    /// tapped submit button contributes its name/value.
     public func submissionValues(
         values: [String: [String]], buttonID: String
     ) throws -> [ForumFormValue] {
@@ -93,12 +90,8 @@ public struct ForumForm: Identifiable, Equatable, Sendable {
             result.append(ForumFormValue(name: "wysiwyg", value: "0"))
         }
         if kind == .blog {
-            // The native editor always submits HTML, including when the server
-            // returned a touch form carrying its plain-text editor flag.
             result.removeAll { $0.name == "plaintext" }
             let privacy = result.first { $0.name == "friend" }?.value
-            // Discuz falls back to public visibility for a whitespace-only
-            // password. Reject it locally rather than silently exposing a blog.
             if privacy == "4", result.first(where: { $0.name == "password" })?.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
                 throw ForumPageError.requiredField(L10n.string("forum.native.password"))
             }

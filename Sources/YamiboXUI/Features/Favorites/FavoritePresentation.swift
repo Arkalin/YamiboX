@@ -1,8 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Presentation mapping for favorite domain values: user-facing labels and
-/// colors live here, not in the library models.
 extension FavoriteSourceGroup {
     var displayLabel: String {
         switch self {
@@ -50,7 +48,6 @@ extension FavoriteColor {
 }
 
 extension [FavoriteCategory] {
-    /// Categories in the user's manual order with a stable ID tiebreaker.
     var manualOrderSorted: [FavoriteCategory] {
         sorted { lhs, rhs in
             if lhs.manualOrder != rhs.manualOrder {

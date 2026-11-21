@@ -38,7 +38,6 @@ struct DownloadStorageSummary: View {
     }
 }
 
-/// Keep state counts readable even when a work has both saved and unfinished entries.
 struct DownloadStatusSummary: View {
     let downloadedCount: Int
     let pendingCount: Int

@@ -5,9 +5,6 @@ import Foundation
 struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
     let settingsStore: WebDAVSyncSettingsStore
 
-    /// Imports legacy resources before any new-format merge. Completion is
-    /// recorded only after a conditional upload succeeds; a failed import or
-    /// upload remains retryable and never advances the migration marker.
     func prepare(
         settings: WebDAVSyncSettings,
         accountUID: String,
@@ -38,9 +35,6 @@ struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
             settings.mangaIdentityBaselineScopeByDatasetID[$0.key] != $0.value
         }
         if needsPreflight {
-            // Preflight the entire selected backup before touching local
-            // identities, migration bookkeeping, or any remote resource.
-            // Completed imports must not reread their legacy snapshots.
             remotePayloads = try await operations.fetchRemotePayloads(settings)
             for participant in pendingImports {
                 guard let legacyName = participant.legacyRemoteFileName else { continue }
@@ -62,8 +56,6 @@ struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
             try await operations.checkCurrent()
             guard let key = importScopes[participant.datasetID] else { continue }
             let id = participant.datasetID
-            // Neither old-format history nor another remote/account's
-            // baseline may suppress this namespace's first export.
             if effective.mangaIdentityBaselineScopeByDatasetID[id] != key {
                 effective.lastSyncedFingerprintByDatasetID[id] = nil
                 effective.lastAppliedRemoteUpdatedAtByDatasetID[id] = nil
@@ -103,9 +95,6 @@ struct MangaIdentityWebDAVMigration: WebDAVSyncMigrating {
                 current.completedMangaIdentityImports.insert(key)
             }
             try await operations.checkCurrent()
-            // A settings write can change the destination while an upload is
-            // suspended. Never pair this round's fetched payloads with that
-            // new connection, even when its migration bookkeeping was skipped.
             guard WebDAVConnectionIdentity(updated) == WebDAVConnectionIdentity(settings),
                   updated.receiptScope == settings.receiptScope else {
                 throw CancellationError()

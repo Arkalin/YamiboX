@@ -5,20 +5,10 @@ package struct NovelTextLikeCaptureRequest: Sendable {
     package var start: NovelTextViewportSemanticTextPosition
     package var end: NovelTextViewportSemanticTextPosition
     package var excerptText: String
-    /// The forum page currently on screen when the selection was made (see
-    /// `NovelTextLikeAnchor.view` for why this can't be recovered from
-    /// `chapterIdentity` after the fact).
     package var view: Int
-    /// The active projection's cache-key identity at selection time (see
-    /// `NovelTextLikeAnchor.resolvedAuthorID`).
     package var resolvedAuthorID: String?
     package var chapterTitle: String?
-    /// The style to paint the new (or merged) annotation with — the reader's
-    /// sticky "last colour I chose". On a merge it overwrites every subsumed
-    /// item's style, because the merged range is one annotation.
     package var style: LikeStyle
-    /// Clause context around the selection, sliced by the caller while it
-    /// still has the laid-out document in hand (see `LikeItem.excerptPrefix`).
     package var excerptPrefix: String?
     package var excerptSuffix: String?
 
@@ -60,8 +50,6 @@ public struct NovelTextLikeCaptureService: Sendable {
         self.likeStore = likeStore
     }
 
-    // Forwards request.excerptText verbatim even for a merge outcome; use the
-    // excerptTextForRange overload when the caller can re-slice the union range.
     @discardableResult
     package func like(_ request: NovelTextLikeCaptureRequest, date: Date = .now) async throws -> LikeCaptureOutcome {
         try await like(request, excerptTextForRange: { _ in request.excerptText }, date: date)
@@ -76,9 +64,6 @@ public struct NovelTextLikeCaptureService: Sendable {
         guard let chapterIdentity = request.start.chapterIdentity else {
             throw YamiboError.underlying("Novel text like capture requires a resolved chapter identity.")
         }
-        // Both endpoints must live in the same chapter — nothing below this
-        // layer enforces it, and a cross-chapter range would render happily
-        // while being unorderable and unresolvable after a page change.
         guard request.end.chapterIdentity == chapterIdentity else {
             throw YamiboError.underlying("Novel text like capture requires a single-chapter selection.")
         }
@@ -90,9 +75,6 @@ public struct NovelTextLikeCaptureService: Sendable {
             segmentIdentity: request.end.textSegmentIdentity.rawValue,
             offset: request.end.displayedTextOffset
         )
-        // The drag may have run backwards, and the two endpoints may be in
-        // different segments, so document order — not raw offsets — decides
-        // which is which.
         let orderedForward = NovelLikeTextEndpointOrdering.compare(requestedStart, requestedEnd) != .orderedDescending
         let requestAnchor = NovelTextLikeAnchor(
             chapterIdentity: chapterIdentity,
@@ -113,8 +95,6 @@ public struct NovelTextLikeCaptureService: Sendable {
         }
 
         guard !overlapping.isEmpty else {
-            // Unstructured: this write must land even if the calling Task (a
-            // text-selection edit-menu action) is cancelled first.
             let result = try await Task {
                 try await likeStore.upsertTextLike(
                     workKey: request.workKey,
@@ -143,9 +123,6 @@ public struct NovelTextLikeCaptureService: Sendable {
         for candidate in overlapping.dropFirst() where candidate.item.updatedAt > survivor.item.updatedAt {
             survivor = candidate
         }
-        // The union spans from the earliest start to the latest end in
-        // document order, which `compare` resolves across segments as well as
-        // within one.
         let unionStart = overlapping.reduce(requestAnchor.start) { earliest, entry in
             NovelLikeTextEndpointOrdering.compare(entry.anchor.start, earliest) == .orderedAscending
                 ? entry.anchor.start
@@ -167,9 +144,6 @@ public struct NovelTextLikeCaptureService: Sendable {
             throw YamiboError.underlying("Novel text like capture could not recapture the merged excerpt text.")
         }
 
-        // Every note the merge subsumes is carried into the survivor, in
-        // document order. Losing a note the user typed is not recoverable; a
-        // slightly long concatenated note is.
         let mergedNote = overlapping
             .sorted { lhs, rhs in
                 NovelLikeTextEndpointOrdering.compare(lhs.anchor.start, rhs.anchor.start) == .orderedAscending
@@ -183,10 +157,6 @@ public struct NovelTextLikeCaptureService: Sendable {
             }
             .joined(separator: "\n\n")
 
-        // The context fields belong to whichever contributor's endpoint became
-        // the union's — a prefix describes the text before one specific start,
-        // so any other contributor's prefix would describe the middle of the
-        // merged range.
         var unionPrefix = unionStart == requestAnchor.start ? request.excerptPrefix : nil
         var unionSuffix = unionEnd == requestAnchor.end ? request.excerptSuffix : nil
         for entry in overlapping {
@@ -198,7 +168,6 @@ public struct NovelTextLikeCaptureService: Sendable {
             }
         }
 
-        // Unstructured: same cancellation guard as the add path above.
         let result = try await Task {
             try await likeStore.upsertTextLike(
                 id: survivor.item.id,

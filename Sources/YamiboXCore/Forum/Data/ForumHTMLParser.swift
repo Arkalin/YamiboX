@@ -68,8 +68,6 @@ enum ForumHTMLParser {
 
         let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
         let results = parseThreadSummaries(in: document)
-        // A rendered-but-empty result page ("对不起，没有找到匹配结果" inside
-        // `.threadlist_box`) is a legitimate empty search, not a parse failure.
         guard !results.isEmpty || document.selectFirst(".threadlist_box") != nil else {
             throw YamiboError.parsingFailed(context: L10n.string("context.forum_search"))
         }
@@ -193,10 +191,6 @@ enum ForumHTMLParser {
             }
 
             let marker = link.firstText(".micon") ?? ""
-            // Sticky rows carry the subject in `em`; announcements have it as
-            // the link's own text next to the `.micon` badge. Never strip the
-            // badge word out of the subject itself — a title containing "公告"
-            // must survive intact.
             let title = (link.selectFirst("em")?.normalizedText()
                 ?? link.ownText().htmlNormalized.nilIfBlank
                 ?? link.normalizedText().replacingOccurrences(of: marker, with: ""))
@@ -229,9 +223,6 @@ enum ForumHTMLParser {
         if !rows.isEmpty {
             return parseThreadRows(rows, fid: fid)
         }
-        // The page rendered its thread-list chrome but has no normal rows
-        // (sticky-only or empty board/search) — a generic link scan here would
-        // re-list the pinned threads as ordinary ones.
         if document.selectFirst(".threadlist, .threadlist_box") != nil {
             return []
         }
@@ -269,9 +260,6 @@ enum ForumHTMLParser {
 
             let titleContainer = row.selectFirst(".threadlist_tit")
             let marker = (titleContainer?.select(".micon").text() ?? "").htmlNormalized
-            // Subject lives in `em`, badges in sibling `.micon` spans — read the
-            // `em` untouched so subjects containing badge words (投票/公告…)
-            // survive; marker-stripping is only for legacy no-`em` shapes.
             let title = (titleContainer?.selectFirst("em")?.normalizedText()
                 ?? titleLink.normalizedText().replacingOccurrences(of: marker, with: ""))
                 .htmlNormalized
@@ -339,9 +327,6 @@ enum ForumHTMLParser {
     }
 
     private static func parseSearchTotalCount(in document: Document) -> Int? {
-        // The count renders in the results header: `.threadlist_box > h2` …
-        // "找到 “kw” 相关内容 N 个". Never first-integer-scan the whole box —
-        // a digit inside the query keyword would win.
         guard let header = document.firstText(".threadlist_box h2, .result, .searchlist") else { return nil }
         if let count = HTMLTextExtractor.firstMatch(pattern: #"(\d+)\s*[个個]"#, in: header)?
             .dropFirst()

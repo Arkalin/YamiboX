@@ -95,7 +95,6 @@ public struct AccountSwitchCoordinator: Sendable {
 
     private func signOutWithinOperation(removesAccount: Bool) async throws {
         try await transition { token in
-            // Local persistence must succeed before attempting a server logout.
             let old = await sessionStore.load()
             let profile = await profileStore.load()
             try await sessionStore.commitSignOut(token: token, removesAccount: removesAccount)
@@ -105,7 +104,6 @@ public struct AccountSwitchCoordinator: Sendable {
     }
 }
 
-/// UI-owned web views and sync sessions join the Core transition without Core importing WebKit.
 public actor AccountTransitionLifecycle {
     private var preserveLocalEdits: (@MainActor @Sendable () async throws -> Void)?
     private var prepare: (@MainActor @Sendable () async throws -> Void)?

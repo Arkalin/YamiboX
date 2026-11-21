@@ -13,7 +13,6 @@ struct SettingsSidebar: View {
     let accountManagementAvailable: Bool
     let isSigningOut: Bool
     let aboutTitle: String
-    /// Use the window's size class, not this potentially compact column's.
     let showsCloseButton: Bool
     let onSignOut: () -> Void
     let onClose: () -> Void
@@ -81,7 +80,6 @@ struct SettingsSidebar: View {
         )
         .searchFocused($isSearchFocused)
         .background {
-            // Keep Cmd-F without duplicating the visible search field.
             Button(L10n.string("common.search")) {
                 isSearchPresented = true
                 isSearchFocused = true

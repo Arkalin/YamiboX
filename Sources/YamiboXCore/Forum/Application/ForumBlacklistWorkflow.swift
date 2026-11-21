@@ -110,8 +110,6 @@ public final class ForumBlacklistWorkflow {
     }
 
     public func setBlocked(_ blocked: Bool, uid: String) async throws {
-        // Share the exclusive lease with account transitions. The client also
-        // checks the snapshot before every request.
         try await sessionStore.accountOperations.run { [self] in
             try await changeBlockState(blocked, uid: uid)
         }
@@ -149,8 +147,6 @@ public final class ForumBlacklistWorkflow {
             try await repository.remove(entry)
         }
 
-        // Discuz's general action parser accepts plain confirmation text.
-        // Verify membership so an unfamiliar error page cannot report success.
         let updated = try await Self.fetchAll(repository)
         try await validate(snapshot)
         guard operationID == id, let accountKey else { throw CancellationError() }
@@ -217,7 +213,6 @@ public final class ForumBlacklistWorkflow {
             sessionGeneration = snapshot?.generation
             authentication = nextAuthentication
             isLoggedIn = nextAuthentication != nil
-            // Do not hold up logout observation while a network request runs.
             if isAppActive { Task { await refreshSilently() } }
         }
     }
@@ -270,8 +265,6 @@ public final class ForumBlacklistWorkflow {
             guard current == page, total >= page, total <= 10_000 else {
                 throw YamiboError.parsingFailed(context: L10n.string("blacklist.title"))
             }
-            // A list changing during pagination must be retried, not cached as
-            // complete after a missing or duplicated page.
             if page > 1, total != totalPages {
                 throw YamiboError.underlying(L10n.string("blacklist.list_changed"))
             }

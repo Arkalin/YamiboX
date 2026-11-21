@@ -54,7 +54,6 @@ public struct NovelReadingCacheContext: Equatable, Sendable {
 
 public struct NovelReadingWorkflowState: Equatable, Sendable {
     package var snapshot: NovelReadingSnapshot
-    /// Captured from the same session revision as the published presentation.
     package var resumePoint: NovelResumePoint?
     package var presentationStructure: NovelReaderPresentationStructure?
     public var presentation: NovelReaderPresentation?
@@ -118,11 +117,6 @@ private struct NovelReadingPreparedTransaction {
     let currentProjectionSurfaceCount: Int
 }
 
-/// Caller-isolated (non-`Sendable`): the workflow runs entirely in whatever
-/// isolation domain owns it, so its synchronous per-frame paths (viewport
-/// samples, display-reference lookups) stay synchronous and its `async`
-/// methods (`nonisolated(nonsending)`) never hop executors. The live TextKit
-/// graph is provided by the UI layer through `NovelTextLayoutRuntimeAdapter`.
 public final class NovelReadingWorkflow {
     public private(set) var state: NovelReadingWorkflowState?
     public private(set) var runtimeUpdateRequestSequence: UInt64 = 0
@@ -133,9 +127,6 @@ public final class NovelReadingWorkflow {
     private var layout: NovelReaderLayout
     private let repository: any NovelReadingPageRepository
     private var session: NovelReadingSession?
-    /// Snapshot carried by the last published `state`; every `state`
-    /// assignment must keep it in sync or `shouldRebuildPresentation`'s
-    /// accumulated-progress comparison drifts.
     private var lastPublishedSnapshot: NovelReadingSnapshot?
     private var presentationDiagnostics = NovelReaderPresentationDiagnostics()
     private var currentProjection: NovelReaderProjection?
@@ -184,8 +175,6 @@ public final class NovelReadingWorkflow {
         viewportRuntime
     }
 
-    /// `package`: the workflow is assembled inside this package (UI layer or
-    /// tests) because the runtime adapter seam is a package-internal contract.
     package init(
         context: NovelLaunchContext,
         settings: NovelReaderAppearanceSettings,
@@ -210,7 +199,6 @@ public final class NovelReadingWorkflow {
         return try await start(prepared: prepared, layout: layout)
     }
 
-    /// Fetch content independently of the transient bounds during presentation.
     package nonisolated(nonsending) func prepareInitialLoad(
         initial: NovelReadingInitialPosition,
         forceRefresh: Bool = false
@@ -289,9 +277,6 @@ public final class NovelReadingWorkflow {
         return NovelReadingCacheContext(authorID: authorID)
     }
 
-    /// A resume point with an author scope can only reuse a prefetch made for
-    /// that same scope. Older anchors did not record one, so `nil` deliberately
-    /// keeps the current session's scope and remains promotable.
     public func canPromotePrefetchedDocument(
         forView view: Int,
         matchingAuthorID: String? = nil
@@ -402,10 +387,6 @@ public final class NovelReadingWorkflow {
                     if runtimeUpdateRequestSequence == requestSequence { pendingRuntimeUpdateTask = nil }
                     return nil
                 }
-                // A promotion already admitted before this geometry request
-                // can finish while preparation is suspended. Rebase once onto
-                // that document without changing the request's inputs/owner.
-                // New document requests still supersede this pending task.
                 let cachedPreparation = semanticPreparationCache
                 let rebasedTask = Task.detached(priority: .userInitiated) {
                     () async throws -> (NovelReadingWorkflowRuntimeUpdate, NovelTextLayoutPreparedInput)? in
@@ -496,11 +477,6 @@ public final class NovelReadingWorkflow {
         usesPadPresentation: Bool
     ) -> NovelReadingWorkflowState? {
         guard let currentProjection else { return nil }
-        // A runtime update re-presents the same document with new appearance
-        // inputs, so the load source and cached-views set are carried over
-        // from the current fields by omission. The prefetch pair must still be
-        // passed explicitly (its parameters have no carry-over default because
-        // nil is a meaningful "drop the prefetch" value there).
         let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
@@ -515,22 +491,6 @@ public final class NovelReadingWorkflow {
         return commit(preparedTransaction)
     }
 
-    /// Builds the pre-commit bundle that `commit(_:)` later writes to the
-    /// workflow's fields in a single step once the runtime transaction lands.
-    /// Parameters fall into two groups:
-    ///
-    /// - `nil`-defaulted parameters mean "this transaction leaves that
-    ///   dimension unchanged": omitting one resolves to the current field,
-    ///   which is exactly the value the omitting call sites used to pass
-    ///   explicitly. (Field mirroring is why these were parameters at all.)
-    /// - Required parameters are the dimensions at least one call site
-    ///   replaces with a pre-commit "next" value that must not be read from
-    ///   `self` (the freshly loaded/promoted document, its load source, …).
-    ///   `prefetchedProjection`/`prefetchedLoadSource`/`currentAuthorID` stay
-    ///   required even though the runtime-update path passes the current
-    ///   values, because `nil` is itself a meaningful next value for them
-    ///   ("drop the prefetch" / "no author"), so a nil-means-carry-over
-    ///   default would be ambiguous.
     private func makePreparedTransaction(
         runtime: NovelTextViewportRuntimeTransaction,
         session: NovelReadingSession,
@@ -679,15 +639,6 @@ public final class NovelReadingWorkflow {
         return updateStateFromSession(cachedViews: state?.cachedViews ?? [])
     }
 
-    /// TextKit-resolved viewport samples arrive at glyph precision, so a
-    /// naive `snapshot != previousSnapshot` guard rebuilds the (`O(surface
-    /// count)`) presentation on every scroll tick. Only a non-progress change
-    /// or the progress drift accumulated since `lastPublishedSnapshot`
-    /// crossing `verticalSampleProgressUpdateThreshold` justifies that
-    /// rebuild — comparing adjacent samples instead would let slow scrolling
-    /// (per-sample deltas below the threshold) starve the rebuild forever.
-    /// The session mutation above still runs unconditionally so resume-point
-    /// capture stays glyph-accurate.
     private func shouldRebuildPresentation(afterSampleUpdateFrom previousSnapshot: NovelReadingSnapshot?) -> Bool {
         guard let newSnapshot = session?.snapshot else {
             return previousSnapshot != nil
@@ -763,7 +714,6 @@ public final class NovelReadingWorkflow {
         session?.currentChapterOrdinalsByIdentity() ?? [:]
     }
 
-    /// Value snapshots only; annotation consumers own their persistence side effects.
     package var loadedProjectionSnapshots: [NovelReaderProjection] {
         [currentProjection, prefetchedProjection].compactMap { $0 }
     }
@@ -882,9 +832,6 @@ public final class NovelReadingWorkflow {
             prefetchCooldown = (view: targetView, until: now().addingTimeInterval(Self.prefetchFailureCooldownInterval))
             return nil
         }
-        // A re-layout changes the viewport generation, not the next page's
-        // content. Retain a fetched projection when the source document is
-        // still current instead of downloading it again on the next turn.
         guard !Task.isCancelled, self.currentProjection == currentProjection else { return nil }
         prefetchCooldown = nil
 
@@ -1019,9 +966,6 @@ public final class NovelReadingWorkflow {
             )
         )
         let nextAuthorID = nextProjection.resolvedAuthorID ?? currentAuthorID ?? context.authorID
-        // Promotion replaces the document dimensions (the prefetched page
-        // becomes current, the prefetch slot empties); appearance and the
-        // cached-views set carry over from the current fields by omission.
         let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
@@ -1131,8 +1075,6 @@ public final class NovelReadingWorkflow {
             }
             try Task.checkCancellation()
             guard loadRequestSequence == requestSequence else { throw CancellationError() }
-            // A runtime update may commit while semantic preparation is suspended.
-            // Retry with its new settings and geometry rather than publishing stale pagination.
             guard update == NovelReadingWorkflowRuntimeUpdate(
                 settings: settings,
                 layout: layout,
@@ -1156,8 +1098,6 @@ public final class NovelReadingWorkflow {
             ),
             pageTurnDirection: preparedUpdate.settings.pageTurnDirection
         )
-        // Cached-view metadata is not needed to render this document. A
-        // follow-up refresh fills it after the first presentation is committed.
         let preparedTransaction = makePreparedTransaction(
             runtime: transaction,
             session: candidateSession,
@@ -1179,9 +1119,6 @@ public final class NovelReadingWorkflow {
         return nextState
     }
 
-    /// Cache metadata must never delay the first rendered page or overwrite a
-    /// newer document. It does not affect presentation, so update only this
-    /// field on the latest state after the repository finishes enumerating.
     package nonisolated(nonsending) func refreshCachedViewsForCurrentDocument() async {
         guard let currentView = state?.snapshot.currentView, currentProjection != nil else { return }
         let generation = viewportRuntime.currentGeneration
@@ -1196,10 +1133,6 @@ public final class NovelReadingWorkflow {
         state = currentState
     }
 
-    /// Returns nil when the session was torn down while this call was
-    /// suspended (e.g. the reader closed mid-prefetch); callers treat that as
-    /// "no state change", never as a programmer error — `close()` racing a
-    /// suspended prefetch is a legitimate user action, not a broken invariant.
     private nonisolated(nonsending) func updateStateFromSession(refreshCachedViews: Bool) async -> NovelReadingWorkflowState? {
         guard let snapshot = session?.snapshot,
               currentProjection != nil else {
@@ -1215,8 +1148,6 @@ public final class NovelReadingWorkflow {
         } else {
             state?.cachedViews ?? []
         }
-        // The cached-views load above is a suspension point; the sync variant
-        // re-checks the session before touching state.
         return updateStateFromSession(cachedViews: cachedViews)
     }
 

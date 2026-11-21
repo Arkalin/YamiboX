@@ -1,6 +1,4 @@
 public extension ReadingWorkKey {
-    /// Annotation work identities are novel threads or resolved manga
-    /// directories; ordinary and per-thread manga targets have no work key.
     init?(target: FavoriteContentTarget) {
         switch target {
         case let .novelThread(threadID):

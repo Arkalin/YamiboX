@@ -1,7 +1,6 @@
 import Foundation
 import YamiboXCore
 
-/// A presentation of existing history, not a separate reading library.
 struct BookshelfShelf: Equatable {
     let readingEntries: [BrowsingHistoryEntry]
     let continuing: [BrowsingHistoryEntry]

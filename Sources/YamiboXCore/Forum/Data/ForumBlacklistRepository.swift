@@ -18,7 +18,6 @@ actor ForumBlacklistRepository: ForumBlacklistRemoteOperating {
         let html = try await client.fetchHTML(for: .userSpaceProfile(uid: uid), cachePolicy: .reloadIgnoringLocalCacheData)
         return try LoadDiagnosticError.parsing(html: html, context: "ForumBlacklistRepository.fetchUser") {
             let document = try KannaSoup.parse(html, baseURL: YamiboDomain.baseURL.absoluteString)
-            // Unlike a navigation title hint, this name comes from the actual profile.
             guard let name = document.firstText(".avatar_bg .name"), !name.isEmpty else {
                 try YamiboHTMLPageInspector.ensureReadable(html)
                 throw YamiboError.parsingFailed(context: L10n.string("blacklist.title"))

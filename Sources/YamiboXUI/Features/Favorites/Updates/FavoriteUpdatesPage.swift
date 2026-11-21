@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Dedicated favorite-updates page behind the favorites toolbar bell:
-/// check controls, the automatic interval, notifications, and the detected
-/// update events.
 struct FavoriteUpdatesPage: View {
     @ObservedObject var updateMonitor: FavoriteUpdateMonitor
     let routes: LocalFavoritesRoutes
@@ -69,10 +66,6 @@ struct FavoriteUpdatesPage: View {
                 }
             } else {
                 Button {
-                    // Manual/foreground check: a larger non-tag directory cap
-                    // than the background task's is safe here since the user
-                    // is actively waiting on this run, not a tight
-                    // BGAppRefreshTask execution budget.
                     Task { _ = await updateMonitor.startCheck(nonTagMangaDirectoryCheckCap: 3) }
                 } label: {
                     Label(L10n.string("favorites.updates.check"), systemImage: "arrow.clockwise.circle")

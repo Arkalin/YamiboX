@@ -9,9 +9,6 @@ enum ForumComposerMarkupParser {
         let parameter: String
         let isHTML: Bool
 
-        // Only attribute-consuming branches need a DOM. Keep the same HTML
-        // parser for those attributes without parsing br, simple formatting,
-        // or literal bodies whose elements are never read.
         var element: Element? {
             guard isHTML, !isClosing else { return nil }
             return try? KannaSoup.parseBodyFragment(raw).selectFirst(name)
@@ -64,8 +61,6 @@ enum ForumComposerMarkupParser {
             let raw = text.substring(with: range)
             let value: String
             if format == .html && !literal {
-                // RCDATA decodes named/numeric entities once without folding
-                // whitespace, unlike the reader's display-text normalizer.
                 let node = try? KannaSoup.parseBodyFragment("<textarea>\(raw)</textarea>").selectFirst("textarea")
                 value = node?.getChildNodes().map { $0.text() }.joined() ?? raw
             } else { value = raw }
@@ -98,8 +93,6 @@ enum ForumComposerMarkupParser {
                         appendText(fullRange, wrappers: wrappers, literal: true)
                     } else if format == .html && ["p", "div"].contains(token.name) && token.element?.attributes.isEmpty == true {
                         walk(from: index + 1, to: closeIndex, lower: tokenEnd, upper: close.range.location, wrappers: wrappers, depth: depth + 1)
-                        // TextKit edits paragraph boundaries as ordinary line
-                        // breaks. After an edit these canonicalize to <br>.
                         runs.append(.init(text: "\n", source: "<br>", wrappers: wrappers))
                     } else if let wrapper = wrapper(token, closing: close.raw, inner: text.substring(with: innerRange), format: format) {
                         walk(from: index + 1, to: closeIndex, lower: tokenEnd, upper: close.range.location, wrappers: wrappers + [wrapper], depth: depth + 1)
@@ -125,10 +118,6 @@ enum ForumComposerMarkupParser {
         guard source.utf16.contains(60) else { return [] }
         let units = Array(source.utf16)
         guard units.count > 2 else { return [] }
-        // Preserve the old body's grammar: non-quote/non-'>' characters
-        // (including '<') or a complete single/double-quoted segment. Each
-        // suffix records its first unquoted '>', or -1 if a quote never closes.
-        // Failed opening candidates can then share the suffix calculation.
         var bodyEnds = Array(repeating: -1, count: units.count + 1)
         var nextSingleQuote: Int?
         var nextDoubleQuote: Int?
@@ -154,8 +143,6 @@ enum ForumComposerMarkupParser {
             var end = bodyEnds[cursor + 1]
             if cursor + 3 < units.count, units[cursor + 1] == 33,
                units[cursor + 2] == 45, units[cursor + 3] == 45 {
-                // Comments take precedence and close at the first '-->'. This
-                // search only advances, even when every comment is truncated.
                 let minimumClose = cursor + 4
                 if let current = commentEnd, current < minimumClose { commentEnd = nil }
                 if commentEnd == nil {
@@ -171,7 +158,6 @@ enum ForumComposerMarkupParser {
                 }
                 if let commentEnd { end = commentEnd + 2 }
             }
-            // '+' in the old regex requires a nonempty body, so '<>' is text.
             guard end > cursor + 1 else { cursor += 1; continue }
             ranges.append(NSRange(location: cursor, length: end - cursor + 1))
             cursor = end + 1

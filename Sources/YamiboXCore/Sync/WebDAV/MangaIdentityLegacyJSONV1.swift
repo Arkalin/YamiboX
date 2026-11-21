@@ -1,9 +1,5 @@
 import Foundation
 
-// Frozen compatibility for payloads without an identity registry. Current
-// payloads and local writes must use their feature-owned typed remappers.
-/// Transforms structured records rather than replacing arbitrary strings. Titles,
-/// URLs, excerpts and chapter TIDs are never interpreted as directory keys.
 enum MangaIdentityLegacyJSONV1 {
     static func normalize(_ data: Data, identities: MangaDirectoryIdentitySnapshot, legacy: Bool, datasetID: String? = nil) throws -> Data {
         let value = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
@@ -17,15 +13,10 @@ enum MangaIdentityLegacyJSONV1 {
         if source["strategy"] != nil, source["chapters"] != nil, let name = source["cleanBookName"] as? String {
             let id = identities.resolve(source["id"] as? String ?? name, name: name, legacy: legacy)
             object["id"] = id
-            // The title has its own conflict clock. Apply its winning value
-            // before merging content so the exported receipt matches storage.
             if let title = identities.titles[id], title != id { object["cleanBookName"] = title }
         }
         if ["mangaTitle", "smartManga"].contains(source["kind"] as? String ?? ""), let name = source["cleanBookName"] as? String {
             let id = source["mangaID"] as? String
-            // An unresolved legacy history/progress target may survive local
-            // migration. New-format transport must not resolve it by name
-            // without the containing record's chapter evidence.
             if legacy || source["kind"] as? String != "mangaTitle" || id.map(isStableID) == true {
                 object["mangaID"] = identities.resolve(id ?? name, name: name, legacy: legacy)
             }
@@ -45,8 +36,6 @@ enum MangaIdentityLegacyJSONV1 {
                 object["mangaDirectory"] = ["directoryID": identities.resolve(id, legacy: legacy)]
             }
         }
-        // Launch contexts and resolved favorite source metadata have explicit
-        // directory fields; guessed names alone do not acquire an identity.
         for field in ["directoryID", "mangaDirectoryID"] {
             if let id = source[field] as? String { object[field] = identities.resolve(id, legacy: legacy) }
         }
@@ -64,11 +53,6 @@ enum MangaIdentityLegacyJSONV1 {
                       !resolved.hasPrefix(protectedPrefix) else { return }
                 insert(confirmedPrefix + original, date)
             }
-            // The first identity format used the same marker for guessed and
-            // confirmed hashes. An identity already present in the registry
-            // is evidence of a real deletion: never downgrade it just because
-            // the directory has since been renamed. Only unregistered guesses
-            // may return to pending/old-name protection.
             var recovered: Set<String> = []
             for (marker, date) in tombstones where marker.hasPrefix(protectedPrefix) {
                 let original = String(marker.dropFirst(protectedPrefix.count))
@@ -92,9 +76,6 @@ enum MangaIdentityLegacyJSONV1 {
                 guard !recovered.contains(key) else { continue }
                 let newKey = normalizeKey(key, identities: identities, legacy: legacy, directoryDataset: datasetID == "mangaDirectories", deletedAt: date as? Double)
                 insert(newKey, date)
-                // Original-key markers only filter old-format records. Keep
-                // confirmed deletions distinct from rename protection so a
-                // later rename cannot undo a successfully resolved deletion.
                 let original = key.hasPrefix(pendingPrefix) ? String(key.dropFirst(pendingPrefix.count)) : key
                 if (legacy || key.hasPrefix(pendingPrefix)), newKey != key,
                    !original.hasPrefix(protectedPrefix), !original.hasPrefix(confirmedPrefix) {
@@ -124,29 +105,17 @@ enum MangaIdentityLegacyJSONV1 {
     private static func resolveLegacyKey(_ key: String, identities: MangaDirectoryIdentitySnapshot, directoryDataset: Bool, legacyValue: Bool, deletedAt: Double?) -> String {
         guard let parts = mangaKey(key, directoryDataset: directoryDataset) else { return key }
         let value = parts.value
-        // A legacy title may itself start with "manga-id:". Explicit legacy
-        // aliases win for old keys, but never reinterpret a new-format ID as
-        // a display name merely because an alias happens to share its text.
         if !legacyValue, isStableID(value) { return parts.prefix + identities.canonicalID(value) }
         guard let id = identities.legacyIdentities[value] ?? identities.names[value] ?? identities.redirects[value] else {
             return pendingPrefix + key
         }
         let resolved = identities.canonicalID(id)
-        // A name tombstone can describe the removal of an old name during a
-        // rename, not deletion of the surviving identity. Opaque favorite keys
-        // have no such name semantics and can safely follow their mapping.
         let isName = identities.names[value] != nil || parts.prefix == "SmartManga:" || parts.prefix.isEmpty
         if isName, let currentName = identities.titles[resolved], currentName != value {
-            // A later real deletion can arrive before the alias of an earlier
-            // rename. A different current title alone does not prove that the
-            // tombstone merely removed the old name. Compare clocks before
-            // turning it into permanent old-format-only protection.
             guard let deletedAt, deletedAt.isFinite,
                   let renamedAt = identities.titleModifiedAt[resolved], renamedAt.isFinite, renamedAt > 0 else {
                 return pendingPrefix + key
             }
-            // Codable Date uses the 2001 reference epoch; identity title
-            // clocks are persisted as Unix seconds.
             if Date(timeIntervalSinceReferenceDate: deletedAt).timeIntervalSince1970 <= renamedAt {
                 return protectedPrefix + key
             }
@@ -159,8 +128,6 @@ enum MangaIdentityLegacyJSONV1 {
         if key.hasPrefix(pendingPrefix) {
             return resolveLegacyKey(String(key.dropFirst(pendingPrefix.count)), identities: identities, directoryDataset: directoryDataset, legacyValue: true, deletedAt: deletedAt)
         }
-        // Raw unknown keys from older new-format payloads also remain
-        // retryable. Never manufacture a directory identity from a tombstone.
         return resolveLegacyKey(key, identities: identities, directoryDataset: directoryDataset, legacyValue: legacy, deletedAt: deletedAt)
     }
 }

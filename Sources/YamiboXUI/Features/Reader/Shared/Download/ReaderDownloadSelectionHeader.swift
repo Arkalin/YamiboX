@@ -1,9 +1,6 @@
 import SwiftUI
 import YamiboXCore
 
-/// Header row above a reader download list: section label that swaps to a
-/// select-all toggle in selection mode, with the select/done button at the
-/// trailing edge.
 struct ReaderDownloadSelectionHeader: View {
     let sectionTitle: String
     let isSelecting: Bool

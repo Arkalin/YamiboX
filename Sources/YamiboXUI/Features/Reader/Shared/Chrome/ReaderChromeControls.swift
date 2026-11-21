@@ -215,9 +215,6 @@ private struct ReaderChromeHistoryButtonGlassModifier: ViewModifier {
 struct ReaderChromeCapsuleButton: View {
     let title: String
     let systemName: String
-    /// Rendered on the trailing edge *instead of* `systemName` when set. The
-    /// 书签与喜欢 capsule shows its item count there; every other capsule keeps
-    /// the icon, so the two read as the same control with a different payload.
     var trailingText: String?
     var isEnabled = true
     let action: () -> Void
@@ -285,10 +282,6 @@ func readerChromePanelTint(for colorScheme: ColorScheme) -> Color {
     colorScheme == .dark ? Color.white.opacity(0.06) : Color.white.opacity(0.18)
 }
 
-/// Reader Preview Mode indicator: shown in the top chrome of both the novel
-/// and manga readers while `NovelLaunchContext`/`MangaLaunchContext.isPreview`
-/// is true, so the user knows reading progress isn't being recorded. See
-/// Reader Preview Mode in docs/contexts/reader-navigation/CONTEXT.md.
 struct ReaderPreviewModeBadge: View {
     @Environment(\.colorScheme) private var colorScheme
 

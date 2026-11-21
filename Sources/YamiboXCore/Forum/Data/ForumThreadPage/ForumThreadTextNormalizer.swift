@@ -1,14 +1,8 @@
 import Foundation
 
-/// Whitespace/newline normalization for committed text runs.
-///
-/// Alongside the normalized text it produces a boundary map so that character-indexed
-/// attributes (links, style runs, rubies) recorded against the raw text can be projected
-/// onto the normalized text via `NormalizedText.range(start:length:)`.
 enum ForumThreadTextNormalizer {
     struct NormalizedText {
         let text: String
-        /// `boundaryMap[i]` is the position in `text` that source boundary `i` maps to.
         private let boundaryMap: [Int]
         private let characterCount: Int
 
@@ -18,8 +12,6 @@ enum ForumThreadTextNormalizer {
             characterCount = text.count
         }
 
-        /// Projects a character range of the source text onto the normalized text,
-        /// or nil when the range collapses to nothing.
         func range(start: Int, length: Int) -> (start: Int, length: Int)? {
             guard length > 0, start >= 0, start < boundaryMap.count else { return nil }
             let sourceEnd = min(start + length, boundaryMap.count - 1)

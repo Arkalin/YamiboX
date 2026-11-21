@@ -1,7 +1,6 @@
 import Foundation
 @preconcurrency import GRDB
 
-/// Rewrites only this feature's references using the caller's transaction.
 enum BrowsingHistoryIdentityRemapping {
     static func normalize(snapshot: MangaDirectoryIdentitySnapshot, legacy: Bool, in db: Database) throws {
         let rows = try Row.fetchAll(db, sql: "SELECT * FROM browsing_history WHERE target_kind = 'mangaTitle' ORDER BY last_visit_time ASC, id ASC")
@@ -14,9 +13,6 @@ enum BrowsingHistoryIdentityRemapping {
                 id = snapshot.canonicalID(oldIdentity)
             } else {
                 let chapterColumn = "chapter_thread_id"
-                // An earlier migration may deliberately leave an ambiguous
-                // row untouched. Later identity updates must retry the same
-                // evidence, not turn its display name into a binding.
                 guard let resolved = try MangaDirectoryIdentityDatabase.resolveLegacyRecord(name: name, identity: oldIdentity, chapterTID: row[chapterColumn], allowNameFallback: legacy, in: db) else { continue }
                 try MangaDirectoryIdentityDatabase.registerLegacyRecord(id: resolved, name: name, identity: oldIdentity, in: db)
                 id = resolved
