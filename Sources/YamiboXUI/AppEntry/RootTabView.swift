@@ -167,7 +167,6 @@ extension AppBootstrapPhase {
         case .loadingSession: L10n.resource("app.startup.loading_session")
         case .loadingProfile: L10n.resource("app.startup.loading_profile")
         case .loadingSettings: L10n.resource("app.startup.loading_settings")
-        case .loadingFavorites: L10n.resource("app.startup.loading_favorites")
         case .synchronizingWebDAV: L10n.resource("app.startup.synchronizing_webdav")
         case .loadingReadingPosition: L10n.resource("app.startup.loading_reading_position")
         }

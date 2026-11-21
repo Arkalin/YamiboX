@@ -703,7 +703,6 @@ public final class YamiboAppContext: Sendable {
     }
 
     public func bootstrap(
-        includingFavoriteLibrary: Bool = true,
         onProgress: @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> YamiboBootstrapState {
         do {
@@ -717,18 +716,10 @@ public final class YamiboAppContext: Sendable {
         let profile = await profileStore.load()
         await onProgress(.loadingSettings)
         let settings = await settingsStore.load()
-        let localFavoriteLibrary: FavoriteLibraryDocument
-        if includingFavoriteLibrary {
-            await onProgress(.loadingFavorites)
-            localFavoriteLibrary = (try? await localFavoriteLibraryStore.load()) ?? FavoriteLibraryDocument()
-        } else {
-            localFavoriteLibrary = FavoriteLibraryDocument()
-        }
         return YamiboBootstrapState(
             session: session,
             profile: profile,
-            settings: settings,
-            localFavoriteLibrary: localFavoriteLibrary
+            settings: settings
         )
     }
 
@@ -827,17 +818,14 @@ public struct YamiboBootstrapState: Sendable {
     public let session: SessionState
     public let profile: YamiboProfile?
     public let settings: AppSettings
-    public let localFavoriteLibrary: FavoriteLibraryDocument
 
     public init(
         session: SessionState,
         profile: YamiboProfile?,
-        settings: AppSettings,
-        localFavoriteLibrary: FavoriteLibraryDocument = FavoriteLibraryDocument()
+        settings: AppSettings
     ) {
         self.session = session
         self.profile = profile
         self.settings = settings
-        self.localFavoriteLibrary = localFavoriteLibrary
     }
 }

@@ -1,16 +1,6 @@
 import Foundation
 import os
 
-public struct AppContinuityLaunchResult: Sendable {
-    public let bootstrapState: YamiboBootstrapState
-    public let restoredRoute: ReaderResumeRoute?
-
-    public init(bootstrapState: YamiboBootstrapState, restoredRoute: ReaderResumeRoute?) {
-        self.bootstrapState = bootstrapState
-        self.restoredRoute = restoredRoute
-    }
-}
-
 public struct AppContinuityLaunchPreparation: Sendable {
     public let bootstrapState: YamiboBootstrapState
     public let completion: Task<AppContinuityLaunchCompletion, Never>
@@ -72,14 +62,10 @@ public final class AppContinuityWorkflow: Sendable {
 
     public func prepareLaunch(
         canRestoreReaderRoute: Bool,
-        includingFavoriteLibrary: Bool = true,
         onProgress: @escaping @Sendable (AppBootstrapPhase) async -> Void = { _ in }
     ) async -> AppContinuityLaunchPreparation {
         let startup = await prepareReaderRestore()
-        let bootstrapState = await appContext.bootstrap(
-            includingFavoriteLibrary: includingFavoriteLibrary,
-            onProgress: onProgress
-        )
+        let bootstrapState = await appContext.bootstrap(onProgress: onProgress)
         let completion = Task { [self] in
             let synchronizationResult = await foregroundSynchronization().value
             let restoredRoute = await completeReaderRestore(
@@ -92,15 +78,6 @@ public final class AppContinuityWorkflow: Sendable {
             )
         }
         return AppContinuityLaunchPreparation(bootstrapState: bootstrapState, completion: completion)
-    }
-
-    public func launchIfNeeded(
-        canRestoreReaderRoute: Bool,
-        onProgress: @escaping @Sendable (AppBootstrapPhase) async -> Void = { _ in }
-    ) async -> AppContinuityLaunchResult {
-        let prepared = await prepareLaunch(canRestoreReaderRoute: canRestoreReaderRoute, onProgress: onProgress)
-        let completion = await prepared.completion.value
-        return AppContinuityLaunchResult(bootstrapState: prepared.bootstrapState, restoredRoute: completion.restoredRoute)
     }
 
     public func prepareReaderRestore() async -> AppContinuityReaderRestorePreparation {
@@ -270,14 +247,6 @@ public final class AppContinuityWorkflow: Sendable {
             mutableState.foregroundSyncTask = task
             return task
         }
-    }
-
-    public func localDataChanged(touchesAppSettings _: Bool = false) {
-        state.withLock {
-            $0.needsFullLocalFingerprint = true
-            $0.hasFreshLocalChangeSignal = true
-        }
-        scheduleDebouncedUpload()
     }
 
     func localDataChanged(datasetID: String) {

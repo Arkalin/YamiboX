@@ -216,7 +216,6 @@ public final class YamiboAppModel {
             await configureAccountTransitions()
             preparation = await appContinuity.prepareLaunch(
                 canRestoreReaderRoute: canRestoreReaderRoute,
-                includingFavoriteLibrary: false,
                 onProgress: updateBootstrapPhase
             )
         }
@@ -259,7 +258,7 @@ public final class YamiboAppModel {
         while true {
             if stateGeneration != accountGeneration {
                 stateGeneration = accountGeneration
-                state = await appContext.bootstrap(includingFavoriteLibrary: false)
+                state = await appContext.bootstrap()
             }
             let latestSettings = await appContext.settingsStore.load()
             guard stateGeneration == accountGeneration else { continue }
@@ -272,8 +271,7 @@ public final class YamiboAppModel {
             appAppearanceSettings = latestSettings.appearance
             readerToolbarStyle = latestSettings.readerToolbarStyle
             bootstrapState = YamiboBootstrapState(
-                session: state.session, profile: state.profile, settings: latestSettings,
-                localFavoriteLibrary: state.localFavoriteLibrary
+                session: state.session, profile: state.profile, settings: latestSettings
             )
             bootstrapErrorMessage = nil
             return
@@ -334,7 +332,7 @@ public final class YamiboAppModel {
             bootstrapPhase = nil
         }
 
-        let state = await appContext.bootstrap(includingFavoriteLibrary: false, onProgress: updateBootstrapPhase)
+        let state = await appContext.bootstrap(onProgress: updateBootstrapPhase)
         applyNavigationSettings(state.settings.system.navigation)
         appAppearanceSettings = state.settings.appearance
         readerToolbarStyle = state.settings.readerToolbarStyle
@@ -361,14 +359,6 @@ public final class YamiboAppModel {
         presentedReaderSession != nil || activeNovelContext != nil || activeMangaContext != nil
     }
 
-    public func scheduleWebDAVUploadForLocalChange(touchesAppSettings: Bool = false) {
-        synchronization.localDataChanged(touchesAppSettings: touchesAppSettings)
-    }
-
-    public func scheduleWebDAVUploadForReadingProgressChange() {
-        synchronization.localDataChanged()
-    }
-
     public func flushWebDAVSyncBeforeBackground() {
         synchronization.willEnterBackground()
     }
@@ -384,8 +374,7 @@ public final class YamiboAppModel {
         readerToolbarStyle = settings.readerToolbarStyle
         if let state = bootstrapState {
             bootstrapState = YamiboBootstrapState(
-                session: state.session, profile: state.profile, settings: settings,
-                localFavoriteLibrary: state.localFavoriteLibrary
+                session: state.session, profile: state.profile, settings: settings
             )
         }
     }

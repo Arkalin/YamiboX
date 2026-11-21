@@ -111,11 +111,11 @@ public final class YamiboWindowCoordinator {
         let task = Task { [self] in
             await configureAccountTransitions()
             let result = await synchronization.prepareLaunch(
-                canRestoreReaderRoute: true, includingFavoriteLibrary: false, onProgress: onProgress
+                canRestoreReaderRoute: true, onProgress: onProgress
             )
             guard epoch == accountEpoch else {
                 return AppContinuityLaunchPreparation(
-                    bootstrapState: await appContext.bootstrap(includingFavoriteLibrary: false),
+                    bootstrapState: await appContext.bootstrap(),
                     completion: Task { AppContinuityLaunchCompletion(restoredRoute: nil, synchronizationResult: .skipped) }
                 )
             }
