@@ -19,8 +19,9 @@ final class ForumDestinationNavigator {
     }
     private(set) var browserDetailRevision = UUID()
     private(set) var browserUsesSplitNavigation: Bool
+    private(set) var actionErrorIdentity = UUID()
     var actionErrorMessage: String? {
-        didSet { actionErrorDetails = nil }
+        didSet { actionErrorIdentity = UUID(); actionErrorDetails = nil }
     }
     var actionErrorDetails: LoadFailureDetails?
     var transientFeedback: TransientFeedback?

@@ -74,6 +74,8 @@ final class SystemSettingsViewModel {
         activity.isBusy || downloadManagement.activeAction == .clearingDownload
     }
 
+    var errorIdentity: UUID { activity.errorIdentity }
+
     var errorMessage: String? {
         get { activity.errorMessage }
         set { activity.errorMessage = newValue }

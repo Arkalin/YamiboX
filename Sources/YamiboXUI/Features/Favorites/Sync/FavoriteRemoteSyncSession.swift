@@ -11,8 +11,9 @@ final class FavoriteRemoteSyncSession: ObservableObject {
     ) async -> FavoriteRemoteSyncSnapshot
 
     @Published private(set) var snapshot: FavoriteRemoteSyncSnapshot?
+    private(set) var errorIdentity = UUID()
     @Published var errorMessage: String? {
-        didSet { errorDetails = nil }
+        didSet { errorIdentity = UUID(); errorDetails = nil }
     }
     @Published var errorDetails: LoadFailureDetails?
 

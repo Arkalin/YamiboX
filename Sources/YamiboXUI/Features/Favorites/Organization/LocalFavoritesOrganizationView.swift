@@ -604,6 +604,7 @@ struct LocalFavoritesOrganizationView: View {
     private var dialogBinding: Binding<Bool> {
         .presentation(
             isPresented: { routes.dialog != nil },
+            identity: { routes.dialogIdentity },
             clearOnDismiss: { routes.dialog = nil }
         )
     }
@@ -731,6 +732,7 @@ struct LocalFavoritesOrganizationView: View {
     private var errorAlertBinding: Binding<Bool> {
         .presentation(
             isPresented: { combinedErrorMessage != nil },
+            identity: { [favoriteShare.errorIdentity, organizer.errorIdentity, remoteSync.errorIdentity, updateMonitor.errorIdentity, navigator.actionErrorIdentity] },
             clearOnDismiss: { clearErrorMessages() }
         )
     }

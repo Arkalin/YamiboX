@@ -29,7 +29,10 @@ public enum MangaReaderDownloadPrompt: Equatable, Identifiable, Sendable {
 public final class MangaReaderDownloadViewModel: ObservableObject {
     @Published public private(set) var rows: [MangaReaderDownloadRow] = []
     @Published public private(set) var favorite: Favorite?
-    @Published public private(set) var prompt: MangaReaderDownloadPrompt?
+    private(set) var promptIdentity = UUID()
+    @Published public private(set) var prompt: MangaReaderDownloadPrompt? {
+        didSet { promptIdentity = UUID() }
+    }
     @Published public private(set) var errorMessage: String? {
         didSet { errorDetails = nil }
     }

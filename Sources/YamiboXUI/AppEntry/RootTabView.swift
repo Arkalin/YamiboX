@@ -238,6 +238,7 @@ private struct AppUpdateLaunchPromptAlert: ViewModifier {
     private var promptIsPresented: Binding<Bool> {
         .presentation(
             isPresented: { isActive && prompter.prompt != nil },
+            identity: { prompter.promptIdentity },
             clearOnDismiss: { prompter.dismissPrompt() }
         )
     }

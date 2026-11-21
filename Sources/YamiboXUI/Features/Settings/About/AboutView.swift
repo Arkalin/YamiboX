@@ -58,6 +58,7 @@ public struct AboutView: View {
     private var updateAlertIsPresented: Binding<Bool> {
         .presentation(
             isPresented: { updateViewModel.alert != nil },
+            identity: { updateViewModel.alertIdentity },
             clearOnDismiss: { updateViewModel.alert = nil }
         )
     }
@@ -233,7 +234,10 @@ final class AboutUpdateViewModel: ObservableObject {
     typealias CheckForUpdate = @Sendable (URL, String, String) async -> AppUpdateCheckResult
 
     @Published private(set) var isCheckingForUpdates = false
-    @Published var alert: AboutUpdateAlert?
+    private(set) var alertIdentity = UUID()
+    @Published var alert: AboutUpdateAlert? {
+        didSet { alertIdentity = UUID() }
+    }
 
     private let sourceURL: URL
     private let currentBundleIdentifier: String

@@ -17,12 +17,16 @@ final class WebDAVSyncSettingsViewModel: ObservableObject {
     @Published var direction: WebDAVSyncDirection = .upload
     @Published private(set) var activeAction: WebDAVSyncSettingsAction?
     @Published private(set) var lastSyncedAt: Date?
+    private(set) var errorIdentity = UUID()
     @Published var errorMessage: String? {
-        didSet { errorDetails = nil }
+        didSet { errorIdentity = UUID(); errorDetails = nil }
     }
     @Published var errorDetails: LoadFailureDetails?
     @Published var successMessage: String?
-    @Published var isShowingAccountMismatchConfirmation = false
+    private(set) var accountMismatchIdentity = UUID()
+    @Published var isShowingAccountMismatchConfirmation = false {
+        didSet { accountMismatchIdentity = UUID() }
+    }
     @Published private(set) var accountMismatchDetails: LoadFailureDetails?
 
     private let dependencies: WebDAVSyncDependencies
@@ -257,6 +261,7 @@ public struct WebDAVSyncSettingsView: View {
                 details: viewModel.errorDetails,
                 isPresented: .presentation(
                     isPresented: { viewModel.errorMessage != nil },
+                    identity: { viewModel.errorIdentity },
                     clearOnDismiss: { viewModel.errorMessage = nil }
                 )
             ) {
@@ -268,6 +273,7 @@ public struct WebDAVSyncSettingsView: View {
                 details: viewModel.accountMismatchDetails,
                 isPresented: .presentation(
                     isPresented: { viewModel.isShowingAccountMismatchConfirmation },
+                    identity: { viewModel.accountMismatchIdentity },
                     clearOnDismiss: { viewModel.isShowingAccountMismatchConfirmation = false }
                 )
             ) {

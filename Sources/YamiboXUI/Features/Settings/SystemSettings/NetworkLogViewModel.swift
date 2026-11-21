@@ -14,8 +14,9 @@ final class NetworkLogViewModel {
     private(set) var hasLoaded = false
     private(set) var isWorking = false
     var exportFile: NetworkLogExportFile?
+    private(set) var errorIdentity = UUID()
     var errorMessage: String? {
-        didSet { errorDetails = nil }
+        didSet { errorIdentity = UUID(); errorDetails = nil }
     }
     var errorDetails: LoadFailureDetails?
 

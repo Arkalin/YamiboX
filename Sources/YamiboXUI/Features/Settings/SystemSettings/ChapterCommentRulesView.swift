@@ -48,6 +48,7 @@ struct ChapterCommentFilterSettingsSheet: View {
             details: viewModel.errorDetails,
             isPresented: .presentation(
                 isPresented: { viewModel.errorMessage != nil && !viewModel.isEditingCommentRule },
+                identity: { viewModel.activity.errorIdentity },
                 clearOnDismiss: { viewModel.errorMessage = nil }
             )
         ) {

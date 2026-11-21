@@ -223,6 +223,7 @@ struct SettingsStorageView: View {
     private var errorIsPresented: Binding<Bool> {
         .presentation(
             isPresented: { viewModel.errorMessage != nil },
+            identity: { viewModel.activity.errorIdentity },
             clearOnDismiss: { viewModel.errorMessage = nil }
         )
     }

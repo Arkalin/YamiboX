@@ -48,6 +48,7 @@ struct SettingsPresentationEffects: ViewModifier {
     private var errorIsPresented: Binding<Bool> {
         .presentation(
             isPresented: { isActive && state.viewModel.errorMessage != nil },
+            identity: { state.viewModel.errorIdentity },
             clearOnDismiss: {
                 guard isActive else { return }
                 state.viewModel.errorMessage = nil

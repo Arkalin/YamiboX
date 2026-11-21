@@ -17,8 +17,9 @@ final class FavoriteShareFlowModel {
     private(set) var pendingImportData: Data?
     var isFileImporterPresented = false
     var isFileExporterPresented = false
+    private(set) var errorIdentity = UUID()
     var errorMessage: String? {
-        didSet { errorDetails = nil }
+        didSet { errorIdentity = UUID(); errorDetails = nil }
     }
     var errorDetails: LoadFailureDetails?
     var transientFeedback: TransientFeedback?

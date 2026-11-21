@@ -66,6 +66,7 @@ struct ExternalDisplayTouchAreaPreview: View {
             details: viewModel.errorDetails,
             isPresented: .presentation(
                 isPresented: { viewModel.errorMessage != nil },
+                identity: { viewModel.activity.errorIdentity },
                 clearOnDismiss: { viewModel.errorMessage = nil }
             )
         ) {

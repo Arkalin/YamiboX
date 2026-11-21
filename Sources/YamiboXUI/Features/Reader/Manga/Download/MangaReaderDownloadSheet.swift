@@ -105,6 +105,7 @@ struct MangaReaderDownloadSheet: View {
                 message: favoriteRequiredMessage,
                 isPresented: .presentation(
                     isPresented: { model.prompt != nil },
+                    identity: { model.promptIdentity },
                     clearOnDismiss: { model.clearPrompt() }
                 )
             ) {

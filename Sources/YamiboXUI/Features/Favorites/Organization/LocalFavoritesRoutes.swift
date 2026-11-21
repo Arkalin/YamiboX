@@ -68,7 +68,10 @@ final class LocalFavoritesRoutes: ObservableObject {
     }
 
     @Published var sheet: Sheet?
-    @Published var dialog: Dialog?
+    private(set) var dialogIdentity = UUID()
+    @Published var dialog: Dialog? {
+        didSet { dialogIdentity = UUID() }
+    }
     @Published var detail: ContentDetailDestination?
     @Published var isSyncProgressPushed = false
     @Published var isUpdatesPagePushed = false

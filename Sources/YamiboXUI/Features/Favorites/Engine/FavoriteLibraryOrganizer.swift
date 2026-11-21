@@ -84,8 +84,9 @@ final class FavoriteLibraryOrganizer {
     @ObservationIgnored let covers: FavoriteCoverCoordinator
     var coverLookup: FavoriteCoverCoordinator.Lookup { covers.lookup }
 
+    private(set) var errorIdentity = UUID()
     var errorMessage: String? {
-        didSet { errorDetails = nil }
+        didSet { errorIdentity = UUID(); errorDetails = nil }
     }
     var errorDetails: LoadFailureDetails?
     var transientFeedback: TransientFeedback?

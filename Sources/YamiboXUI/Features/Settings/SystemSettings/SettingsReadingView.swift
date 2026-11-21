@@ -93,6 +93,7 @@ struct SettingsReadingView: View {
     private var errorIsPresented: Binding<Bool> {
         .presentation(
             isPresented: { !showsTouchAreaPreview && viewModel.errorMessage != nil && !viewModel.isEditingCommentRule },
+            identity: { viewModel.activity.errorIdentity },
             clearOnDismiss: { viewModel.errorMessage = nil }
         )
     }

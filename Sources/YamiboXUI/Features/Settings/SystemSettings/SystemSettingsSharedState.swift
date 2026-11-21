@@ -19,8 +19,9 @@ final class SystemSettingsActivity {
 
     @ObservationIgnored private var settingsEdits: [SettingsEditKey: [SettingsEdit]] = [:]
     var activeAction: SystemSettingsAction?
+    private(set) var errorIdentity = UUID()
     var errorMessage: String? {
-        didSet { errorDetails = nil }
+        didSet { errorIdentity = UUID(); errorDetails = nil }
     }
     var errorDetails: LoadFailureDetails?
 

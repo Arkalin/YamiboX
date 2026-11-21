@@ -18,8 +18,9 @@ final class FavoriteUpdateMonitor: ObservableObject {
         didSet { scopeRevision &+= 1 }
     }
     private(set) var scopeRevision: UInt64 = 0
+    private(set) var errorIdentity = UUID()
     @Published var errorMessage: String? {
-        didSet { errorDetails = nil }
+        didSet { errorIdentity = UUID(); errorDetails = nil }
     }
     @Published var errorDetails: LoadFailureDetails?
 

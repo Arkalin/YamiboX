@@ -16,6 +16,7 @@ struct MangaReaderSettingsSheet: View {
     @State private var baseline: MangaReaderSettings?
     @State private var isSaving = false
     @State private var saveFailure: String?
+    @State private var saveFailureIdentity = UUID()
     @State private var isPeripheralSettingsPresented = false
     @State private var isGestureRegionPreviewPresented = false
 
@@ -85,7 +86,7 @@ struct MangaReaderSettingsSheet: View {
         .interactiveDismissDisabled(isSaving)
         .failureAlert(
             L10n.string("common.operation_failed"), message: saveFailure,
-            isPresented: .presentation(isPresented: { saveFailure != nil }, clearOnDismiss: { saveFailure = nil })
+            isPresented: .presentation(isPresented: { saveFailure != nil }, identity: { saveFailureIdentity }, clearOnDismiss: { saveFailure = nil })
         ) {
             Button(L10n.string("common.ok")) { saveFailure = nil }
         }
@@ -122,6 +123,7 @@ struct MangaReaderSettingsSheet: View {
                 try await model.saveViewportSettings(draft, for: settingsTarget)
                 dismiss()
             } catch {
+                saveFailureIdentity = UUID()
                 saveFailure = error.localizedDescription
             }
         }

@@ -94,6 +94,7 @@ struct NetworkLogView: View {
             details: viewModel.errorDetails,
             isPresented: .presentation(
                 isPresented: { viewModel.errorMessage != nil },
+                identity: { viewModel.errorIdentity },
                 clearOnDismiss: { viewModel.errorMessage = nil }
             )
         ) {

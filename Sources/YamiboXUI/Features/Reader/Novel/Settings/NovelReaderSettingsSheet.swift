@@ -14,6 +14,7 @@ struct NovelReaderSettingsSheet: View {
     @State private var baseline: NovelReaderAppearanceSettings?
     @State private var isSaving = false
     @State private var saveFailure: String?
+    @State private var saveFailureIdentity = UUID()
     @State private var isPeripheralSettingsPresented = false
     @State private var isForumFormatPresented = false
     @State private var isFontLibraryPresented = false
@@ -69,7 +70,7 @@ struct NovelReaderSettingsSheet: View {
         .interactiveDismissDisabled(isSaving)
         .failureAlert(
             L10n.string("common.operation_failed"), message: saveFailure,
-            isPresented: .presentation(isPresented: { saveFailure != nil }, clearOnDismiss: { saveFailure = nil })
+            isPresented: .presentation(isPresented: { saveFailure != nil }, identity: { saveFailureIdentity }, clearOnDismiss: { saveFailure = nil })
         ) {
             Button(L10n.string("common.ok")) { saveFailure = nil }
         }
@@ -197,6 +198,7 @@ struct NovelReaderSettingsSheet: View {
         guard let baseline, !isSaving else { return }
         let draft = draftSettings
         guard draft.fontSelection == baseline.fontSelection || !model.fontLibrary.resolve(draft.fontSelection).isFallback else {
+            saveFailureIdentity = UUID()
             saveFailure = L10n.string("reader.font.unavailable")
             return
         }
@@ -208,6 +210,7 @@ struct NovelReaderSettingsSheet: View {
                 try await settingsStore.update { $0.updateNovelSettings(draft, from: baseline, for: target) }
                 dismiss()
             } catch {
+                saveFailureIdentity = UUID()
                 saveFailure = error.localizedDescription
             }
         }

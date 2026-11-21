@@ -29,7 +29,10 @@ struct AppUpdateLaunchPrompt: Equatable {
 final class AppUpdateLaunchPrompter {
     typealias CheckForUpdate = @Sendable () async -> AppUpdateCheckResult
 
-    private(set) var prompt: AppUpdateLaunchPrompt?
+    private(set) var promptIdentity = UUID()
+    private(set) var prompt: AppUpdateLaunchPrompt? {
+        didSet { promptIdentity = UUID() }
+    }
 
     @ObservationIgnored private var hasChecked = false
     @ObservationIgnored private let defaults: UserDefaults
