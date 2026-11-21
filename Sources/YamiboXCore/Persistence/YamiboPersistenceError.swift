@@ -16,10 +16,3 @@ public struct YamiboPersistenceError: LocalizedError, Sendable {
         L10n.string("error.persistence_failed", context)
     }
 }
-
-extension YamiboPersistenceError: Equatable {
-    public static func == (lhs: YamiboPersistenceError, rhs: YamiboPersistenceError) -> Bool {
-        lhs.context == rhs.context
-            && String(describing: lhs.underlying) == String(describing: rhs.underlying)
-    }
-}

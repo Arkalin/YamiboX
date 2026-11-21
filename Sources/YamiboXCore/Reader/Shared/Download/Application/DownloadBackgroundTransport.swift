@@ -42,6 +42,10 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         super.init()
     }
 
+    private func withDownloadStateLock<Value>(_ operation: () -> Value) -> Value {
+        lock.withLock(operation)
+    }
+
     public static func makeBackgroundConfiguration(
         identifier: String = defaultIdentifier
     ) -> URLSessionConfiguration {
@@ -107,7 +111,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
                 urlRequest.httpShouldHandleCookies = false
                 urlRequest.setValue(attempt.context.key.userAgent, forHTTPHeaderField: "User-Agent")
                 let task = session.downloadTask(with: urlRequest)
-                lock.withLock { _ = unstartedTaskIdentifiers.insert(task.taskIdentifier) }
+                withDownloadStateLock { _ = unstartedTaskIdentifiers.insert(task.taskIdentifier) }
                 task.taskDescription = source.url.absoluteString
                 let admitted = taskBox.admit(task) {
                     guard !Task.isCancelled else { return false }
@@ -123,7 +127,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
                     return true
                 }
                 guard admitted else {
-                    lock.withLock { _ = unstartedTaskIdentifiers.remove(task.taskIdentifier) }
+                    withDownloadStateLock { _ = unstartedTaskIdentifiers.remove(task.taskIdentifier) }
                     continuation.resume(throwing: CancellationError())
                     return
                 }
@@ -135,19 +139,19 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
 
     public func cancelAllDownloads() {
         controlledSession.getAllTasks { $0.forEach { $0.cancel() } }
-        let tasks = lock.withLock { pendingDownloads.values.compactMap(\.task) }
+        let tasks = withDownloadStateLock { pendingDownloads.values.compactMap(\.task) }
         tasks.forEach { $0.cancel() }
     }
 
     func invalidateRestoredDownloads() async {
         await withCheckedContinuation { continuation in
-            lock.withLock { invalidationContinuation = continuation }
+            withDownloadStateLock { invalidationContinuation = continuation }
             session.invalidateAndCancel()
         }
     }
 
     public func urlSession(_ session: URLSession, didBecomeInvalidWithError error: (any Error)?) {
-        let continuation = lock.withLock {
+        let continuation = withDownloadStateLock {
             let continuation = invalidationContinuation
             invalidationContinuation = nil
             return continuation
@@ -159,7 +163,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         _ completionHandler: @escaping () -> Void,
         forSessionIdentifier identifier: String
     ) {
-        lock.withLock {
+        withDownloadStateLock {
             backgroundEventCompletionHandlers[identifier] = completionHandler
         }
         _ = session
@@ -167,7 +171,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
 
     public func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
         guard let identifier = session.configuration.identifier else { return }
-        let completionHandler = lock.withLock {
+        let completionHandler = withDownloadStateLock {
             backgroundEventCompletionHandlers.removeValue(forKey: identifier)
         }
         completionHandler?()
@@ -178,7 +182,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
     ) {
         _ = networkLog(for: downloadTask)
-        let report = lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.progress }
+        let report = withDownloadStateLock { pendingDownloads[downloadTask.taskIdentifier]?.progress }
         report?(DownloadTransferProgress(receivedBytes: totalBytesWritten, expectedBytes: totalBytesExpectedToWrite))
     }
 
@@ -188,7 +192,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         didFinishDownloadingTo location: URL
     ) {
         _ = networkLog(for: downloadTask)
-        guard lock.withLock({ pendingDownloads[downloadTask.taskIdentifier] != nil }) else { return }
+        guard withDownloadStateLock({ pendingDownloads[downloadTask.taskIdentifier] != nil }) else { return }
         do {
             guard let response = downloadTask.response as? HTTPURLResponse else {
                 throw YamiboError.invalidResponse(statusCode: nil)
@@ -196,7 +200,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             let file = try FileHandle(forReadingFrom: location)
             defer { try? file.close() }
             let prefix = try file.read(upToCount: ForumWAFResponseClassifier.maximumBodyBytes) ?? Data()
-            lock.withLock {
+            withDownloadStateLock {
                 pendingDownloads[downloadTask.taskIdentifier]?.response = response
                 pendingDownloads[downloadTask.taskIdentifier]?.prefix = prefix
             }
@@ -204,9 +208,9 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             guard (attributes[.size] as? NSNumber)?.intValue ?? Int.max <= 50 * 1024 * 1024,
                   200..<300 ~= response.statusCode else { throw YamiboError.invalidResponse(statusCode: (downloadTask.response as? HTTPURLResponse)?.statusCode) }
             let data = try Data(contentsOf: location)
-            lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.result = .success(data) }
+            withDownloadStateLock { pendingDownloads[downloadTask.taskIdentifier]?.result = .success(data) }
         } catch {
-            lock.withLock { pendingDownloads[downloadTask.taskIdentifier]?.result = .failure(error) }
+            withDownloadStateLock { pendingDownloads[downloadTask.taskIdentifier]?.result = .failure(error) }
         }
         finishIfReady(taskIdentifier: downloadTask.taskIdentifier)
     }
@@ -216,7 +220,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         task: URLSessionTask,
         didCompleteWithError error: (any Error)?
     ) {
-        lock.withLock {
+        withDownloadStateLock {
             unstartedTaskIdentifiers.remove(task.taskIdentifier)
             pendingDownloads[task.taskIdentifier]?.completionReceived = true
             pendingDownloads[task.taskIdentifier]?.completionError = error.map(Self.downloadError(from:))
@@ -240,12 +244,12 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
 
     public func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
         guard let log = networkLog(for: task) else { return }
-        lock.withLock {
+        withDownloadStateLock {
             networkLogs[task.taskIdentifier]?.startedAt = metrics.taskInterval.start
             networkLogs[task.taskIdentifier]?.duration = metrics.taskInterval.duration
             pendingDownloads[task.taskIdentifier]?.metricsReceived = true
         }
-        let attempt = lock.withLock { pendingDownloads[task.taskIdentifier]?.attempt }
+        let attempt = withDownloadStateLock { pendingDownloads[task.taskIdentifier]?.attempt }
         var evidence = attempt.flatMap { attempt in
             task.originalRequest?.url.map { ForumRedirectEvidence(origin: attempt.context.key.origin, originalURL: $0) }
         }
@@ -258,9 +262,9 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             }
             if let from = response.url, let to = next.request.url { evidence?.observe(from: from, to: to) }
         }
-        lock.withLock { pendingDownloads[task.taskIdentifier]?.leftOrigin = evidence?.leftOrigin ?? true }
+        withDownloadStateLock { pendingDownloads[task.taskIdentifier]?.leftOrigin = evidence?.leftOrigin ?? true }
         if let evidence, let url = evidence.challengeURL, let attempt, let request = task.originalRequest {
-            lock.withLock {
+            withDownloadStateLock {
                 pendingDownloads[task.taskIdentifier]?.validationFailure = ForumTransportChallenge(
                     challenge: ForumWAFResponseClassifier.challenge(url: url, request: request, credentials: attempt.credentials))
             }
@@ -269,7 +273,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     }
 
     private var session: URLSession {
-        lock.withLock {
+        withDownloadStateLock {
             if let sessionStorage {
                 return sessionStorage
             }
@@ -278,7 +282,7 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
             session.getAllTasks { [weak self] tasks in
                 for task in tasks where task.state != .completed {
                     guard let self else { task.cancel(); continue }
-                    let trusted = self.lock.withLock {
+                    let trusted = self.withDownloadStateLock {
                         self.pendingDownloads[task.taskIdentifier] != nil || self.unstartedTaskIdentifiers.contains(task.taskIdentifier)
                     }
                     if !trusted {
@@ -299,12 +303,12 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
         progress: @escaping @Sendable (DownloadTransferProgress) -> Void,
         logToken: NetworkLogToken
     ) {
-        lock.withLock {
+        withDownloadStateLock {
             pendingDownloads[taskIdentifier] = PendingDownload(continuation: continuation, task: task, progress: progress, attempt: attempt)
             pendingDownloads[taskIdentifier]?.deadlineTask = Task { [weak self, weak task] in
                 do { try await ContinuousClock().sleep(until: attempt.lease.deadline) }
                 catch { return }
-                self?.lock.withLock {
+                self?.withDownloadStateLock {
                     self?.pendingDownloads[taskIdentifier]?.validationFailure = ForumWAFFailure.runtimeUnavailable
                 }
                 task?.cancel()
@@ -316,11 +320,11 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     }
 
     private func networkLog(for task: URLSessionTask) -> DownloadNetworkLog? {
-        lock.withLock { networkLogs[task.taskIdentifier] }
+        withDownloadStateLock { networkLogs[task.taskIdentifier] }
     }
 
     private func finishIfReady(taskIdentifier: Int) {
-        let result: Result<Data, any Error>? = lock.withLock {
+        let result: Result<Data, any Error>? = withDownloadStateLock {
             guard let pending = pendingDownloads[taskIdentifier], pending.completionReceived else { return nil }
             if let failure = pending.validationFailure { return .failure(failure) }
             if let error = pending.completionError { return .failure(error) }
@@ -337,12 +341,12 @@ public final class DownloadBackgroundTransport: NSObject, DownloadImageTransport
     }
 
     private func complete(taskIdentifier: Int, result: Result<Data, any Error>) {
-        let pending = lock.withLock {
+        let pending = withDownloadStateLock {
             pendingDownloads.removeValue(forKey: taskIdentifier)
         }
         guard let pending else { return }
         pending.deadlineTask?.cancel()
-        let log = lock.withLock { networkLogs.removeValue(forKey: taskIdentifier) }
+        let log = withDownloadStateLock { networkLogs.removeValue(forKey: taskIdentifier) }
         if let log, let task = pending.task {
             let error: (any Error)?
             if case let .failure(failure) = result { error = failure } else { error = nil }
@@ -417,13 +421,5 @@ private final class URLSessionTaskBox: @unchecked Sendable {
             return self.task
         }
         task?.cancel()
-    }
-}
-
-extension NSLock {
-    func withLock<Value>(_ operation: () -> Value) -> Value {
-        lock()
-        defer { unlock() }
-        return operation()
     }
 }

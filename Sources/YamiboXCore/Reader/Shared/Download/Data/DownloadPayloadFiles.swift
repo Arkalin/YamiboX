@@ -134,7 +134,7 @@ extension DownloadStore {
                         db, sql: "SELECT owner_title, updated_at FROM download_novel_entries WHERE entry_key = ?",
                         arguments: [normalized.entryKey]
                     ), (row["owner_title"] as String?) == existingMetadata.ownerTitle,
-                       novelPayloadOptionalDate(from: row["updated_at"] as Double?) == existingMetadata.updatedAt else {
+                       downloadOptionalDate(from: row["updated_at"] as Double?) == existingMetadata.updatedAt else {
                         return nil
                     }
                 }
@@ -175,7 +175,7 @@ extension DownloadStore {
             notifyDownloadDidChange()
             return true
         } catch {
-            throw novelPayloadPersistenceError(from: error)
+            throw downloadPersistenceError(from: error)
         }
     }
 
@@ -303,7 +303,7 @@ extension DownloadStore {
                 }
                 return NovelOfflineSourcePageMetadata(
                     ownerTitle: (row["owner_title"] as String?) ?? identity.ownerTitle,
-                    updatedAt: novelPayloadOptionalDate(from: row["updated_at"] as Double?)
+                    updatedAt: downloadOptionalDate(from: row["updated_at"] as Double?)
                 )
             }
         } catch {
@@ -344,7 +344,7 @@ extension DownloadStore {
                     ownerTitle: (row["owner_title"] as String?)
                         ?? Self.novelDisplayOwnerTitle(ownerTitle: "", threadID: normalizedThreadID),
                     fileName: fileName,
-                    updatedAt: novelPayloadOptionalDate(from: row["updated_at"] as Double?),
+                    updatedAt: downloadOptionalDate(from: row["updated_at"] as Double?),
                     authorID: (row["author_id"] as String?)?.nilIfBlank
                 )
             }
@@ -571,18 +571,4 @@ private extension String {
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
     }
-}
-
-private func novelPayloadPersistenceError(from error: Error) -> any Error {
-    if let error = error as? YamiboError {
-        return error
-    }
-    if let error = error as? YamiboPersistenceError {
-        return error
-    }
-    return YamiboPersistenceError(context: error.localizedDescription, underlying: error)
-}
-
-private func novelPayloadOptionalDate(from value: Double?) -> Date? {
-    value.map(Date.init(timeIntervalSince1970:))
 }
