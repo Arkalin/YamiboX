@@ -367,6 +367,22 @@ public final class YamiboAppContext: Sendable {
         )
     }
 
+    package func offlineNovelWorkTitle(threadID: String, cachedPages: [(view: Int, authorID: String?)]) async -> String? {
+        let thread = ThreadIdentity(tid: threadID)
+        let possibleTitles = (try? await browsingHistoryStore.positionEntries(threadID: threadID, directoryTargetID: nil)) ?? []
+        for entry in possibleTitles where entry.target.threadID == threadID || entry.lastVisitedThreadID == threadID {
+            let title = entry.lastVisitedThreadID == threadID ? (entry.lastVisitedThreadTitle ?? entry.title) : entry.title
+            if let readable = title.nilIfBlank, readable != threadID { return readable }
+        }
+        var seen = Set<NovelPageRequest>()
+        for (view, authorID) in [(1, nil)] + cachedPages {
+            guard seen.insert(.init(threadID: threadID, view: view, authorID: authorID)).inserted else { continue }
+            if let page = await forumCacheStore.loadThreadPage(thread: thread, page: view, authorID: authorID, allowExpired: true),
+               let readable = page.title.nilIfBlank, readable != threadID { return readable }
+        }
+        return nil
+    }
+
     public var libraryDependencies: LibraryDependencies {
         LibraryDependencies(
             localFavoriteLibraryStore: localFavoriteLibraryStore,

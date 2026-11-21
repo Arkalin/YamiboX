@@ -296,7 +296,16 @@ struct LikeWorkListView: View {
             let key = summary.workKey
             switch key.kind {
             case .novel:
-                titles[key] = firstFavoriteTitlesByTID[key.id]
+                let anchors = (try? await likeDependencies.likeStore.likes(for: key)) ?? []
+                let cachedPages = anchors.compactMap { item -> (Int, String?)? in
+                    switch item.anchor {
+                    case let .novelText(anchor): (anchor.view, anchor.resolvedAuthorID)
+                    case let .novelImage(anchor): (anchor.view, anchor.resolvedAuthorID)
+                    default: nil
+                    }
+                }
+                let offlineTitle = await appModel.appContext.offlineNovelWorkTitle(threadID: key.id, cachedPages: cachedPages)
+                titles[key] = offlineTitle ?? firstFavoriteTitlesByTID[key.id]
             case .manga:
                 titles[key] = try? await likeDependencies.mangaDirectoryStore.identityName(id: MangaDirectoryID(rawValue: key.id))
             }
