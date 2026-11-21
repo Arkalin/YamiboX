@@ -43,7 +43,7 @@ final class FavoriteRemoteSyncSession: ObservableObject {
 
     private static var stores: [ObjectIdentifier: StoreEntry] = [:]
 
-    static func shared(for dependencies: LibraryDependencies) -> Self {
+    static func shared(for dependencies: LibraryDependencies) -> FavoriteRemoteSyncSession {
         stores = stores.filter { $0.value.session != nil || $0.value.isChangingAccount }
         let key = ObjectIdentifier(dependencies.localFavoriteLibraryStore)
         let entry = stores[key] ?? StoreEntry()
