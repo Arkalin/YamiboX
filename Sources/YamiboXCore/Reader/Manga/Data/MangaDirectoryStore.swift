@@ -222,55 +222,39 @@ public actor MangaDirectoryStore: MangaDirectoryPersisting {
 
     public func directory(containingTID tid: String) async throws -> MangaDirectory? {
         guard let tid = tid.nilIfBlank else { return nil }
-        return try await database.read { db in
-            guard let row = try Row.fetchOne(
-                db,
-                sql: """
-                SELECT d.clean_book_name
-                FROM manga_directories d
-                JOIN manga_directory_chapters c ON c.directory_id = d.id
-                WHERE c.tid = ?
-                ORDER BY COALESCE(d.last_updated_at, -62135769600) DESC, d.clean_book_name ASC
-                LIMIT 1
-                """,
-                arguments: [tid]
-            ) else {
-                return nil
-            }
-            return try Self.directory(named: row["clean_book_name"], in: db)
-        }
+        return try await directories(containingTIDs: [tid])[tid]
     }
 
     public func directories(containingTIDs tids: [String]) async throws -> [String: MangaDirectory] {
         let normalizedTIDs = Array(Set(tids.compactMap(\.nilIfBlank)))
         guard !normalizedTIDs.isEmpty else { return [:] }
         return try await database.read { db in
-            var winningNameByTID: [String: String] = [:]
+            var uniqueNameByTID: [String: String] = [:]
             for batch in normalizedTIDs.chunked(intoBatchesOf: Self.maxInClauseBatchSize) {
                 let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
                 let rows = try Row.fetchAll(
                     db,
                     sql: """
-                    SELECT c.tid AS tid, d.clean_book_name AS clean_book_name
+                    SELECT c.tid AS tid, MIN(d.clean_book_name) AS clean_book_name
                     FROM manga_directories d
                     JOIN manga_directory_chapters c ON c.directory_id = d.id
                     WHERE c.tid IN (\(placeholders))
-                    ORDER BY c.tid ASC, COALESCE(d.last_updated_at, -62135769600) DESC, d.clean_book_name ASC
+                    GROUP BY c.tid
+                    HAVING COUNT(DISTINCT d.id) = 1
                     """,
                     arguments: StatementArguments(batch)
                 )
                 for row in rows {
                     let tid: String = row["tid"]
-                    guard winningNameByTID[tid] == nil else { continue }
-                    winningNameByTID[tid] = row["clean_book_name"]
+                    uniqueNameByTID[tid] = row["clean_book_name"]
                 }
             }
 
-            guard !winningNameByTID.isEmpty else { return [:] }
+            guard !uniqueNameByTID.isEmpty else { return [:] }
             let identities = try MangaDirectoryIdentityDatabase.redirectSnapshot(in: db)
             var directoriesByName: [String: MangaDirectory] = [:]
             var result: [String: MangaDirectory] = [:]
-            for (tid, cleanBookName) in winningNameByTID {
+            for (tid, cleanBookName) in uniqueNameByTID {
                 if let cached = directoriesByName[cleanBookName] {
                     result[tid] = cached
                     continue

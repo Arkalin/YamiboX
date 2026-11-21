@@ -3,10 +3,31 @@ import Foundation
 @preconcurrency import GRDB
 
 private struct MangaOwnerStateCache: Sendable {
-    var signature: [String]
+    var signature: MangaOwnerStateSignature
     var imageStamp: Date?
     var sourceStamp: Date?
     var states: [String: MangaDownloadState]
+}
+
+private struct MangaOwnerStateSignature: Equatable, Sendable {
+    struct Entry: Equatable, Sendable {
+        let tid: String
+        let sourcePageFileName: String?
+        let sourcePageSchemaVersion: Int?
+        let sourcePageFingerprint: String?
+        let byteCount: Int?
+    }
+
+    struct Image: Equatable, Sendable {
+        let tid: String
+        let url: String
+        let fileName: String?
+    }
+
+    let canonicalOwner: String
+    let entries: [Entry]
+    let images: [Image]
+    let workTIDs: [String]
 }
 
 final class MangaMissingImageCacheEntry: Sendable {
@@ -376,35 +397,49 @@ actor DownloadStore {
         do {
             let result = try await database.read { db -> MangaOwnerStateCache in
                 let canonicalOwner = try Self.canonicalMangaOwnerKey(ownerName, in: db)
-                let entries = try Row.fetchAll(db, sql: "SELECT * FROM download_manga_entries WHERE owner_name = ? ORDER BY tid", arguments: [canonicalOwner])
+                let entries = try Row.fetchAll(db, sql: """
+                    SELECT tid, source_page_file_name, source_page_schema_version, source_page_fingerprint, byte_count
+                    FROM download_manga_entries WHERE owner_name = ? ORDER BY tid
+                    """, arguments: [canonicalOwner]).map { row in
+                    MangaOwnerStateSignature.Entry(
+                        tid: row["tid"], sourcePageFileName: row["source_page_file_name"],
+                        sourcePageSchemaVersion: row["source_page_schema_version"],
+                        sourcePageFingerprint: row["source_page_fingerprint"], byteCount: row["byte_count"]
+                    )
+                }
                 let images = try Row.fetchAll(db, sql: """
                     SELECT i.tid, i.image_url, a.file_name
                     FROM download_manga_entry_images i
                     LEFT JOIN download_image_assets a ON a.image_url = i.image_url
                     WHERE i.owner_name = ? ORDER BY i.tid, i.image_url
-                    """, arguments: [canonicalOwner])
-                let works = try Row.fetchAll(db, sql: "SELECT tid FROM download_works WHERE reader_kind = ? AND owner_name = ? ORDER BY tid", arguments: [DownloadReaderKind.manga.rawValue, canonicalOwner])
+                    """, arguments: [canonicalOwner]).map { row in
+                    MangaOwnerStateSignature.Image(tid: row["tid"], url: row["image_url"], fileName: row["file_name"])
+                }
+                let workTIDs = try String.fetchAll(db, sql: """
+                    SELECT tid FROM download_works WHERE reader_kind = ? AND owner_name = ? ORDER BY tid
+                    """, arguments: [DownloadReaderKind.manga.rawValue, canonicalOwner])
                 let imageStamp = (try? fileManager.attributesOfItem(atPath: imagesDirectory.path)[.modificationDate]) as? Date
                 let sourceStamp = (try? fileManager.attributesOfItem(atPath: mangaSourcePagesDirectory.path)[.modificationDate]) as? Date
-                let signature = [canonicalOwner] + entries.map { String(describing: $0) }
-                    + images.map { String(describing: $0) } + works.map { String(describing: $0) }
+                let signature = MangaOwnerStateSignature(
+                    canonicalOwner: canonicalOwner, entries: entries, images: images, workTIDs: workTIDs
+                )
                 if let previous, previous.signature == signature,
                    imageStamp != nil, sourceStamp != nil,
                    previous.imageStamp == imageStamp, previous.sourceStamp == sourceStamp {
                     return previous
                 }
                 var states: [String: MangaDownloadState] = [:]
-                for work in works { states[work["tid"] as String] = .downloading }
-                let imagesByTID = Dictionary(grouping: images, by: { $0["tid"] as String })
+                for tid in workTIDs { states[tid] = .downloading }
+                let imagesByTID = Dictionary(grouping: images, by: \.tid)
                 for entry in entries {
-                    let tid: String = entry["tid"]
+                    let tid = entry.tid
                     guard Self.validSourcePage(
-                        fileName: entry["source_page_file_name"], schemaVersion: entry["source_page_schema_version"],
-                        fingerprint: entry["source_page_fingerprint"], byteCount: entry["byte_count"], tid: tid,
+                        fileName: entry.sourcePageFileName, schemaVersion: entry.sourcePageSchemaVersion,
+                        fingerprint: entry.sourcePageFingerprint, byteCount: entry.byteCount, tid: tid,
                         fileManager: fileManager, mangaSourcePagesDirectory: mangaSourcePagesDirectory, sourcePageCache: sourcePageCache
                     ) != nil, let imageRows = imagesByTID[tid], !imageRows.isEmpty else { continue }
                     if imageRows.allSatisfy({ row in
-                        guard let name = row["file_name"] as String? else { return false }
+                        guard let name = row.fileName else { return false }
                         return fileManager.fileExists(atPath: imagesDirectory.appendingPathComponent(name).path)
                     }) { states[tid] = .downloaded }
                 }
