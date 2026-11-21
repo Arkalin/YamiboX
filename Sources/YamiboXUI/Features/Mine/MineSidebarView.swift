@@ -160,7 +160,6 @@ struct MineSidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .messageUnreadTabAccessibility(count: appModel.unreadCount(for: .mine))
         .navigationTitle(L10n.string("tab.mine"))
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {

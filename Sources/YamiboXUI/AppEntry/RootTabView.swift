@@ -96,10 +96,12 @@ public struct RootTabView: View {
     private var content: some View {
         TabView(selection: selectedTabBinding) {
             ForEach(appModel.navigationSettings.tabs) { tab in
-                tabContent(tab)
-                    .tag(tab)
-                    .tabItem { Label(tab.title, systemImage: tab.systemImage) }
-                    .badge(MessageUnreadBadge.tabValue(for: appModel.unreadCount(for: tab)))
+                let count = appModel.unreadCount(for: tab)
+                Tab(tab.title, systemImage: tab.systemImage, value: tab) {
+                    tabContent(tab)
+                }
+                .badge(MessageUnreadBadge.text(for: count).map { Text(verbatim: $0) })
+                .accessibilityValue(Text(MessageUnreadBadge.accessibilityValue(for: count)), isEnabled: count > 0)
             }
         }
         .modifier(ReaderPresentationModifier(appModel: appModel))

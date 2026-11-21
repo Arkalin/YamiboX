@@ -17,37 +17,10 @@ enum ForumThreadInlineImageKey: AttributedStringKey {
     static let name = "yamibo.forum.inline-image"
 }
 
-struct ForumThreadItalicAttribute: TextAttribute {}
-
-struct ForumThreadTextRenderer: TextRenderer {
-    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
-        for line in layout {
-            for run in line {
-                var runContext = context
-                if run[ForumThreadItalicAttribute.self] != nil {
-                    let bounds = run.typographicBounds
-                    let baseline = bounds.rect.maxY - bounds.descent
-                    runContext.concatenate(Self.italicTransform(baseline: baseline))
-                }
-                runContext.draw(run)
-            }
-        }
-    }
-
-    static func italicTransform(baseline: CGFloat) -> CGAffineTransform {
-        CGAffineTransform(a: 1, b: 0, c: -0.2, d: 1, tx: baseline * 0.2, ty: 0)
-    }
-
-    var displayPadding: EdgeInsets { EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8) }
-}
-
 struct ForumThreadInlineTextView: View {
-    private static let maxSyntheticItalicCharacters = 320
-
     let refererURL: URL
     private let preparedRuns: [PreparedRun]
     private let imageURLs: [URL]
-    private let useSyntheticItalics: Bool
 
     private enum PreparedRun {
         case text(Text)
@@ -56,9 +29,6 @@ struct ForumThreadInlineTextView: View {
 
     init(attributedText: AttributedString, refererURL: URL) {
         self.refererURL = refererURL
-        let syntheticItalics = attributedText.characters.count <= Self.maxSyntheticItalicCharacters
-            && attributedText.runs.contains(where: { $0[ForumThreadItalicKey.self] == true })
-        useSyntheticItalics = syntheticItalics
         var runs: [PreparedRun] = []
         var urls: Set<URL> = []
         var ordinaryStart = attributedText.startIndex
@@ -78,10 +48,7 @@ struct ForumThreadInlineTextView: View {
                 runs.append(.image(inline, count: attributedText[run.range].characters.count))
             } else {
                 let text = Text(AttributedString(attributedText[run.range])).baselineOffset(offset)
-                let styled = italic
-                    ? (syntheticItalics ? text.customAttribute(ForumThreadItalicAttribute()) : text.italic())
-                    : text
-                runs.append(.text(styled))
+                runs.append(.text(italic ? text.italic() : text))
             }
         }
         if runs.isEmpty {
@@ -100,25 +67,18 @@ struct ForumThreadInlineTextView: View {
     @State private var images: [URL: Image] = [:]
 
     var body: some View {
-        let text = composedText()
-        Group {
-            if useSyntheticItalics {
-                text.textRenderer(ForumThreadTextRenderer())
-            } else {
-                text
-            }
-        }
-        .task(id: requestIdentity) {
-            images = [:]
-            guard let pipeline else { return }
-            await withTaskGroup(of: Void.self) { group in
-                for url in imageURLs {
-                    group.addTask {
-                        await load(url, pipeline: pipeline)
+        composedText()
+            .task(id: requestIdentity) {
+                images = [:]
+                guard let pipeline else { return }
+                await withTaskGroup(of: Void.self) { group in
+                    for url in imageURLs {
+                        group.addTask {
+                            await load(url, pipeline: pipeline)
+                        }
                     }
                 }
             }
-        }
     }
 
     private func composedText() -> Text {

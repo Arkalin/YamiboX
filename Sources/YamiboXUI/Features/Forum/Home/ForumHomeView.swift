@@ -158,6 +158,9 @@ private struct ForumHomeCarouselView: View {
                 fullWidthPager
             }
         }
+        .onChange(of: items.count) { _, count in
+            selection = min(selection, max(0, count - 1))
+        }
         .onChange(of: selection) { _, newValue in
             if newValue != autoAdvanceSelection {
                 lastUserInteraction = .now
@@ -186,21 +189,47 @@ private struct ForumHomeCarouselView: View {
     }
 
     private var fullWidthPager: some View {
-        TabView(selection: $selection) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                ForumCarouselImageButton(item: item, onTap: onTap)
-                    .tag(index)
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    ForumCarouselImageButton(item: item, onTap: onTap)
+                        .containerRelativeFrame(.horizontal)
+                        .id(index)
+                }
             }
+            .scrollTargetLayout()
         }
-        .tabViewStyle(.page(indexDisplayMode: items.count > 1 ? .automatic : .never))
+        .scrollIndicators(.hidden)
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(
+            id: Binding(get: { selection }, set: { if let index = $0 { selection = index } }),
+            anchor: .center
+        )
         .frame(maxWidth: .infinity)
         .aspectRatio(2.63, contentMode: .fit)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 1)
-                .onChanged { _ in
-                    lastUserInteraction = .now
+        .onScrollPhaseChange { oldPhase, newPhase in
+            let wasInteracting = oldPhase == .tracking || oldPhase == .interacting || oldPhase == .decelerating
+            let isInteracting = newPhase == .tracking || newPhase == .interacting || newPhase == .decelerating
+            isUserInteracting = isInteracting
+            if wasInteracting || isInteracting { lastUserInteraction = .now }
+        }
+        .onDisappear { isUserInteracting = false }
+        .overlay(alignment: .bottom) {
+            if items.count > 1 {
+                HStack(spacing: 5) {
+                    ForEach(items.indices, id: \.self) { index in
+                        Circle()
+                            .fill(.white.opacity(index == selection ? 1 : 0.45))
+                            .frame(width: 5, height: 5)
+                    }
                 }
-        )
+                .padding(6)
+                .background(.black.opacity(0.35), in: Capsule())
+                .padding(.bottom, 6)
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
+            }
+        }
     }
 }
 

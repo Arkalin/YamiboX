@@ -23,7 +23,6 @@ struct OptionalTabRootView: View {
     var body: some View {
         ForumDestinationStackView(navigator: navigator, appModel: appModel) {
             root
-                .messageUnreadTabAccessibility(count: appModel.unreadCount(for: tab))
         }
         .task {
             guard tab == .messages else { return }

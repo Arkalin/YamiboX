@@ -173,7 +173,6 @@ public struct MineHomeView: View {
                 )
             }
             .listStyle(.insetGrouped)
-            .messageUnreadTabAccessibility(count: appModel.unreadCount(for: .mine))
             .navigationTitle(L10n.string("tab.mine"))
             .yamiboInlineNavigationTitleDisplayMode()
             .refreshable {

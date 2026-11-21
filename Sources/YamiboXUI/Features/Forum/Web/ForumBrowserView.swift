@@ -90,61 +90,67 @@ public struct ForumBrowserView: View {
     }
 
     public var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .top) {
-                IOSForumWebView(
-                    model: model,
-                    sessionStore: sessionStore,
-                    requestExecutor: appModel.appContext.requestExecutor,
-                    isSelected: true
-                )
-                if model.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.top, 8)
-                }
+        ZStack(alignment: .top) {
+            IOSForumWebView(
+                model: model,
+                sessionStore: sessionStore,
+                requestExecutor: appModel.appContext.requestExecutor,
+                isSelected: true
+            )
+            if model.isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(.top, 8)
             }
-            .overlay(alignment: .bottom) {
-                if let failure = model.silentFailure {
-                    Text(failure).font(.footnote).padding().background(.regularMaterial)
-                }
+        }
+        .overlay(alignment: .bottom) {
+            if let failure = model.silentFailure {
+                Text(failure).font(.footnote).padding().background(.regularMaterial)
             }
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    ForumBrowserNavigationTitle(
-                        title: model.pageTitle,
-                        urlText: model.currentURL?.absoluteString
-                    )
-                    .frame(width: max(0, min(320, geometry.size.width - 176)))
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button(action: model.reload) {
-                            Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
-                        }
-                        .accessibilityIdentifier("forum-browser-refresh")
-
-                        Button {
-                            if let url = model.currentURL {
-                                openURL(url)
-                            }
-                        } label: {
-                            Label(L10n.string("forum.browser.open_in_browser"), systemImage: "safari")
-                        }
-                        .disabled(model.currentURL == nil)
-                        .accessibilityIdentifier("forum-browser-open-in-browser")
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+        }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(action: model.reload) {
+                        Label(L10n.string("common.refresh"), systemImage: "arrow.clockwise")
                     }
-                    .accessibilityLabel(L10n.string("common.more"))
-                    .help(L10n.string("common.more"))
-                    .accessibilityIdentifier("forum-browser-more")
+                    .accessibilityIdentifier("forum-browser-refresh")
+
+                    Button {
+                        if let url = model.currentURL {
+                            openURL(url)
+                        }
+                    } label: {
+                        Label(L10n.string("forum.browser.open_in_browser"), systemImage: "safari")
+                    }
+                    .disabled(model.currentURL == nil)
+                    .accessibilityIdentifier("forum-browser-open-in-browser")
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel(L10n.string("common.more"))
+                .help(L10n.string("common.more"))
+                .accessibilityIdentifier("forum-browser-more")
             }
         }
         .forumPageBackground()
         .tint(theme.accentText)
+        .navigationTitle(resolvedTitle)
         .yamiboInlineNavigationTitleDisplayMode()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let url = model.currentURL {
+                Text(url.absoluteString)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal)
+                    .padding(.vertical, 4)
+                    .background(.bar)
+                    .accessibilityIdentifier("forum-browser-navigation-title")
+            }
+        }
         .onChange(of: appModel.forumNavigationRequest?.id) { _, _ in
             guard listensToForumNavigationRequest else { return }
             if let request = appModel.forumNavigationRequest {
@@ -152,30 +158,10 @@ public struct ForumBrowserView: View {
             }
         }
     }
-}
-
-struct ForumBrowserNavigationTitle: View {
-    @Environment(\.forumTheme) private var theme
-    let title: String
-    let urlText: String?
-
-    var body: some View {
-        VStack(spacing: 1) {
-            Text(resolvedTitle)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-            Text(urlText ?? "")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("forum-browser-navigation-title")
-    }
 
     private var resolvedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        model.pageTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? L10n.string("forum.default_title")
-            : title
+            : model.pageTitle
     }
 }
