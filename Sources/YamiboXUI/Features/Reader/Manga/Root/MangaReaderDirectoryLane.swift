@@ -5,7 +5,7 @@ import YamiboXCore
 final class MangaReaderDirectoryLane {
     struct Reader {
         var workflow: @MainActor () -> MangaReaderWorkflow?
-        var presentation: @MainActor () -> MangaReaderPresentation
+        var presentation: @MainActor () -> MangaReaderPresentation?
         var setPresentation: @MainActor (MangaReaderPresentation) -> Void
         var progressSnapshot: @MainActor (MangaReaderPresentation) -> MangaReaderProgressSnapshot?
         var publishPresentation: @MainActor (MangaReaderPresentation, MangaReaderProgressSnapshot?) -> Void
@@ -34,7 +34,7 @@ final class MangaReaderDirectoryLane {
 
 
     func updateDirectoryFromPanel() async {
-        guard case let .loaded(loaded) = reader.presentation().state else { return }
+        guard case let .loaded(loaded) = reader.presentation()?.state else { return }
         await updateDirectory(isForcedSearch: loaded.directoryPanel.shouldForceSearchOnUpdate)
     }
 
@@ -73,12 +73,12 @@ final class MangaReaderDirectoryLane {
     func renameDirectory(with draft: MangaDirectoryEditDraft) async {
         await renameDirectory(
             cleanBookName: draft.cleanBookName,
-            searchKeyword: MangaDirectoryWorkflow.searchKeyword(from: draft)
+            searchKeyword: MangaDirectoryLocalEditor.searchKeyword(from: draft)
         )
     }
 
     func deleteDirectoryChapters(tids: Set<String>) async {
-        guard case let .loaded(loaded) = reader.presentation().state else { return }
+        guard case let .loaded(loaded) = reader.presentation()?.state else { return }
         let targetTIDs = Set(tids.compactMap { $0.nilIfBlank })
         guard !targetTIDs.isEmpty else { return }
         if let currentChapterTID = loaded.directoryPanel.currentChapterTID,
@@ -151,8 +151,8 @@ final class MangaReaderDirectoryLane {
         isAutomatic: Bool,
         mutationGeneration: Int
     ) async {
-        guard let workflow = reader.workflow() else { return }
-        let previousProgressSnapshot = reader.progressSnapshot(reader.presentation())
+        guard let workflow = reader.workflow(), let presentation = reader.presentation() else { return }
+        let previousProgressSnapshot = reader.progressSnapshot(presentation)
 
         defer {
             if directoryMutationGeneration == mutationGeneration {
@@ -166,15 +166,15 @@ final class MangaReaderDirectoryLane {
         setDirectoryPanelCommandState(isUpdating: true, errorMessage: nil)
         do {
             let result = try await workflow.updateDirectory(isForcedSearch: isForcedSearch)
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             reader.publishPresentation(workflow.presentation, previousProgressSnapshot)
             applyDirectoryCommandCooldown(result)
             refreshDirectoryPanelTiming(errorMessage: nil)
         } catch is CancellationError {
-            guard directoryMutationGeneration == mutationGeneration else { return }
+            guard directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             refreshDirectoryPanelTiming(errorMessage: currentDirectoryPanelErrorMessage)
         } catch {
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             YamiboLog.reader.error("Manga directory update failed: \(error.localizedDescription)")
             await applyDirectoryFailureCooldown(error, workflow: workflow)
             if !LoadDiagnosticError.isCancellation(error) {
@@ -184,8 +184,8 @@ final class MangaReaderDirectoryLane {
     }
 
     private func performDirectoryReset(mutationGeneration: Int) async {
-        guard let workflow = reader.workflow() else { return }
-        let previousProgressSnapshot = reader.progressSnapshot(reader.presentation())
+        guard let workflow = reader.workflow(), let presentation = reader.presentation() else { return }
+        let previousProgressSnapshot = reader.progressSnapshot(presentation)
 
         defer {
             if directoryMutationGeneration == mutationGeneration {
@@ -196,15 +196,15 @@ final class MangaReaderDirectoryLane {
         setDirectoryPanelCommandState(isUpdating: true, errorMessage: nil)
         do {
             let result = try await workflow.resetDirectory()
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             reader.publishPresentation(workflow.presentation, previousProgressSnapshot)
             applyDirectoryCommandCooldown(result)
             refreshDirectoryPanelTiming(errorMessage: nil)
         } catch is CancellationError {
-            guard directoryMutationGeneration == mutationGeneration else { return }
+            guard directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             refreshDirectoryPanelTiming(errorMessage: currentDirectoryPanelErrorMessage)
         } catch {
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             YamiboLog.reader.error("Manga directory reset failed: \(error.localizedDescription)")
             await applyDirectoryFailureCooldown(error, workflow: workflow)
             if !LoadDiagnosticError.isCancellation(error) {
@@ -218,8 +218,8 @@ final class MangaReaderDirectoryLane {
         searchKeyword: String,
         mutationGeneration: Int
     ) async {
-        guard let workflow = reader.workflow() else { return }
-        let previousProgressSnapshot = reader.progressSnapshot(reader.presentation())
+        guard let workflow = reader.workflow(), let presentation = reader.presentation() else { return }
+        let previousProgressSnapshot = reader.progressSnapshot(presentation)
         defer {
             if directoryMutationGeneration == mutationGeneration {
                 directoryMutationTask = nil
@@ -229,14 +229,14 @@ final class MangaReaderDirectoryLane {
         setDirectoryPanelCommandState(isUpdating: true, errorMessage: nil)
         do {
             _ = try await workflow.renameDirectory(cleanBookName: cleanBookName, searchKeyword: searchKeyword)
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             reader.publishPresentation(workflow.presentation, previousProgressSnapshot)
             refreshDirectoryPanelTiming(errorMessage: nil)
         } catch is CancellationError {
-            guard directoryMutationGeneration == mutationGeneration else { return }
+            guard directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             refreshDirectoryPanelTiming(errorMessage: currentDirectoryPanelErrorMessage)
         } catch {
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             YamiboLog.reader.error("Manga directory rename failed: \(error.localizedDescription)")
             if !LoadDiagnosticError.isCancellation(error) {
                 refreshDirectoryPanelTiming(errorMessage: error.localizedDescription, details: LoadFailureDetails(error: error))
@@ -248,8 +248,8 @@ final class MangaReaderDirectoryLane {
         tids: Set<String>,
         mutationGeneration: Int
     ) async {
-        guard let workflow = reader.workflow() else { return }
-        let previousProgressSnapshot = reader.progressSnapshot(reader.presentation())
+        guard let workflow = reader.workflow(), let presentation = reader.presentation() else { return }
+        let previousProgressSnapshot = reader.progressSnapshot(presentation)
         defer {
             if directoryMutationGeneration == mutationGeneration {
                 directoryMutationTask = nil
@@ -259,14 +259,14 @@ final class MangaReaderDirectoryLane {
         setDirectoryPanelCommandState(isUpdating: true, errorMessage: nil)
         do {
             let nextPresentation = try await workflow.deleteDirectoryChapters(tids: tids)
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             reader.publishPresentation(nextPresentation, previousProgressSnapshot)
             refreshDirectoryPanelTiming(errorMessage: nil)
         } catch is CancellationError {
-            guard directoryMutationGeneration == mutationGeneration else { return }
+            guard directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             refreshDirectoryPanelTiming(errorMessage: currentDirectoryPanelErrorMessage)
         } catch {
-            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration else { return }
+            guard !Task.isCancelled, directoryMutationGeneration == mutationGeneration, reader.presentation() != nil else { return }
             YamiboLog.reader.error("Deleting manga directory chapters failed: \(error.localizedDescription)")
             if !LoadDiagnosticError.isCancellation(error) {
                 refreshDirectoryPanelTiming(errorMessage: error.localizedDescription, details: LoadFailureDetails(error: error))
@@ -276,7 +276,7 @@ final class MangaReaderDirectoryLane {
 
 
     var currentDirectoryPanelErrorMessage: String? {
-        guard case let .loaded(loaded) = reader.presentation().state else { return nil }
+        guard case let .loaded(loaded) = reader.presentation()?.state else { return nil }
         return loaded.directoryPanel.errorMessage
     }
 
@@ -327,6 +327,10 @@ final class MangaReaderDirectoryLane {
 
         directoryTickTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
+                guard self?.reader.presentation() != nil else {
+                    self?.directoryTickTask = nil
+                    return
+                }
                 self?.setDirectoryPanelCommandState(
                     isUpdating: false,
                     errorMessage: self?.currentDirectoryPanelErrorMessage

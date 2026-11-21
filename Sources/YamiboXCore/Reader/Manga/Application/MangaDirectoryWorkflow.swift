@@ -257,89 +257,8 @@ public struct MangaDirectoryWorkflow: Sendable {
         return try await updateDirectory(seeded, currentTID: resolvedSeedTID, isForcedSearch: false)
     }
 
-    public func renameDirectory(
-        _ currentDirectory: MangaDirectory,
-        cleanBookName: String,
-        searchKeyword: String
-    ) async throws -> MangaDirectory {
-        guard let resolvedName = normalizedNonEmpty(cleanBookName) else {
-            throw YamiboPersistenceError(context: "Directory name is empty")
-        }
-        let resolvedKeyword = normalizedNonEmpty(searchKeyword)
-        let latest = try await store.directory(id: currentDirectory.id) ?? currentDirectory
-        if let target = try await store.directory(named: resolvedName), target.id != latest.id {
-            return try await store.mergeDirectories(
-                sourceID: latest.id, targetID: target.id,
-                cleanBookName: resolvedName, searchKeyword: resolvedKeyword
-            )
-        }
-        return try await store.renameDirectory(
-            id: latest.id, cleanBookName: resolvedName, searchKeyword: resolvedKeyword
-        )
-    }
-
-    public func deleteChapters(
-        _ currentDirectory: MangaDirectory,
-        tids: Set<String>
-    ) async throws -> MangaDirectory {
-        let targetTIDs = Set(tids.compactMap { normalizedNonEmpty($0) })
-        guard !targetTIDs.isEmpty else { return currentDirectory }
-
-        let latest = try await store.directory(id: currentDirectory.id) ?? currentDirectory
-        let remainingChapters = latest.chapters.filter { !targetTIDs.contains($0.tid) }
-        guard remainingChapters.count != latest.chapters.count else {
-            return latest
-        }
-
-        var updated = latest
-        updated.chapters = remainingChapters
-        updated.lastUpdatedAt = configuration.now()
-        try await store.saveDirectory(updated)
-        return try await store.directory(id: updated.id) ?? updated
-    }
-
-    public func editDraft(
-        for directory: MangaDirectory,
-        currentTID: String?
-    ) -> MangaDirectoryEditDraft {
-        let cleanBookName = normalizedNonEmpty(directory.cleanBookName) ?? directory.cleanBookName
-        if let searchKeyword = normalizedNonEmpty(directory.searchKeyword) {
-            let strippedKeyword = searchKeyword
-                .replacingOccurrences(of: cleanBookName, with: "", options: [.caseInsensitive])
-                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !strippedKeyword.isEmpty, strippedKeyword != searchKeyword {
-                return MangaDirectoryEditDraft(
-                    cleanBookName: cleanBookName,
-                    primaryKeyword: strippedKeyword,
-                    secondaryKeyword: cleanBookName
-                )
-            }
-            return MangaDirectoryEditDraft(
-                cleanBookName: cleanBookName,
-                primaryKeyword: searchKeyword,
-                secondaryKeyword: ""
-            )
-        }
-
-        let seedTitle = currentTID.flatMap { tid in
-            directory.chapters.first(where: { $0.tid == tid })?.rawTitle
-        } ?? directory.chapters.last?.rawTitle ?? directory.cleanBookName
-        return MangaDirectoryEditDraft(
-            cleanBookName: cleanBookName,
-            primaryKeyword: MangaTitleCleaner.extractAuthorPrefix(seedTitle),
-            secondaryKeyword: cleanBookName
-        )
-    }
-
     public func cooldownExpiresAt() async -> Date? {
         await searchCooldownState.cooldownExpiresAt(now: configuration.now())
-    }
-
-    public static func searchKeyword(from draft: MangaDirectoryEditDraft) -> String {
-        [draft.primaryKeyword, draft.secondaryKeyword]
-            .compactMap { normalizedNonEmpty($0) }
-            .joined(separator: " ")
     }
 
     private func shouldAutoUpdate(_ directory: MangaDirectory) -> Bool {
@@ -423,6 +342,97 @@ public enum MangaDirectoryMerge {
             }
         }
         return sorted
+    }
+}
+
+public struct MangaDirectoryLocalEditor: Sendable {
+    private let store: any MangaDirectoryPersisting
+    private let now: @Sendable () -> Date
+
+    public init(store: any MangaDirectoryPersisting, now: @escaping @Sendable () -> Date = { .now }) {
+        self.store = store
+        self.now = now
+    }
+
+    public func renameDirectory(
+        _ currentDirectory: MangaDirectory,
+        cleanBookName: String,
+        searchKeyword: String
+    ) async throws -> MangaDirectory {
+        guard let resolvedName = normalizedNonEmpty(cleanBookName) else {
+            throw YamiboPersistenceError(context: "Directory name is empty")
+        }
+        let resolvedKeyword = normalizedNonEmpty(searchKeyword)
+        let latest = try await store.directory(id: currentDirectory.id) ?? currentDirectory
+        if let target = try await store.directory(named: resolvedName), target.id != latest.id {
+            return try await store.mergeDirectories(
+                sourceID: latest.id, targetID: target.id,
+                cleanBookName: resolvedName, searchKeyword: resolvedKeyword
+            )
+        }
+        return try await store.renameDirectory(
+            id: latest.id, cleanBookName: resolvedName, searchKeyword: resolvedKeyword
+        )
+    }
+
+    public func deleteChapters(
+        _ currentDirectory: MangaDirectory,
+        tids: Set<String>
+    ) async throws -> MangaDirectory {
+        let targetTIDs = Set(tids.compactMap { normalizedNonEmpty($0) })
+        guard !targetTIDs.isEmpty else { return currentDirectory }
+
+        let latest = try await store.directory(id: currentDirectory.id) ?? currentDirectory
+        let remainingChapters = latest.chapters.filter { !targetTIDs.contains($0.tid) }
+        guard remainingChapters.count != latest.chapters.count else {
+            return latest
+        }
+
+        var updated = latest
+        updated.chapters = remainingChapters
+        updated.lastUpdatedAt = now()
+        try await store.saveDirectory(updated)
+        return try await store.directory(id: updated.id) ?? updated
+    }
+
+    public func editDraft(
+        for directory: MangaDirectory,
+        currentTID: String?
+    ) -> MangaDirectoryEditDraft {
+        let cleanBookName = normalizedNonEmpty(directory.cleanBookName) ?? directory.cleanBookName
+        if let searchKeyword = normalizedNonEmpty(directory.searchKeyword) {
+            let strippedKeyword = searchKeyword
+                .replacingOccurrences(of: cleanBookName, with: "", options: [.caseInsensitive])
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !strippedKeyword.isEmpty, strippedKeyword != searchKeyword {
+                return MangaDirectoryEditDraft(
+                    cleanBookName: cleanBookName,
+                    primaryKeyword: strippedKeyword,
+                    secondaryKeyword: cleanBookName
+                )
+            }
+            return MangaDirectoryEditDraft(
+                cleanBookName: cleanBookName,
+                primaryKeyword: searchKeyword,
+                secondaryKeyword: ""
+            )
+        }
+
+        let seedTitle = currentTID.flatMap { tid in
+            directory.chapters.first(where: { $0.tid == tid })?.rawTitle
+        } ?? directory.chapters.last?.rawTitle ?? directory.cleanBookName
+        return MangaDirectoryEditDraft(
+            cleanBookName: cleanBookName,
+            primaryKeyword: MangaTitleCleaner.extractAuthorPrefix(seedTitle),
+            secondaryKeyword: cleanBookName
+        )
+    }
+
+    public static func searchKeyword(from draft: MangaDirectoryEditDraft) -> String {
+        [draft.primaryKeyword, draft.secondaryKeyword]
+            .compactMap { normalizedNonEmpty($0) }
+            .joined(separator: " ")
     }
 }
 

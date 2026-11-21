@@ -158,7 +158,7 @@ final class MangaDetailViewModel {
 
     var editDraft: MangaDirectoryEditDraft? {
         guard let directory else { return nil }
-        return makeDirectoryWorkflow().editDraft(for: directory, currentTID: focusedChapterTID)
+        return directoryLocalEditor.editDraft(for: directory, currentTID: focusedChapterTID)
     }
 
     func load() async {
@@ -401,11 +401,10 @@ final class MangaDetailViewModel {
         }
 
         do {
-            let workflow = makeDirectoryWorkflow()
-            let updated = try await workflow.renameDirectory(
+            let updated = try await directoryLocalEditor.renameDirectory(
                 directory,
                 cleanBookName: draft.cleanBookName,
-                searchKeyword: MangaDirectoryWorkflow.searchKeyword(from: draft)
+                searchKeyword: MangaDirectoryLocalEditor.searchKeyword(from: draft)
             )
             guard !Task.isCancelled else { return }
             self.directory = updated
@@ -469,13 +468,8 @@ final class MangaDetailViewModel {
     }
 
 
-    private func makeDirectoryWorkflow() -> MangaDirectoryWorkflow {
-        MangaDirectoryWorkflow(
-            repository: UnreachedMangaDirectoryRepository(),
-            store: dependencies.mangaDirectoryStore,
-            configuration: workflowConfiguration,
-            searchCooldownState: dependencies.mangaDirectorySearchCooldownState
-        )
+    private var directoryLocalEditor: MangaDirectoryLocalEditor {
+        MangaDirectoryLocalEditor(store: dependencies.mangaDirectoryStore, now: workflowConfiguration.now)
     }
 
     private func makeDirectoryWorkflowWithRepository() async -> MangaDirectoryWorkflow {

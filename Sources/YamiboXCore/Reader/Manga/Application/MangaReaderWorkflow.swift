@@ -34,6 +34,7 @@ public final class MangaReaderWorkflow {
     private let context: MangaLaunchContext
     private let projectionLoader: any MangaReaderProjectionLoading
     private let directoryWorkflow: MangaDirectoryWorkflow
+    private let directoryLocalEditor: MangaDirectoryLocalEditor
     private let directoryStore: any MangaDirectoryPersisting
     private var resolvedDirectoryID: MangaDirectoryID?
     private let downloadStore: (any MangaDownloadStoring)?
@@ -86,6 +87,7 @@ public final class MangaReaderWorkflow {
         self.downloadStore = downloadStore
         self.directoryStore = directoryStore
         self.adjacentPrefetchPolicy = adjacentPrefetchPolicy
+        self.directoryLocalEditor = MangaDirectoryLocalEditor(store: directoryStore, now: directoryWorkflowConfiguration.now)
         self.directoryWorkflow = MangaDirectoryWorkflow(
             repository: directoryRepository,
             store: directoryStore,
@@ -360,7 +362,7 @@ public final class MangaReaderWorkflow {
         }
         let mutation = try beginDirectoryMutation()
         defer { endDirectoryMutationIfNeeded(mutation) }
-        let updated = try await directoryWorkflow.renameDirectory(
+        let updated = try await directoryLocalEditor.renameDirectory(
             window.directory,
             cleanBookName: cleanBookName,
             searchKeyword: searchKeyword
@@ -387,7 +389,7 @@ public final class MangaReaderWorkflow {
 
         let mutation = try beginDirectoryMutation()
         defer { endDirectoryMutationIfNeeded(mutation) }
-        let updated = try await directoryWorkflow.deleteChapters(window.directory, tids: targetTIDs)
+        let updated = try await directoryLocalEditor.deleteChapters(window.directory, tids: targetTIDs)
         try Task.checkCancellation()
 
         _ = try commitDirectoryMutation(
@@ -797,7 +799,7 @@ public final class MangaReaderWorkflow {
                 sortOrder: .ascending,
                 latestChapter: MangaChapterDisplayFormatter.latestChapter(in: window.directory.chapters),
                 draftChapterTID: currentChapterTID,
-                editDraft: directoryWorkflow.editDraft(for: window.directory, currentTID: currentChapterTID)
+                editDraft: directoryLocalEditor.editDraft(for: window.directory, currentTID: currentChapterTID)
             )
         }
         if preparedDirectoryPanel?.sortOrder != settings.directorySortOrder {
@@ -810,7 +812,7 @@ public final class MangaReaderWorkflow {
             preparedDirectoryPanel?.sortOrder = settings.directorySortOrder
         }
         if preparedDirectoryPanel?.draftChapterTID != currentChapterTID {
-            preparedDirectoryPanel?.editDraft = directoryWorkflow.editDraft(
+            preparedDirectoryPanel?.editDraft = directoryLocalEditor.editDraft(
                 for: window.directory,
                 currentTID: currentChapterTID
             )

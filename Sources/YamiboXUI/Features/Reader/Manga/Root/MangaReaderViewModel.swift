@@ -226,11 +226,7 @@ public final class MangaReaderViewModel {
         dependencies: dependencies,
         reader: MangaReaderDirectoryLane.Reader(
             workflow: { [weak self] in self?.workflow },
-            presentation: { [weak self] in
-                self?.presentation ?? MangaReaderPresentation(
-                    state: .loading(MangaReaderLoadingPresentation(title: ""))
-                )
-            },
+            presentation: { [weak self] in self?.presentation },
             setPresentation: { [weak self] presentation in
                 guard let self, lifecycle.acceptsResults else { return }
                 self.presentation = presentation
