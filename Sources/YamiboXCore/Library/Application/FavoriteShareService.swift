@@ -278,7 +278,7 @@ public struct FavoriteShareService: Sendable {
         let selectedItems = document.items.filter { item in
             item.locations.contains { categoryIDs.contains($0.categoryID) }
         }
-        let coverKeys = selectedItems.compactMap { ContentCoverKey(target: $0.target) }
+        let coverKeys = selectedItems.map { ContentCoverKey(target: $0.target) }
         let covers = await contentCoverStore.covers(for: coverKeys)
 
         let folders = try categories.map { category in
@@ -379,8 +379,8 @@ public struct FavoriteShareService: Sendable {
         for item: FavoriteItem,
         covers: [ContentCoverKey: ContentCover]
     ) throws -> FavoriteSharePackage.Item {
-        guard let rawThreadID = item.target.threadID,
-              let targetID = Int64(rawThreadID), targetID > 0 else {
+        let rawThreadID = item.target.threadID
+        guard let targetID = Int64(rawThreadID), targetID > 0 else {
             throw FavoriteShareError.invalidLocalItem(item.resolvedDisplayTitle)
         }
         let title = item.resolvedDisplayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -394,10 +394,8 @@ public struct FavoriteShareService: Sendable {
         case .novelThread:
             targetType = WireTargetType.threadNovel.rawValue
         }
-        let coverURL = ContentCoverKey(target: item.target).flatMap { key in
-            covers[key]?.resolvedURL.flatMap {
-                ContentCoverStore.normalizedCoverURL(from: $0.absoluteString)?.absoluteString
-            }
+        let coverURL = covers[ContentCoverKey(target: item.target)]?.resolvedURL.flatMap {
+            ContentCoverStore.normalizedCoverURL(from: $0.absoluteString)?.absoluteString
         }
         return FavoriteSharePackage.Item(
             targetType: targetType,
@@ -583,11 +581,10 @@ public struct FavoriteShareService: Sendable {
         target: FavoriteItemTarget
     ) -> ImportedCover? {
         guard let rawURL = item.coverUrl,
-              let url = ContentCoverStore.normalizedCoverURL(from: rawURL),
-              let key = ContentCoverKey(target: target) else {
+              let url = ContentCoverStore.normalizedCoverURL(from: rawURL) else {
             return nil
         }
-        return ImportedCover(key: key, url: url)
+        return ImportedCover(key: ContentCoverKey(target: target), url: url)
     }
 
     private func persistImportedCovers(_ covers: [ImportedCover]) async {
@@ -643,7 +640,8 @@ private extension FavoriteShareService {
 
         init(document: FavoriteLibraryDocument) {
             for (position, item) in document.items.enumerated() {
-                if let threadID = item.target.threadID, firstByThreadID[threadID] == nil {
+                let threadID = item.target.threadID
+                if firstByThreadID[threadID] == nil {
                     firstByThreadID[threadID] = position
                 }
             }
@@ -660,16 +658,14 @@ private extension FavoriteShareService {
         ) {
             if !hasAppendedItems {
                 for (position, existing) in document.items.enumerated() {
-                    guard let threadID = existing.target.threadID,
-                          let first = firstByThreadID[threadID],
+                    let threadID = existing.target.threadID
+                    guard let first = firstByThreadID[threadID],
                           existing.id < document.items[first].id else { continue }
                     firstByThreadID[threadID] = position
                 }
                 hasAppendedItems = true
             }
-            if let threadID = item.target.threadID {
-                firstByThreadID[threadID] = document.items.count
-            }
+            firstByThreadID[item.target.threadID] = document.items.count
             document.items.append(
                 FavoriteLibraryDocument.normalizedItem(item, index: normalizationIndex)
             )
@@ -683,7 +679,7 @@ private extension FavoriteShareService {
             normalizationIndex: FavoriteLibraryDocument.ItemNormalizationIndex,
             date: Date
         ) {
-            guard let threadID = target.threadID, let position = firstByThreadID[threadID] else { return }
+            guard let position = firstByThreadID[target.threadID] else { return }
             let isNewLocation = !document.items[position].locations.contains(location)
             document.items[position].locations = FavoriteItem.normalizedLocations(
                 document.items[position].locations + [location]

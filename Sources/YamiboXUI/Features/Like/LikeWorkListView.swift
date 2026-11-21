@@ -275,7 +275,8 @@ struct LikeWorkListView: View {
         var firstFavoriteTitlesByTID: [String: String] = [:]
         if !novelTIDs.isEmpty {
             for item in document.items {
-                guard let tid = item.target.threadID, novelTIDs.contains(tid) else { continue }
+                let tid = item.target.threadID
+                guard novelTIDs.contains(tid) else { continue }
                 if firstFavoriteTitlesByTID[tid] == nil {
                     firstFavoriteTitlesByTID[tid] = item.resolvedDisplayTitle
                 }

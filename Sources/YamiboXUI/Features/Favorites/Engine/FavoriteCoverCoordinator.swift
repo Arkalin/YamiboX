@@ -54,7 +54,7 @@ final class FavoriteCoverCoordinator {
     private func reload(notifyChanges: Bool = true) async {
         revision &+= 1
         let expectedRevision = revision
-        let keys = Set(context.items.compactMap { ContentCoverKey(target: $0.target) }
+        let keys = Set(context.items.map { ContentCoverKey(target: $0.target) }
             + context.directories.map { ContentCoverKey.smartManga(directoryID: $0.id) })
         let changes = store.changedCoverKeys(since: coverRevision, among: keys)
         let isFullRefresh = !notifyChanges || keys != loadedKeys

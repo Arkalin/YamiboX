@@ -27,7 +27,7 @@ extension FavoriteLibraryOrganizer {
             unreadMangaDirectoriesByTID = directories
             let smartTIDs = Set(items.filter {
                 $0.target.kind == .mangaThread && boardReaderSettings.isSmartComicModeEnabled(forumID: $0.forumID)
-            }.compactMap(\.target.threadID))
+            }.map(\.target.threadID))
             return directories.filter { smartTIDs.contains($0.key) }
         } catch {
             YamiboLog.persistence.warning("Failed to resolve manga directories for favorites grouping; showing manga favorites standalone this load: \(error.localizedDescription)")

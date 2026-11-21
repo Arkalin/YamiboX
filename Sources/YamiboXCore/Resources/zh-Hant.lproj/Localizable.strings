@@ -182,6 +182,7 @@
 "context.thread_title" = "帖子標題";
 "error.empty_html" = "返回內容為空";
 "error.favorite_delete_failed" = "刪除收藏失敗，請稍後重試";
+"error.favorite_lookup_incomplete" = "尚未查完遠端收藏，未執行刪除。請重新整理收藏後再試。";
 "error.favorite_add_failed" = "新增收藏失敗，請稍後重試";
 "error.flood_control" = "論壇觸發了防灌水限制，請稍後再試";
 "error.invalid_response" = "未拿到有效的論壇回應";

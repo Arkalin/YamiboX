@@ -98,7 +98,7 @@ struct LocalFavoriteCardContextMenu: View {
                 Label(L10n.string("cover.use_text_cover"), systemImage: "textformat")
             }
         }
-        if card.item.target.threadID != nil, card.item.remoteMapping?.hasResolvedFavoriteID != true {
+        if card.item.remoteMapping?.hasResolvedFavoriteID != true {
             Button {
                 actions.syncToRemote(card.item)
             } label: {

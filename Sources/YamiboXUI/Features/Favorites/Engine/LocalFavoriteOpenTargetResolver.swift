@@ -36,7 +36,7 @@ struct LocalFavoriteOpenTargetResolver {
         guard let latestItem = latestDocument.items.first(where: { $0.id == item.id }) else {
             return nil
         }
-        guard let threadID = latestItem.target.threadID else { return nil }
+        let threadID = latestItem.target.threadID
         let settings = await settingsStore.load()
         let boardReader = settings.boardReader
         let opensDetails = mode == .preferred && settings.favorites.itemTapAction == .detail
@@ -116,7 +116,7 @@ struct LocalFavoriteOpenTargetResolver {
         let chapterTIDs = Set(directory.chapters.map(\.tid))
         let document = try await libraryStore.load()
         guard let item = document.items.first(where: {
-            $0.target.kind == .mangaThread && chapterTIDs.contains($0.target.threadID ?? "")
+            $0.target.kind == .mangaThread && chapterTIDs.contains($0.target.threadID)
         }) else {
             return nil
         }

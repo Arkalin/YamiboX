@@ -325,7 +325,7 @@ final class FavoriteActionController {
 
     func actions(for item: FavoriteItem) -> FavoriteActionController {
         FavoriteActionController(
-            threadID: item.target.threadID ?? "", type: type, defaultTitle: item.resolvedDisplayTitle,
+            threadID: item.target.threadID, type: type, defaultTitle: item.resolvedDisplayTitle,
             localFavoriteLibraryStore: libraryStore, settingsStore: settingsStore,
             makeFavoriteRepository: makeFavoriteRepository, allowsAdd: false
         )

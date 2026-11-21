@@ -40,7 +40,7 @@ public struct FavoriteMembershipSnapshot: Sendable {
         self.document = document
         self.directories = directories
         self.boardReader = boardReader
-        itemsByThread = Dictionary(grouping: document.items, by: { $0.target.threadID ?? "" })
+        itemsByThread = Dictionary(grouping: document.items, by: { $0.target.threadID })
         archivedItemsByTitle = LocalFavoriteLibraryProjection.mangaThreadItemsByGroupKey(
             in: document.items, mangaDirectoriesByTID: directories, boardReaderSettings: boardReader
         )
@@ -53,7 +53,7 @@ public struct FavoriteMembershipSnapshot: Sendable {
         additionalThreadIDs: [String] = []
     ) async throws -> Self {
         let document = try await libraryStore.load()
-        let tids = Array(Set(document.items.compactMap { $0.target.threadID } + additionalThreadIDs)).filter { !$0.isEmpty }
+        let tids = Array(Set(document.items.map(\.target.threadID) + additionalThreadIDs)).filter { !$0.isEmpty }
         let directories = try await directoryStore?.directories(containingTIDs: tids) ?? [:]
         try Task.checkCancellation()
         return await FavoriteMembershipSnapshotCache.shared.snapshot(
@@ -110,7 +110,7 @@ private actor FavoriteMembershipSnapshotCache {
 
     func snapshot(storeID: String, document: FavoriteLibraryDocument,
                   directories: [String: MangaDirectory], boardReader: BoardReaderSettings) -> FavoriteMembershipSnapshot {
-        let memberTIDs = Set(document.items.compactMap { $0.target.threadID })
+        let memberTIDs = Set(document.items.map(\.target.threadID))
         let memberDirectories = directories.filter { memberTIDs.contains($0.key) }
         if let entry = entries[storeID], entry.document == document,
            entry.directories == memberDirectories, entry.boardReader == boardReader {

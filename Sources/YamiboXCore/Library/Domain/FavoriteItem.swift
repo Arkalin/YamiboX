@@ -95,16 +95,12 @@ public struct FavoriteItem: Codable, Hashable, Identifiable, Sendable {
     }
 
     public var hasYamiboRemoteCandidate: Bool {
-        if let remoteFavoriteID = remoteMapping?.yamiboFavoriteID?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !remoteFavoriteID.isEmpty {
-            return true
-        }
-        return remoteMapping != nil && target.threadID != nil
+        remoteMapping != nil
     }
 
     static func normalizedLocations(_ locations: [FavoriteLocation]) -> [FavoriteLocation] {
-        var seen: Set<String> = []
-        return locations.filter { seen.insert($0.id).inserted }
+        var seen: Set<FavoriteLocation> = []
+        return locations.filter { seen.insert($0).inserted }
     }
 
     static func normalizedIDs(_ ids: [String]) -> [String] {

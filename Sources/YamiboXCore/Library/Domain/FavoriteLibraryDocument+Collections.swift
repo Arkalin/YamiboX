@@ -124,28 +124,13 @@ extension FavoriteLibraryDocument {
                     remaining.append(location)
                 }
             }
-            guard !matches.isEmpty else { return original }
             matches.sort { $0.order < $1.order }
+            guard let lastMatch = matches.last else { return original }
 
-            var firstLocationByID: [String: FavoriteLocation] = [:]
-            let hasIDCollision = (original.locations + matches.map(\.parent)).contains { location in
-                if let first = firstLocationByID[location.id] { return first != location }
-                firstLocationByID[location.id] = location
-                return false
-            }
             var item = original
-            if hasIDCollision {
-                for step in matches where item.locations.contains(step.location) {
-                    item.locations.removeAll { $0 == step.location }
-                    item.locations = FavoriteItem.normalizedLocations(item.locations + [step.parent])
-                    item.locationsUpdatedAt = step.date
-                    item.updatedAt = step.date
-                }
-            } else {
-                item.locations = FavoriteItem.normalizedLocations(remaining + matches.map(\.parent))
-                item.locationsUpdatedAt = matches.last!.date
-                item.updatedAt = matches.last!.date
-            }
+            item.locations = FavoriteItem.normalizedLocations(remaining + matches.map(\.parent))
+            item.locationsUpdatedAt = lastMatch.date
+            item.updatedAt = lastMatch.date
             return item
         }
     }

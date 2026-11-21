@@ -81,21 +81,37 @@ public actor FavoriteRepository {
     }
 
     public func remoteFavorite(forThreadID threadID: String, maxPages: Int = 30) async throws -> Favorite? {
-        guard let threadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else { return nil }
-        guard maxPages > 0 else { return nil }
-        for page in 1 ... maxPages {
-            let parsed = try await fetchFavoritePage(page: page)
-            if parsed.favorites.isEmpty {
-                return nil
-            }
-            if let favorite = parsed.favorites.first(where: { $0.threadID == threadID }) {
-                return favorite
-            }
-            if parsed.currentPage >= parsed.totalPages || page >= parsed.totalPages {
-                return nil
-            }
+        switch try await lookupRemoteFavorite(threadID: threadID, maxPages: maxPages) {
+        case .found(let favorite): return favorite
+        case .absent: return nil
+        case .incomplete: throw FavoriteActionError.favoriteLookupIncomplete
         }
-        return nil
+    }
+
+    private enum RemoteFavoriteLookup {
+        case found(Favorite)
+        case absent
+        case incomplete
+    }
+
+    private func lookupRemoteFavorite(threadID: String, maxPages: Int) async throws -> RemoteFavoriteLookup {
+        guard let threadID = threadID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            throw FavoriteActionError.missingFavoriteThreadID
+        }
+        guard maxPages > 0 else { return .incomplete }
+        for page in 1 ... maxPages {
+            try Task.checkCancellation()
+            let parsed = try await fetchFavoritePage(page: page)
+            if let favorite = parsed.favorites.first(where: { $0.threadID == threadID }) {
+                return .found(favorite)
+            }
+            guard parsed.currentPage == page, page <= parsed.totalPages else { return .incomplete }
+            if page == parsed.totalPages {
+                return .absent
+            }
+            guard !parsed.favorites.isEmpty else { return .incomplete }
+        }
+        return .incomplete
     }
 
     public func deleteFavorite(remoteFavoriteID: String) async throws {

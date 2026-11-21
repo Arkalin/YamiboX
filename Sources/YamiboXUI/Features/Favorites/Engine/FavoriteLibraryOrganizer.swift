@@ -597,7 +597,7 @@ final class FavoriteLibraryOrganizer {
                 in: document.items,
                 mangaDirectoriesByTID: mangaDirectoriesByTID,
                 boardReaderSettings: boardReaderSettings
-            )[key, default: []].compactMap { $0.target.threadID })
+            )[key, default: []].map(\.target.threadID))
             : nil
         selectedMergedGroupKey = key
         selection.clearSelection()
@@ -618,14 +618,14 @@ final class FavoriteLibraryOrganizer {
             mangaDirectoriesByTID: mangaDirectoriesByTID,
             boardReaderSettings: boardReaderSettings
         )[key, default: []]
-        threadIDs.formUnion(currentMembers.compactMap { $0.target.threadID })
+        threadIDs.formUnion(currentMembers.map(\.target.threadID))
         unresolvedMergedGroupThreadIDs = threadIDs
         let survivingMembers = document.items.filter {
-            $0.target.kind == .mangaThread && threadIDs.contains($0.target.threadID ?? "") &&
+            $0.target.kind == .mangaThread && threadIDs.contains($0.target.threadID) &&
                 boardReaderSettings.isSmartComicModeEnabled(forumID: $0.forumID)
         }
         guard !survivingMembers.isEmpty else { return }
-        let directories = survivingMembers.compactMap { mangaDirectoriesByTID[$0.target.threadID ?? ""] }
+        let directories = survivingMembers.compactMap { mangaDirectoriesByTID[$0.target.threadID] }
         let ids = Set(directories.map(\.id))
         guard directories.count == survivingMembers.count, ids.count == 1, let id = ids.first else { return }
         selectedMergedGroupKey = id.rawValue

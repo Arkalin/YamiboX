@@ -202,7 +202,7 @@ public enum LocalFavoriteLibraryProjection {
                   boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID) else {
                 continue
             }
-            let directory = mangaDirectoriesByTID[item.target.threadID ?? ""]
+            let directory = mangaDirectoriesByTID[item.target.threadID]
             let effectiveTitle = FavoriteCardProjection.groupKey(item: item, mangaDirectory: directory)
             itemsByEffectiveTitle[effectiveTitle, default: []].append(item)
         }
@@ -287,9 +287,8 @@ public enum LocalFavoriteLibraryProjection {
 
         for item in items {
             guard item.target.kind == .mangaThread,
-                  let threadID = item.target.threadID,
                   boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID),
-                  let directory = mangaDirectoriesByTID[threadID] else {
+                  let directory = mangaDirectoriesByTID[item.target.threadID] else {
                 standalone.append(item)
                 continue
             }
@@ -305,10 +304,7 @@ public enum LocalFavoriteLibraryProjection {
     }
 
     private static func orderedByChapter(_ members: [FavoriteItem], in directory: MangaDirectory) -> [FavoriteItem] {
-        let membersByThreadID = Dictionary(uniqueKeysWithValues: members.compactMap { item -> (String, FavoriteItem)? in
-            guard let threadID = item.target.threadID else { return nil }
-            return (threadID, item)
-        })
+        let membersByThreadID = Dictionary(members.map { ($0.target.threadID, $0) }, uniquingKeysWith: { first, _ in first })
         let ordered = directory.chapters.compactMap { membersByThreadID[$0.tid] }
         return ordered.count == members.count ? ordered : members
     }
@@ -335,9 +331,9 @@ public enum LocalFavoriteLibraryProjection {
         precondition(!members.isEmpty, "RawMangaDirectoryGroup must have at least one member")
         var representative = members[0]
         var unionLocations: [FavoriteLocation] = []
-        var seenLocationIDs: Set<String> = []
+        var seenLocations: Set<FavoriteLocation> = []
         for member in members {
-            for location in member.locations where seenLocationIDs.insert(location.id).inserted {
+            for location in member.locations where seenLocations.insert(location).inserted {
                 unionLocations.append(location)
             }
         }
@@ -371,8 +367,8 @@ public enum LocalFavoriteLibraryProjection {
         for item: FavoriteItem,
         boardReaderSettings: BoardReaderSettings
     ) -> String? {
-        guard let threadID = item.target.threadID,
-              let mode = boardReaderSettings.entry(forumID: item.forumID)?.mode else {
+        let threadID = item.target.threadID
+        guard let mode = boardReaderSettings.entry(forumID: item.forumID)?.mode else {
             return nil
         }
         switch mode {

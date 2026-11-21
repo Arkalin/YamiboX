@@ -27,7 +27,9 @@ enum FavoriteLibraryIdentityRemapping {
             var target = try JSONDecoder().decode(FavoriteUpdateTrackedTarget.self, from: Data((row["target_json"] as String).utf8))
             target.target = normalize(target.target, identities: snapshot, legacy: legacy)
             if let existing = targets[target.id] {
-                target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(existing.knownChapterTIDs ?? [])
+                if let knownTIDs = existing.knownChapterTIDs {
+                    target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(knownTIDs)
+                }
                 target.categoryIDs.formUnion(existing.categoryIDs)
             }
             targets[target.id] = target

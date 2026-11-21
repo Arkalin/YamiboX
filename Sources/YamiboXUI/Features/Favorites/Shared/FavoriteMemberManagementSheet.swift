@@ -25,7 +25,7 @@ struct FavoriteMemberManagementSheet: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(item.resolvedDisplayTitle)
-                                Text(item.target.threadID ?? "")
+                                Text(item.target.threadID)
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()

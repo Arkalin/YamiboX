@@ -77,8 +77,10 @@ public enum FavoriteCommands {
         if removeRemote, let remoteRepository {
             if let remoteFavoriteID = normalizedRemoteFavoriteID(favorite.remoteFavoriteID) {
                 try await remoteRepository.deleteFavorite(remoteFavoriteID: remoteFavoriteID)
-            } else if let remoteFavorite = try await remoteRepository.remoteFavorite(forThreadID: favorite.threadID, maxPages: 30),
-                      let remoteFavoriteID = normalizedRemoteFavoriteID(remoteFavorite.remoteFavoriteID) {
+            } else if let remoteFavorite = try await remoteRepository.remoteFavorite(forThreadID: favorite.threadID, maxPages: 30) {
+                guard let remoteFavoriteID = normalizedRemoteFavoriteID(remoteFavorite.remoteFavoriteID) else {
+                    throw FavoriteActionError.missingFavoriteDeleteID
+                }
                 try await remoteRepository.deleteFavorite(remoteFavoriteID: remoteFavoriteID)
             }
         }
@@ -114,9 +116,7 @@ public enum FavoriteCommands {
         localFavoriteLibraryStore: FavoriteLibraryStore,
         remoteRepository: any ForumThreadFavoriteRemoteOperating
     ) async throws -> RemotePushResult {
-        guard let threadID = item.target.threadID else {
-            throw FavoriteActionError.missingFavoriteThreadID
-        }
+        let threadID = item.target.threadID
         if normalizedRemoteFavoriteID(item.remoteMapping?.yamiboFavoriteID) != nil {
             return .synced
         }

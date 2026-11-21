@@ -38,7 +38,7 @@ public enum FavoriteItemTarget: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    public var threadID: String? {
+    public var threadID: String {
         switch self {
         case let .normalThread(threadID), let .novelThread(threadID), let .mangaThread(threadID):
             threadID

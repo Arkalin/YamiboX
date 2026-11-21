@@ -14,7 +14,7 @@ struct FavoriteUnreadIndex {
         for item in items {
             var ids = Set((byTarget[.favorite(item.target)] ?? []).map(\.id))
             if item.target.kind == .mangaThread,
-               let tid = item.target.threadID, let directory = directories[tid] {
+               let directory = directories[item.target.threadID] {
                 ids.formUnion((byTarget[.mangaDirectory(directoryID: directory.id)] ?? []).map(\.id))
             }
             favorites[item.id] = ids

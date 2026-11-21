@@ -201,8 +201,8 @@ public final class YamiboAppContext: Sendable {
                 var firstForumIDs: [String: String] = [:]
                 firstForumIDs.reserveCapacity(requestedTIDs.count)
                 for item in items {
-                    guard let tid = item.target.threadID,
-                          requestedTIDs.contains(tid),
+                    let tid = item.target.threadID
+                    guard requestedTIDs.contains(tid),
                           firstForumIDs[tid] == nil,
                           let fid = item.forumID else { continue }
                     firstForumIDs[tid] = fid

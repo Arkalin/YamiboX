@@ -31,10 +31,6 @@ public struct FavoriteThreadProbeResult: Hashable, Sendable {
     public var coverURL: URL?
     public var contentUpdatedAt: Date?
     public var authorID: String?
-    /// Legacy signal retained for callers constructing degraded results.
-    /// Remote sync rejects these instead of importing a placeholder; the
-    /// production sync probe throws the original metadata error directly.
-    public var sourceMetadataFetchFailed: Bool
 
     public init(
         target: FavoriteItemTarget,
@@ -44,8 +40,7 @@ public struct FavoriteThreadProbeResult: Hashable, Sendable {
         forumName: String? = nil,
         coverURL: URL? = nil,
         contentUpdatedAt: Date? = nil,
-        authorID: String? = nil,
-        sourceMetadataFetchFailed: Bool = false
+        authorID: String? = nil
     ) {
         self.target = target
         self.title = title
@@ -60,7 +55,6 @@ public struct FavoriteThreadProbeResult: Hashable, Sendable {
         self.coverURL = coverURL
         self.contentUpdatedAt = contentUpdatedAt
         self.authorID = authorID
-        self.sourceMetadataFetchFailed = sourceMetadataFetchFailed
     }
 }
 

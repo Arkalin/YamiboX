@@ -180,11 +180,9 @@ public struct FavoriteYamiboSyncEngine: Sendable {
 
             var preImportMangaThreadFavoritesByTID: [String: FavoriteItem] = [:]
             for item in workingDocument.items where item.target.kind == .mangaThread {
-                if let tid = item.target.threadID {
-                    preImportMangaThreadFavoritesByTID[tid] = item
-                }
+                preImportMangaThreadFavoritesByTID[item.target.threadID] = item
             }
-            let existingThreadIDs = Set(workingDocument.items.compactMap(\.target.threadID))
+            let existingThreadIDs = Set(workingDocument.items.map(\.target.threadID))
             let candidateThreadIDs = remoteEntries.map(\.threadID).filter { !existingThreadIDs.contains($0) }
             var candidateDirectoriesByTID: [String: MangaDirectory] = [:]
             if let mangaDirectoryStore, !candidateThreadIDs.isEmpty {
@@ -237,9 +235,6 @@ public struct FavoriteYamiboSyncEngine: Sendable {
 
                 do {
                     let probeResult = try await retryPolicy.run { try await client.probe(entry) }
-                    guard !probeResult.sourceMetadataFetchFailed else {
-                        throw YamiboError.parsingFailed(context: entry.threadID)
-                    }
                     let mapping = FavoriteRemoteMapping(
                         yamiboFavoriteID: FavoriteRemoteIdentity.normalizedID(entry.remoteFavoriteID),
                         yamiboRemoteOrder: entry.remoteOrder,
@@ -310,7 +305,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
 
             let uploadCandidates = workingDocument.items.filter { item in
                 item.locations.contains { $0.categoryID == snapshot.targetCategoryID }
-                    && item.target.threadID.map { !remoteThreadIDs.contains($0) } == true
+                    && !remoteThreadIDs.contains(item.target.threadID)
             }
             await commit { snapshot in
                 snapshot.phase = .uploading
@@ -322,7 +317,7 @@ public struct FavoriteYamiboSyncEngine: Sendable {
             }
             for (offset, item) in uploadCandidates.enumerated() {
                 try Task.checkCancellation()
-                guard let threadID = item.target.threadID else { continue }
+                let threadID = item.target.threadID
                 let label = Self.postLabel(threadID: threadID, title: item.resolvedDisplayTitle)
                 do {
                     try await client.addFavorite(threadID)

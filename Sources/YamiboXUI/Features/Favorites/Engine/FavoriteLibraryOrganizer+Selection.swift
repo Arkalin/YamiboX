@@ -45,7 +45,7 @@ extension FavoriteLibraryOrganizer {
             guard let item = itemsByID[id],
                   item.target.kind == .mangaThread,
                   boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID) else { continue }
-            let directory = mangaDirectoriesByTID[item.target.threadID ?? ""]
+            let directory = mangaDirectoriesByTID[item.target.threadID]
             let effectiveTitle = FavoriteCardProjection.groupKey(item: item, mangaDirectory: directory)
             let archived = itemsByEffectiveTitle[effectiveTitle] ?? []
             expanded.formUnion(archived.map(\.id))
@@ -57,7 +57,7 @@ extension FavoriteLibraryOrganizer {
         guard selectedMergedGroupKey == nil,
               item.target.kind == .mangaThread,
               boardReaderSettings.isSmartComicModeEnabled(forumID: item.forumID),
-              let directory = mangaDirectoriesByTID[item.target.threadID ?? ""] else { return item.id }
+              let directory = mangaDirectoriesByTID[item.target.threadID] else { return item.id }
         return directory.id.rawValue
     }
 

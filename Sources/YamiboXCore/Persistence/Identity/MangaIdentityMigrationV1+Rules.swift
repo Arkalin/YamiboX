@@ -437,7 +437,9 @@ extension MangaIdentityMigrationV1 {
                 let data = try IdentityJSON.normalize(Data((row["target_json"] as String).utf8), identities: snapshot, legacy: legacy)
                 var target = try JSONDecoder().decode(TrackedTarget.self, from: data)
                 if let existing = targets[target.id] {
-                    target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(existing.knownChapterTIDs ?? [])
+                    if let knownTIDs = existing.knownChapterTIDs {
+                        target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(knownTIDs)
+                    }
                     target.categoryIDs.formUnion(existing.categoryIDs)
                 }
                 targets[target.id] = target

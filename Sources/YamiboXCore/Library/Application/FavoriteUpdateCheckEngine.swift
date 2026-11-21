@@ -580,7 +580,7 @@ public final class FavoriteUpdateCheckEngine {
 
     private static func candidates(in document: FavoriteLibraryDocument) -> [FavoriteItem] {
         document.items.filter { item in
-            item.target.threadID != nil && (item.target.kind == .normalThread || item.target.kind == .novelThread)
+            item.target.kind == .normalThread || item.target.kind == .novelThread
         }
     }
 
@@ -785,9 +785,7 @@ public final class FavoriteUpdateCheckEngine {
     }
 
     private func contentUpdate(for item: FavoriteItem) async throws -> FavoriteContentUpdateResolver.Snapshot {
-        guard let tid = item.target.threadID else {
-            throw FavoriteActionError.missingFavoriteThreadID
-        }
+        let tid = item.target.threadID
         let repository = await makeForumThreadReaderRepository()
         try Task.checkCancellation()
         let fid: String? = if case let .forumBoard(id, _) = item.sourceGroup { id } else { nil }

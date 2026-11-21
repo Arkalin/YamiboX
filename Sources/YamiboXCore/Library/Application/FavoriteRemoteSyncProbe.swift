@@ -11,7 +11,7 @@ public extension FavoriteYamiboSyncClient {
             resolve: { try await resolver.resolveForFavoriteSync($0) },
             repository: coverRepository,
             saveCover: { url, target in
-                guard let key = ContentCoverKey(target: target) else { return }
+                let key = ContentCoverKey(target: target)
                 _ = try await contentCoverStore.setAutomaticCover(url, for: key)
             }
         )

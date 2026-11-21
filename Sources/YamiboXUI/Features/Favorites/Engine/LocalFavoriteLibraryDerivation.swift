@@ -81,7 +81,7 @@ enum LocalFavoriteLibraryDerivation {
         var mangaThreadItemsByGroupKey = cache.groups
         if let key = inputs.memberScopeGroupKey, let threadIDs = inputs.memberScopeThreadIDs {
             mangaThreadItemsByGroupKey[key] = inputs.document.items.filter {
-                $0.target.kind == .mangaThread && threadIDs.contains($0.target.threadID ?? "") &&
+                $0.target.kind == .mangaThread && threadIDs.contains($0.target.threadID) &&
                     inputs.boardReaderSettings.isSmartComicModeEnabled(forumID: $0.forumID)
             }
         }
@@ -213,15 +213,16 @@ enum LocalFavoriteLibraryDerivation {
         _ inputs: Inputs,
         allCardsAcrossScopes: [FavoriteCardProjection]
     ) -> [String: CollectionAggregate] {
-        var cardsByCollectionKey: [String: [FavoriteCardProjection]] = [:]
+        var cardsByCollection: [FavoriteLocation: [FavoriteCardProjection]] = [:]
         for card in allCardsAcrossScopes {
             for location in card.item.locations {
-                guard case let .collection(categoryID, collectionID) = location else { continue }
-                cardsByCollectionKey["\(categoryID)\u{0}\(collectionID)", default: []].append(card)
+                guard case .collection = location else { continue }
+                cardsByCollection[location, default: []].append(card)
             }
         }
         return Dictionary(uniqueKeysWithValues: inputs.document.collections.map { collection in
-            let cards = cardsByCollectionKey["\(collection.categoryID)\u{0}\(collection.id)"] ?? []
+            let location = FavoriteLocation.collection(categoryID: collection.categoryID, collectionID: collection.id)
+            let cards = cardsByCollection[location] ?? []
             return (collection.id, CollectionAggregate(entryCount: cards.count, sortSummary: .summarizing(cards)))
         })
     }
@@ -254,13 +255,13 @@ enum LocalFavoriteLibraryDerivation {
                 guard isModeOnMangaThread else {
                     candidates.append(CollectionPreviewCandidate(
                         sortDate: item.updatedAt,
-                        coverSource: ContentCoverKey(target: item.target).flatMap { inputs.coverSourcesByKey[$0] },
+                        coverSource: inputs.coverSourcesByKey[ContentCoverKey(target: item.target)],
                         title: item.resolvedDisplayTitle
                     ))
                     continue
                 }
 
-                let mangaDirectory = inputs.mangaDirectoriesByTID[item.target.threadID ?? ""]
+                let mangaDirectory = inputs.mangaDirectoriesByTID[item.target.threadID]
                 let effectiveTitle = FavoriteCardProjection.resolvedTitle(
                     item: item,
                     mangaDirectory: mangaDirectory,
@@ -269,7 +270,7 @@ enum LocalFavoriteLibraryDerivation {
                 guard let mangaDirectory else {
                     candidates.append(CollectionPreviewCandidate(
                         sortDate: item.updatedAt,
-                        coverSource: ContentCoverKey(target: item.target).flatMap { inputs.coverSourcesByKey[$0] },
+                        coverSource: inputs.coverSourcesByKey[ContentCoverKey(target: item.target)],
                         title: effectiveTitle
                     ))
                     continue

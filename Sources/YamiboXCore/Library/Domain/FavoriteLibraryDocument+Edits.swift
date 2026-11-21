@@ -65,8 +65,8 @@ public extension FavoriteLibraryDocument {
     }
 
     private static func normalizedLocations(_ locations: [FavoriteLocation]) -> [FavoriteLocation] {
-        var seen: Set<String> = []
-        return locations.filter { seen.insert($0.id).inserted }
+        var seen: Set<FavoriteLocation> = []
+        return locations.filter { seen.insert($0).inserted }
     }
 
     func reorderedCategoryIDs(moving id: String, _ direction: CategoryMoveDirection) -> [String]? {

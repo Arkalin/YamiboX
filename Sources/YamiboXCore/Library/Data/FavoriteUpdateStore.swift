@@ -460,7 +460,9 @@ public actor FavoriteUpdateStore {
             let canonical = try MangaDirectoryIdentityDatabase.canonicalID(id, in: db)
             target.target = .mangaDirectory(directoryID: canonical)
             if let existing = try trackedTarget(id: target.id, in: db) {
-                target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(existing.knownChapterTIDs ?? [])
+                if let knownTIDs = existing.knownChapterTIDs {
+                    target.knownChapterTIDs = (target.knownChapterTIDs ?? []).union(knownTIDs)
+                }
                 target.categoryIDs.formUnion(existing.categoryIDs)
             }
         }

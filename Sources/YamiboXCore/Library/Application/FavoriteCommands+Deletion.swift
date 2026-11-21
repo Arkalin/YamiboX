@@ -119,32 +119,33 @@ extension FavoriteCommands {
         let candidates = items.filter(\.hasYamiboRemoteCandidate)
         guard !candidates.isEmpty else { return }
         let repository = await makeRemoteRepository()
+        var resolvedIDs: [String] = []
+        var seenIDs: Set<String> = []
         for item in candidates {
             try Task.checkCancellation()
-            do {
-                let id = try await deletionRemoteID(for: item, repository: repository)
-                try await beforeDeleting()
-                try Task.checkCancellation()
-                try await repository.deleteFavorite(remoteFavoriteID: id)
-            } catch FavoriteActionError.missingFavoriteDeleteID {
-                continue
-            } catch YamiboError.parsingFailed {
-                YamiboLog.sync.warning("Failed to resolve remote favorite id for thread \(item.target.threadID ?? "?", privacy: .public) during batch delete, skipping remote delete for this item")
-                continue
+            if let id = try await deletionRemoteID(for: item, repository: repository),
+               seenIDs.insert(id).inserted {
+                resolvedIDs.append(id)
             }
+        }
+        for id in resolvedIDs {
+            try await beforeDeleting()
+            try Task.checkCancellation()
+            try await repository.deleteFavorite(remoteFavoriteID: id)
         }
     }
 
     private static func deletionRemoteID(
         for item: FavoriteItem,
         repository: any ForumThreadFavoriteRemoteOperating
-    ) async throws -> String {
+    ) async throws -> String? {
         if let id = FavoriteRemoteIdentity.normalizedID(item.remoteMapping?.yamiboFavoriteID) {
             return id
         }
-        guard let threadID = item.target.threadID,
-              let favorite = try await repository.remoteFavorite(forThreadID: threadID, maxPages: 30),
-              let id = FavoriteRemoteIdentity.normalizedID(favorite.remoteFavoriteID) else {
+        guard let favorite = try await repository.remoteFavorite(forThreadID: item.target.threadID, maxPages: 30) else {
+            return nil
+        }
+        guard let id = FavoriteRemoteIdentity.normalizedID(favorite.remoteFavoriteID) else {
             throw FavoriteActionError.missingFavoriteDeleteID
         }
         return id

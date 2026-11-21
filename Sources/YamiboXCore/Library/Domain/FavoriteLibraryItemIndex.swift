@@ -10,7 +10,8 @@ struct FavoriteLibraryItemIndex: Sendable {
         threads.reserveCapacity(document.items.count)
         targets.reserveCapacity(document.items.count)
         for (position, item) in document.items.enumerated() {
-            if let threadID = item.target.threadID, threads[threadID] == nil {
+            let threadID = item.target.threadID
+            if threads[threadID] == nil {
                 threads[threadID] = position
             }
             let targetID = item.target.id

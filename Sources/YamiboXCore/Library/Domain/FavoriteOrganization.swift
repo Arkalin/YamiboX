@@ -5,14 +5,7 @@ public enum FavoriteLocation: Codable, Hashable, Identifiable, Sendable {
     case category(String)
     case collection(categoryID: String, collectionID: String)
 
-    public var id: String {
-        switch self {
-        case let .category(categoryID):
-            "category:\(categoryID)"
-        case let .collection(categoryID, collectionID):
-            "category:\(categoryID):collection:\(collectionID)"
-        }
-    }
+    public var id: Self { self }
 
     public var categoryID: String {
         switch self {

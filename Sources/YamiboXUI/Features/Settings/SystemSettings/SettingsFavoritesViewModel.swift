@@ -51,11 +51,8 @@ final class SettingsFavoritesViewModel: AppSettingsPersisting {
     }
 
     func restoreDefaultsAfterApplicationReset() {
-        favoriteBackground = FavoriteBackgroundSettings()
-        favoriteItemTapAction = .detail
+        applyLoadedSettings(AppSettings())
     }
-
-
 
     func updateFavoriteItemTapAction(_ value: FavoriteItemTapAction) {
         persistSettings(\.favoriteItemTapAction, to: value, updateSettings: updateSettings) {

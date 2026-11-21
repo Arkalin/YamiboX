@@ -21,13 +21,12 @@ extension FavoriteUpdateCheckEngine {
         let settings = await settingsStore.load()
         let eligibleItems: [(item: FavoriteItem, forumID: String)] = document.items.compactMap { item in
             guard item.target.kind == .mangaThread,
-                  item.target.threadID != nil,
                   let forumID = item.forumID,
                   settings.isSmartComicModeEnabled(forumID: forumID) else { return nil }
             return (item, forumID)
         }
         guard !eligibleItems.isEmpty else { return [] }
-        let tids = eligibleItems.compactMap { $0.item.target.threadID }
+        let tids = eligibleItems.map { $0.item.target.threadID }
         let resolved: [String: MangaDirectory]
         do {
             resolved = try await mangaDirectoryStore.directories(containingTIDs: tids)
@@ -39,7 +38,7 @@ extension FavoriteUpdateCheckEngine {
 
         var groupsByID: [MangaDirectoryID: MangaDirectoryCandidate] = [:]
         for (item, forumID) in eligibleItems.sorted(by: { $0.item.target.id < $1.item.target.id }) {
-            guard let tid = item.target.threadID, let directory = resolved[tid] else { continue }
+            guard let directory = resolved[item.target.threadID] else { continue }
             var group = groupsByID[directory.id] ?? MangaDirectoryCandidate(
                 directory: directory,
                 forumID: forumID,
@@ -189,11 +188,15 @@ extension FavoriteUpdateCheckEngine {
 
         do {
             let result = try await workflow.updateDirectory(group.directory, currentTID: representativeTID)
-            let knownTIDs = target.knownChapterTIDs ?? []
             let refreshedTIDs = Set(result.directory.chapters.map(\.tid))
-            let newTIDs = refreshedTIDs.subtracting(knownTIDs)
-
-            target.knownChapterTIDs = knownTIDs.union(refreshedTIDs)
+            let newTIDs: Set<String>
+            if let knownTIDs = target.knownChapterTIDs {
+                newTIDs = refreshedTIDs.subtracting(knownTIDs)
+                target.knownChapterTIDs = knownTIDs.union(refreshedTIDs)
+            } else {
+                newTIDs = []
+                target.knownChapterTIDs = refreshedTIDs
+            }
             target.baselineReady = true
             target.lastCheckedAt = .now
             target.lastError = nil

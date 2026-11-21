@@ -20,14 +20,11 @@ public enum FavoriteRemoveRemoteDecision: Equatable, Sendable {
 
 public extension FavoriteItem {
     func favorite(type: FavoriteType) -> Favorite {
-        guard let threadID = target.threadID else {
-            preconditionFailure("Thread favorite conversion requires thread target")
-        }
-        return Favorite(
+        Favorite(
             id: id,
             title: title,
             displayName: displayName,
-            threadID: threadID,
+            threadID: target.threadID,
             remoteFavoriteID: remoteMapping?.yamiboFavoriteID,
             type: type,
             tagIDs: tagIDs

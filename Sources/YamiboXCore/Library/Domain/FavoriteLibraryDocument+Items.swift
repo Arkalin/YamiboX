@@ -43,8 +43,8 @@ extension FavoriteLibraryDocument {
         date: Date = .now
     ) throws -> FavoriteItem {
         let resolvedLocation = location ?? .category(defaultCategory.id)
-        if let existingThreadID = probeResult.target.threadID,
-           let existingTarget = items.first(where: { $0.target.threadID == existingThreadID })?.target,
+        let threadID = probeResult.target.threadID
+        if let existingTarget = items.first(where: { $0.target.threadID == threadID })?.target,
            existingTarget.id != probeResult.target.id {
             retargetItem(from: existingTarget, to: probeResult.target, date: date)
         }

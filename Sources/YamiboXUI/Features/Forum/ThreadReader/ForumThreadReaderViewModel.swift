@@ -500,7 +500,7 @@ final class ForumThreadReaderViewModel {
         let hasOtherFavoriteInDirectory = document.items.contains { item in
             item.target.kind == .mangaThread
                 && item.target.threadID != context.thread.tid
-                && siblingTIDs.contains(item.target.threadID ?? "")
+                && siblingTIDs.contains(item.target.threadID)
                 && settings.isSmartComicModeEnabled(forumID: item.forumID)
         }
         guard hasOtherFavoriteInDirectory else { return nil }

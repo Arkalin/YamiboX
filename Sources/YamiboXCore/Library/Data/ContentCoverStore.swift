@@ -36,9 +36,8 @@ public struct ContentCoverKey: Codable, Hashable, Sendable {
         }
     }
 
-    public init?(target: FavoriteItemTarget) {
-        guard let threadID = target.threadID else { return nil }
-        self = .thread(tid: threadID)
+    public init(target: FavoriteItemTarget) {
+        self = .thread(tid: target.threadID)
     }
 }
 
