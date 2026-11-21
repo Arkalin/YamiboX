@@ -8,24 +8,19 @@ public struct SessionState: Codable, Hashable, Sendable {
     }
 
     public var cookies: [YamiboCookie]
-    public var cookie: String {
-        get { YamiboRequestCredentials(cookies: cookies, userAgent: userAgent).cookieHeader(for: YamiboDomain.baseURL) }
-        set { cookies = YamiboCookie.legacyCookies(from: newValue, capturedAt: lastUpdatedAt ?? .now) }
-    }
     public var userAgent: String
     public var isLoggedIn: Bool
     public var lastUpdatedAt: Date?
     public var accountUID: String?
 
     public init(
-        cookie: String = "",
-        cookies: [YamiboCookie]? = nil,
+        cookies: [YamiboCookie] = [],
         userAgent: String = YamiboNetworkConfiguration.defaultMobileUserAgent,
         isLoggedIn: Bool = false,
         lastUpdatedAt: Date? = nil,
         accountUID: String? = nil
     ) {
-        self.cookies = cookies ?? YamiboCookie.legacyCookies(from: cookie, capturedAt: lastUpdatedAt ?? .now)
+        self.cookies = cookies
         self.userAgent = userAgent
         self.isLoggedIn = isLoggedIn
         self.lastUpdatedAt = lastUpdatedAt
@@ -47,30 +42,30 @@ public struct SessionState: Codable, Hashable, Sendable {
     }
 
     public var authenticationCookie: YamiboCookie? {
-        cookies.first {
-            Self.isAuthenticationCookieName($0.name) && !$0.isExpired()
-        }
+        Self.authenticationCookie(in: forumCookies)
+    }
+
+    public var authenticationCookieValue: String? {
+        authenticationCookie.flatMap { Self.normalizedAuthenticationCookieValue($0.value) }
     }
 
     public var hasValidAuthenticationCookie: Bool {
         authenticationCookie != nil
     }
 
-    public static func hasAuthenticationCookie(_ cookieHeader: String) -> Bool {
-        authenticationCookieValue(in: cookieHeader) != nil
+    public var forumCookies: [YamiboCookie] {
+        YamiboCookie.canonicalCookies(cookies.filter { $0.matches(YamiboDomain.baseURL) })
     }
 
-    public static func authenticationCookieValue(in cookieHeader: String) -> String? {
-        cookieHeader
-            .split(separator: ";")
-            .compactMap { part -> String? in
-                let pair = part.split(separator: "=", maxSplits: 1).map(String.init)
-                guard pair.count == 2 else { return nil }
-                let name = pair[0].trimmingCharacters(in: .whitespacesAndNewlines)
-                guard isAuthenticationCookieName(name) else { return nil }
-                return normalizedAuthenticationCookieValue(pair[1])
-            }
-            .first
+    public static func authenticationCookieValue(in cookies: [YamiboCookie]) -> String? {
+        authenticationCookie(in: YamiboCookie.canonicalCookies(cookies)).flatMap { normalizedAuthenticationCookieValue($0.value) }
+    }
+
+    private static func authenticationCookie(in cookies: [YamiboCookie]) -> YamiboCookie? {
+        cookies.first {
+            isAuthenticationCookieName($0.name) && $0.matches(YamiboDomain.baseURL)
+                && normalizedAuthenticationCookieValue($0.value) != nil
+        }
     }
 
     private static func normalizedAuthenticationCookieValue(_ rawValue: String) -> String? {

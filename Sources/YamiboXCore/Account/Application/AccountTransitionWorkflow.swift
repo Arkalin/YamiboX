@@ -65,7 +65,7 @@ struct AccountWebDataCleaner: Sendable {
             await websiteDataClearer?.clearAllWebsiteData()
         case .session:
             for storage in [session.configuration.httpCookieStorage, HTTPCookieStorage.shared].compactMap({ $0 }) {
-                for cookie in storage.cookies ?? [] where YamiboDomain.containsYamiboDomain(cookie.domain) {
+                for cookie in storage.cookies ?? [] where YamiboDomain.isYamiboCookieDomain(cookie.domain) {
                     storage.deleteCookie(cookie)
                 }
             }

@@ -232,7 +232,7 @@ struct SettingsStorageView: View {
     private func openWebDAVSettings() {
         Task { @MainActor in
             let session = await dependencies.sessionStore.load()
-            if session.isLoggedIn, !session.cookie.isEmpty {
+            if session.isLoggedIn, session.hasValidAuthenticationCookie {
                 showingWebDAVSettings = true
             } else {
                 viewModel.errorMessage = L10n.string("webdav.error.login_required")

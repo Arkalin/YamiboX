@@ -83,19 +83,15 @@ public enum YamiboForumEnvironment: Sendable, Equatable {
     }
 
     public func isCookieDomain(_ domain: String) -> Bool {
-        let normalized = domain.lowercased()
+        let normalized = Self.normalizedHost(domain)
+        guard !normalized.isEmpty else { return false }
         if restrictsRequestsToForumOrigin {
-            let domain = Self.normalizedHost(normalized.trimmingCharacters(in: CharacterSet(charactersIn: ".")))
-            return !domain.isEmpty && (forumHost == domain || forumHost.hasSuffix(".\(domain)"))
+            if forumHost == normalized { return true }
+            let hostLabels = forumHost.split(separator: ".")
+            let isIPv4Address = hostLabels.count == 4 && hostLabels.allSatisfy { UInt8($0) != nil }
+            return !isIPv4Address && !forumHost.contains(":") && forumHost.hasSuffix(".\(normalized)")
         }
-        return normalized == rootDomain || normalized == forumHost || normalized.hasSuffix(".\(rootDomain)")
-    }
-
-    public func matchesCookieCleanupDomain(_ value: String) -> Bool {
-        if restrictsRequestsToForumOrigin {
-            return isCookieDomain(value)
-        }
-        return value.lowercased().contains(rootDomain)
+        return normalized == rootDomain || normalized.hasSuffix(".\(rootDomain)")
     }
 
     func isForumPageURL(_ url: URL) -> Bool {

@@ -159,8 +159,7 @@ public struct IOSForumWebView: UIViewRepresentable {
                 guard let self, let webView else { return }
                 let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies().map { YamiboCookie($0) }
                 guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
-                let header = YamiboRequestCredentials(cookies: cookies, userAgent: "").cookieHeader(for: YamiboDomain.baseURL)
-                guard SessionState.authenticationCookieValue(in: header) != lastAuthenticationCookie else { return }
+                guard SessionState.authenticationCookieValue(in: cookies) != lastAuthenticationCookie else { return }
                 model.rearmNativeRouting()
                 didHandOffNavigation = false
                 if model.shouldRouteNatively(url, method: mainNavigationMethod, isMainFrame: true) {
@@ -286,7 +285,7 @@ public struct IOSForumWebView: UIViewRepresentable {
                 let persisted = await sessionStore.load()
                 guard !Task.isCancelled, !isChangingAccount, generation == accountGeneration else { return }
                 sessionSyncState.markPersistedWebSession(persisted)
-                lastAuthenticationCookie = SessionState.authenticationCookieValue(in: persisted.cookie)
+                lastAuthenticationCookie = persisted.authenticationCookieValue
                 didObserveAuthentication = true
                 model.openNative(url)
             }
@@ -316,7 +315,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         @MainActor
         private func synchronizeWebViewSession(_ sessionState: SessionState, reloadIfNeeded: Bool) async {
             guard let webView, !isChangingAccount, !Task.isCancelled, nativeNavigationTask == nil else { return }
-            let authenticationCookie = SessionState.authenticationCookieValue(in: sessionState.cookie)
+            let authenticationCookie = sessionState.authenticationCookieValue
             if didObserveAuthentication, authenticationCookie != lastAuthenticationCookie {
                 model.rearmNativeRouting()
                 didHandOffNavigation = false
@@ -387,7 +386,7 @@ public struct IOSForumWebView: UIViewRepresentable {
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
             let storedCookies = await cookieStore.allCookies()
             for cookie in storedCookies
-                where YamiboDomain.containsYamiboDomain(cookie.domain) &&
+                where YamiboDomain.isYamiboCookieDomain(cookie.domain) &&
                 (incomingNames.contains(cookie.name) || SessionState.isAuthenticationCookieName(cookie.name)) &&
                 !incomingIdentities.contains(YamiboCookie(cookie).identity) &&
                 !YamiboCookie.isWAFCookie(cookie.name) {
@@ -398,7 +397,7 @@ public struct IOSForumWebView: UIViewRepresentable {
         private func clearYamiboCookies(in webView: WKWebView) async {
             let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
             let cookies = await cookieStore.allCookies()
-            for cookie in cookies where YamiboDomain.containsYamiboDomain(cookie.domain) {
+            for cookie in cookies where YamiboDomain.isYamiboCookieDomain(cookie.domain) {
                 await cookieStore.deleteCookieAsync(cookie)
             }
         }

@@ -7,8 +7,6 @@ public protocol SessionStoring: Sendable {
     func isCurrentGeneration(_ expected: UUID) async -> Bool
     func changes() -> AsyncStream<String>
     func save(_ session: SessionState) async throws
-    func updateCookie(_ cookie: String, isLoggedIn: Bool) async throws
-    func updateWebSession(cookie: String, userAgent: String, isLoggedIn: Bool) async throws
     func updateWebSession(cookies: [YamiboCookie], userAgent: String) async throws
     func updateAccountUID(_ accountUID: String?) async throws
     func reset() async throws
@@ -94,23 +92,6 @@ public actor SessionStore: SessionStoring {
         postChangeNotification()
     }
 
-    public func updateCookie(_ cookie: String, isLoggedIn: Bool) async throws {
-        let snapshot = try await snapshot()
-        var session = snapshot.session
-        let previousCookie = session.cookie
-        session.cookie = cookie
-        session.isLoggedIn = isLoggedIn
-        if !isLoggedIn || cookie != previousCookie {
-            session.accountUID = nil
-        }
-        session.lastUpdatedAt = .now
-        try await save(session, expectedGeneration: snapshot.generation)
-    }
-
-    public func updateWebSession(cookie: String, userAgent: String, isLoggedIn _: Bool) async throws {
-        try await updateWebSession(cookies: YamiboCookie.legacyCookies(from: cookie), userAgent: userAgent)
-    }
-
     public func updateWebSession(cookies webCookies: [YamiboCookie], userAgent: String) async throws {
         try await updateWebSession(cookies: webCookies, userAgent: userAgent, expectedGeneration: nil)
     }
@@ -122,7 +103,7 @@ public actor SessionStore: SessionStoring {
         let previousSession = session
         let previousAuthentication = session.authenticationCookie
         let incoming = YamiboCookie.canonicalCookies(webCookies.filter { !$0.isExpired() })
-        let incomingAuthentication = incoming.first { SessionState.isAuthenticationCookieName($0.name) }
+        let incomingAuthentication = SessionState(cookies: incoming).authenticationCookie
         let preservesCurrentAuthentication = session.isLoggedIn && previousAuthentication != nil &&
             (incomingAuthentication == nil || incomingAuthentication?.value != previousAuthentication?.value)
 

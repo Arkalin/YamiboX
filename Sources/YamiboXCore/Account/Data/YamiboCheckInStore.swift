@@ -96,13 +96,13 @@ public actor YamiboCheckInStore {
         if let uid = session.accountUID?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             let key = "\(keyPrefix).uid.\(uid)"
             if defaults.string(forKey: key) == nil,
-               let hash = accountHash(from: session.cookie),
+               let hash = accountHash(from: session),
                let legacyDate = defaults.string(forKey: "\(keyPrefix).\(hash)") {
                 defaults.set(legacyDate, forKey: key)
             }
             return key
         }
-        guard let hash = accountHash(from: session.cookie) else { return nil }
+        guard let hash = accountHash(from: session) else { return nil }
         return "\(keyPrefix).\(hash)"
     }
 
@@ -110,8 +110,8 @@ public actor YamiboCheckInStore {
         formatter.string(from: Date())
     }
 
-    private func accountHash(from cookie: String) -> String? {
-        guard let authValue = SessionState.authenticationCookieValue(in: cookie) else {
+    private func accountHash(from session: SessionState) -> String? {
+        guard let authValue = session.authenticationCookieValue else {
             return nil
         }
 

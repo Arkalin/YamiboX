@@ -12,7 +12,7 @@ public struct WebKitWebsiteDataClearer: WebsiteDataClearing {
         #if canImport(WebKit)
         let cookieStore = WKWebsiteDataStore.default().httpCookieStore
         let cookies = await cookieStore.allCookies()
-        for cookie in cookies where YamiboDomain.containsYamiboDomain(cookie.domain) {
+        for cookie in cookies where YamiboDomain.isYamiboCookieDomain(cookie.domain) {
             await cookieStore.deleteCookieAsync(cookie)
         }
         #endif

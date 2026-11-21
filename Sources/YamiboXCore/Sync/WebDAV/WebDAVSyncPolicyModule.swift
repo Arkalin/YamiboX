@@ -10,6 +10,6 @@ struct WebDAVSyncPolicyModule: Sendable {
         settings.isAutoSyncEnabled &&
             settings.isConfigured &&
             session.isLoggedIn &&
-            !session.cookie.isEmpty
+            session.hasValidAuthenticationCookie
     }
 }

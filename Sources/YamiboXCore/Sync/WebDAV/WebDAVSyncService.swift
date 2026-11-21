@@ -378,7 +378,7 @@ public actor WebDAVSyncService {
     }
 
     private nonisolated func currentAccountUID(from sessionState: SessionState) throws -> String {
-        guard sessionState.isLoggedIn, !sessionState.cookie.isEmpty else {
+        guard sessionState.isLoggedIn, sessionState.hasValidAuthenticationCookie else {
             throw YamiboError.notAuthenticated
         }
         let accountUID = sessionState.accountUID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

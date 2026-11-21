@@ -90,7 +90,7 @@ struct YamiboCheckInService: YamiboCheckInServicing, Sendable {
             return .init(result: .notAuthenticated, isCancelled: true)
         }
         let sessionState = snapshot.session
-        guard sessionState.isLoggedIn, !sessionState.cookie.isEmpty else {
+        guard sessionState.isLoggedIn, sessionState.hasValidAuthenticationCookie else {
             return .init(result: .notAuthenticated)
         }
         if !force {

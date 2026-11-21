@@ -27,8 +27,7 @@ public actor YamiboProfileAvatarLoader {
             avatarURL: avatarURL,
             profileUID: profile.uid,
             accountUID: sessionState.accountUID,
-            cookie: sessionState.cookie,
-            userAgent: sessionState.userAgent
+            credentials: sessionState.credentials
         )
         if let data = cachedData[key] {
             return data
@@ -56,7 +55,6 @@ public actor YamiboProfileAvatarLoader {
         let avatarURL: URL
         let profileUID: String
         let accountUID: String?
-        let cookie: String
-        let userAgent: String
+        let credentials: YamiboRequestCredentials
     }
 }

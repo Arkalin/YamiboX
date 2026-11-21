@@ -51,7 +51,7 @@ final class MineHomeViewModel {
     }
 
     var isLoggedIn: Bool {
-        session.isLoggedIn && SessionState.hasAuthenticationCookie(session.cookie)
+        session.isLoggedIn && session.hasValidAuthenticationCookie
     }
 
     deinit {
@@ -75,7 +75,7 @@ final class MineHomeViewModel {
         await reloadAccountSnapshot()
 
         guard isLoggedIn,
-              let credential = SessionState.authenticationCookieValue(in: session.cookie) else {
+              let credential = session.authenticationCookieValue else {
             lastAutomaticProfileRefreshCredential = nil
             return
         }

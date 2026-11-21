@@ -16,7 +16,7 @@ struct ForumSessionCookieJar: Sendable {
 
     func clear() {
         guard let storage = session.configuration.httpCookieStorage else { return }
-        for cookie in storage.cookies ?? [] where YamiboDomain.containsYamiboDomain(cookie.domain) {
+        for cookie in storage.cookies ?? [] where YamiboDomain.isYamiboCookieDomain(cookie.domain) {
             storage.deleteCookie(cookie)
         }
     }

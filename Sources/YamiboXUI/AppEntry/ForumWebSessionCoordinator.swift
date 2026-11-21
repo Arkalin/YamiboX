@@ -124,7 +124,7 @@ public final class ForumWebSessionCoordinator: NSObject, WKHTTPCookieStoreObserv
     }
 
     func finishAccountChange(_ session: SessionState) async {
-        for cookie in await cookieStore.allCookies() where YamiboDomain.containsYamiboDomain(cookie.domain) {
+        for cookie in await cookieStore.allCookies() where YamiboDomain.isYamiboCookieDomain(cookie.domain) {
             await cookieStore.deleteCookieAsync(cookie)
         }
         webView.customUserAgent = session.userAgent

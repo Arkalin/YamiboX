@@ -27,11 +27,6 @@ public enum YamiboDomain: Sendable {
         YamiboForumEnvironment.current.isCookieDomain(domain)
     }
 
-    public static func containsYamiboDomain(_ value: String) -> Bool {
-        YamiboForumEnvironment.current.matchesCookieCleanupDomain(value)
-    }
-
-
     public static func url(forSitePath path: String) -> URL? {
         let normalized = path.hasPrefix("/") ? path : "/\(path)"
         return URL(string: normalized, relativeTo: baseURL)?.absoluteURL
