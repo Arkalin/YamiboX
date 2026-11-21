@@ -221,14 +221,14 @@ public enum YamiboRoute: Sendable {
                 .init(name: "page", value: String(max(1, page)))
             ])
         case let .search(keyword, forumID):
-            return Self.makeURL(path: "/search.php", percentEncodedQuery: [
-                "mod=forum",
-                "searchsubmit=yes",
-                "mobile=2",
-                "srchfid%5B%5D=\(forumID)",
-                "srchtxt=\(keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword)",
-                "srchtype=title"
-            ].joined(separator: "&"))
+            return Self.makeURL(path: "/search.php", queryItems: [
+                .init(name: "mod", value: "forum"),
+                .init(name: "searchsubmit", value: "yes"),
+                .init(name: "mobile", value: "2"),
+                .init(name: "srchfid[]", value: forumID),
+                .init(name: "srchtxt", value: keyword),
+                .init(name: "srchtype", value: "title")
+            ], encodeQueryPlus: true)
         case let .searchPage(searchID, page):
             return Self.makeURL(path: "/search.php", queryItems: [
                 .init(name: "mod", value: "forum"),
@@ -605,17 +605,13 @@ public enum YamiboRoute: Sendable {
         ])
     }
 
-    private static func makeURL(path: String, queryItems: [URLQueryItem]) -> URL {
+    private static func makeURL(path: String, queryItems: [URLQueryItem], encodeQueryPlus: Bool = false) -> URL {
         var components = URLComponents(url: YamiboDomain.baseURL, resolvingAgainstBaseURL: false)!
         components.path = path
         components.queryItems = queryItems
-        return components.url!
-    }
-
-    private static func makeURL(path: String, percentEncodedQuery: String) -> URL {
-        var components = URLComponents(url: YamiboDomain.baseURL, resolvingAgainstBaseURL: false)!
-        components.path = path
-        components.percentEncodedQuery = percentEncodedQuery
+        if encodeQueryPlus {
+            components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        }
         return components.url!
     }
 }

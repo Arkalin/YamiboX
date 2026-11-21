@@ -26,6 +26,10 @@ final class ForumSearchViewModel {
         var forumID: String?
         var page: Int
     }
+    private enum SearchIDUpdate {
+        case retain
+        case replace(String?)
+    }
     @ObservationIgnored private var inFlightKey: RequestKey?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var currentSearchQuery: String?
@@ -127,8 +131,17 @@ final class ForumSearchViewModel {
             let repository = await repositoryProvider()
             try Task.checkCancellation()
             let nextPage: ForumSearchPage
-            let resolvedSearchID: String??
-            if pageNumber == 1 || searchID == nil {
+            let searchIDUpdate: SearchIDUpdate
+            let requestedPage: Int
+            if pageNumber > 1, let searchID {
+                nextPage = try await repository.searchForumPage(
+                    query: trimmedQuery,
+                    searchID: searchID,
+                    page: pageNumber
+                )
+                searchIDUpdate = .retain
+                requestedPage = pageNumber
+            } else {
                 let formHash = await formHashProvider()
                 try Task.checkCancellation()
                 nextPage = try await repository.searchForum(
@@ -136,29 +149,23 @@ final class ForumSearchViewModel {
                     forumID: forumID,
                     formHash: formHash
                 )
-                resolvedSearchID = .some(nextPage.searchID)
-            } else {
-                nextPage = try await repository.searchForumPage(
-                    query: trimmedQuery,
-                    searchID: searchID ?? "",
-                    page: pageNumber
-                )
-                resolvedSearchID = nil
+                searchIDUpdate = .replace(nextPage.searchID)
+                requestedPage = 1
             }
             guard !Task.isCancelled, requestGeneration == generation else { return }
-            if let resolvedSearchID {
+            if case let .replace(resolvedSearchID) = searchIDUpdate {
                 currentSearchID = resolvedSearchID
                 currentSearchQuery = trimmedQuery
             }
             page = nextPage
-            currentPage = nextPage.pageNavigation?.currentPage ?? pageNumber
+            currentPage = nextPage.pageNavigation?.currentPage ?? requestedPage
             errorMessage = nil
         } catch {
             guard requestGeneration == generation, !Task.isCancelled,
                   !LoadDiagnosticError.isCancellation(error) else { return }
             page = nil
             currentPage = pageNumber
-            if pageNumber == 1 {
+            if pageNumber == 1 || searchID == nil {
                 currentSearchID = nil
                 currentSearchQuery = nil
             }
