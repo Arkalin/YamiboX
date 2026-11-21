@@ -95,6 +95,11 @@ public final class NovelTextViewportDisplayReference {
         return runtimeOwner?.chapterTitle(for: segmentIdentity)
     }
 
+    func searchHighlightRange(from start: NovelResumePoint, to end: NovelResumePoint) -> NovelTextSelectionRange? {
+        guard !isStale else { return nil }
+        return runtimeOwner?.searchDocumentSelectionRange(from: start, to: end)
+    }
+
     func highlightRange(for anchor: NovelTextLikeAnchor, workKey: ReadingWorkKey) -> NovelTextSelectionRange? {
         guard !isStale else { return nil }
         return runtimeOwner?.documentSelectionRange(for: anchor, workKey: workKey)

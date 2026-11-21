@@ -688,6 +688,26 @@ package final class NovelTextViewportRuntimeOwner {
         }
     }
 
+    package func searchDocumentSelectionRange(
+        from start: NovelResumePoint,
+        to end: NovelResumePoint
+    ) -> NovelTextSelectionRange? {
+        guard let projection, let result else { return nil }
+        var start = start
+        var end = end
+        start.view = projection.view
+        end.view = projection.view
+        guard let startOffset = result.viewportContext.document.documentOffset(for: start, in: projection),
+              let endOffset = result.viewportContext.document.documentOffset(for: end, in: projection) else {
+            return nil
+        }
+        return NovelTextSelectionRange(
+            generation: activeGeneration,
+            lowerBound: min(startOffset, endOffset),
+            upperBound: max(startOffset, endOffset)
+        )
+    }
+
     package func drawBlockBackgrounds(
         surfaceIdentity: NovelReaderSurfaceIdentity,
         in context: CGContext,

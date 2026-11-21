@@ -62,7 +62,7 @@ final class NovelReaderSearchHighlightController {
         for displayReference: NovelTextViewportDisplayReference
     ) -> ResolvedHighlight? {
         guard let start, let end,
-              let range = displayReference.highlightRange(from: start, to: end) else {
+              let range = displayReference.searchHighlightRange(from: start, to: end) else {
             return nil
         }
         let rects = displayReference.selectionRects(for: range)
