@@ -71,7 +71,10 @@ final class MangaDetailViewModel {
             changes: { [store = dependencies.contentCoverStore] in store.changes() }
         ) { [weak self] in
             guard let self else { return }
-            contentCover = await self.loadContentCover()
+            let directoryID = self.directory?.id
+            let cover = await self.loadContentCover()
+            guard !Task.isCancelled, self.directory?.id == directoryID else { return }
+            contentCover = cover
         }
         mangaDirectoryUpdatesTask = StoreChangeObservation.task(
             changes: { [store = dependencies.mangaDirectoryStore] in store.changes() }
@@ -485,14 +488,31 @@ final class MangaDetailViewModel {
     }
 
     private func reloadDirectoryAfterExternalChange() async {
-        guard let directoryID = directory?.id,
-              let refreshed = try? await dependencies.mangaDirectoryStore.directory(id: directoryID) else {
+        guard let selected = directory else { return }
+        let refreshed: MangaDirectory?
+        do {
+            refreshed = try await dependencies.mangaDirectoryStore.directory(id: selected.id)
+        } catch {
+            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            YamiboLog.persistence.warning("Could not refresh the selected manga directory: \(error)")
             return
         }
+        guard !Task.isCancelled, directory == selected else { return }
+
         directory = refreshed
+        if refreshed?.id != selected.id {
+            contentCover = nil
+            readingProgress = nil
+            automaticCoverResolutionTask?.cancel()
+            automaticDirectoryUpdateTask?.cancel()
+        }
         await refreshFavoriteMembership()
+        guard !Task.isCancelled, directory == refreshed else { return }
         await refreshReadingProgress()
-        contentCover = await loadContentCover()
+        guard !Task.isCancelled, directory == refreshed else { return }
+        let cover = await loadContentCover()
+        guard !Task.isCancelled, directory == refreshed else { return }
+        contentCover = cover
     }
 
     private func startAutomaticCoverResolutionIfNeeded() {
@@ -528,10 +548,13 @@ final class MangaDetailViewModel {
     }
 
     private func refreshReadingProgress() async {
+        let directoryID = directory?.id
         do {
-            readingProgress = try await loadReadingProgress()
+            let progress = try await loadReadingProgress()
+            guard !Task.isCancelled, directory?.id == directoryID else { return }
+            readingProgress = progress
         } catch {
-            guard !Task.isCancelled, !LoadDiagnosticError.isCancellation(error) else { return }
+            guard !Task.isCancelled, directory?.id == directoryID, !LoadDiagnosticError.isCancellation(error) else { return }
             favoriteActions.transientFeedback = .failure(error)
         }
     }
